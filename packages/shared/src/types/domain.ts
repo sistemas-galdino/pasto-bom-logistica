@@ -1,0 +1,62 @@
+// Tipos de domínio (camelCase) usados por backend e frontend.
+
+export type StatusLogistico =
+  | 'pendente'
+  | 'agendada'
+  | 'em_rota'
+  | 'entregue'
+  | 'cancelada';
+
+export interface ItemPedido {
+  id: string;
+  produtoCodigo: string;
+  nomeProduto: string;
+  qtd: number;
+  valorUnit: number;
+  total: number;
+}
+
+export interface Pedido {
+  id: string;
+  orixIdPedido: string;
+  orixNumero: string;
+  empresa: number;
+  clienteCodigo: string;
+  clienteNome: string;
+  cidadeCliente: string;
+  vendedorCodigo: string;
+  vendedorNome: string;
+  propriedadeCodigo: string | null;
+  valorTotal: number;
+  dataPedido: string | null;
+  statusOrix: string;
+  statusOrixNome: string;
+  statusLogistico: StatusLogistico;
+  dataAgendada: string | null;
+  dataEntregue: string | null;
+  itens: ItemPedido[];
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+export interface Cliente {
+  codigo: string;
+  nome: string;
+  celular: string;
+  telefone: string;
+  email: string;
+  endereco: string;
+  cidade: string;
+  uf: string;
+}
+
+export interface Propriedade {
+  codigo: string;
+  clienteCodigo: string;
+  nome: string;
+  endereco: string;
+  cidade: string;
+  uf: string;
+  latitude: string;
+  longitude: string;
+}
