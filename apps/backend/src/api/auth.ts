@@ -116,9 +116,22 @@ export const autenticar: preHandlerHookHandler = async (
   req.usuario = { id: data.user.id, papel, semAuth: false };
 
   // Autorização por método: papéis com escrita = logística e almoxarifado.
-  // A restrição fina (só logística aplica transições) é feita nas rotas.
+  // A restrição fina (só logística aplica a maioria das transições) é feita
+  // nas rotas. Exceção (Fase 3): o motorista pode CHAMAR a rota de transição
+  // (POST /api/pedidos/:id/transicao) — a regra fina (só 'entregue' do próprio
+  // pedido) é validada no serviço. As demais rotas de escrita (separação,
+  // reenvio, atribuição de motorista) continuam bloqueadas aqui.
   const ehEscrita = !METODOS_LEITURA.has(req.method);
-  if (ehEscrita && papel !== 'logistica' && papel !== 'almoxarifado') {
+  const ehEntregaMotorista =
+    papel === 'motorista' &&
+    req.method === 'POST' &&
+    /^\/api\/pedidos\/[^/]+\/transicao(?:\?.*)?$/.test(req.url);
+  if (
+    ehEscrita &&
+    papel !== 'logistica' &&
+    papel !== 'almoxarifado' &&
+    !ehEntregaMotorista
+  ) {
     return reply.code(403).send({
       error: 'sem_permissao',
       message: `Papel "${papel}" não tem permissão de escrita.`,

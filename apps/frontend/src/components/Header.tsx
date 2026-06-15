@@ -1,29 +1,9 @@
 // Cabeçalho do app: marca, identidade do usuário (papel) e ação de sair.
 
 import React from 'react';
-import { useAuth, type Papel } from '../auth/AuthProvider';
+import { useAuth } from '../auth/AuthProvider';
+import { PAPEL_ROTULO, PAPEL_BADGE, PAPEL_ACESSO } from '../lib/papeis';
 import { Marca } from './Marca';
-
-const PAPEL_ROTULO: Record<Papel, string> = {
-  logistica: 'Logística',
-  vendedor: 'Vendedor',
-  motorista: 'Motorista',
-  almoxarifado: 'Almoxarifado',
-};
-
-const PAPEL_BADGE: Record<Papel, string> = {
-  logistica: 'bg-mata-claro text-mata-escuro',
-  vendedor: 'bg-folha-claro text-mata',
-  motorista: 'bg-trigo-claro text-trigo-escuro',
-  almoxarifado: 'bg-terra-claro text-terra-escuro',
-};
-
-const PAPEL_ACESSO: Record<Papel, string> = {
-  logistica: 'Acesso total',
-  almoxarifado: 'Separação de mercadorias',
-  vendedor: 'Somente leitura',
-  motorista: 'Somente leitura',
-};
 
 export function Header(): React.ReactElement {
   const { user, papel, sair } = useAuth();

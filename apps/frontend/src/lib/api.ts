@@ -8,6 +8,7 @@ import type {
   ConfigResponse,
   TransicaoRequest,
   StatusLogistico,
+  MotoristaResumo,
 } from '@pastobom/shared';
 import { supabase } from './supabase';
 
@@ -128,6 +129,27 @@ export const api = {
         itemId,
       )}/separacao`,
       { method: 'PATCH', body: { separado } },
+    );
+  },
+
+  /** Fase 3: "rota do dia" do motorista (pedidos em_rota atribuídos a ele). */
+  async listarMinhaRota(signal?: AbortSignal): Promise<Pedido[]> {
+    return request<Pedido[]>('/api/pedidos?meus=1', { signal });
+  },
+
+  /** Fase 3: lista de motoristas (logística atribui). */
+  async listarMotoristas(signal?: AbortSignal): Promise<MotoristaResumo[]> {
+    return request<MotoristaResumo[]>('/api/motoristas', { signal });
+  },
+
+  /** Fase 3: atribui (ou remove, com null) o motorista de um pedido. */
+  async atribuirMotorista(
+    pedidoId: string,
+    motoristaId: string | null,
+  ): Promise<Pedido> {
+    return request<Pedido>(
+      `/api/pedidos/${encodeURIComponent(pedidoId)}/motorista`,
+      { method: 'PATCH', body: { motoristaId } },
     );
   },
 

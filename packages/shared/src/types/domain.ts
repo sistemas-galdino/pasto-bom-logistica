@@ -36,9 +36,32 @@ export interface Pedido {
   statusLogistico: StatusLogistico;
   dataAgendada: string | null;
   dataEntregue: string | null;
+  /** Fase 3: motorista atribuído ao pedido (auth.uid). */
+  motoristaId: string | null;
+  /** Fase 3: nome do motorista resolvido via profiles (pode ser vazio). */
+  motoristaNome: string | null;
+  /** Observação livre (ex.: anotação do motorista na entrega). */
+  observacoes?: string | null;
+  /** Fase 3: destino resolvido (só preenchido na rota do motorista). */
+  destino?: DestinoEntrega | null;
   itens: ItemPedido[];
   criadoEm: string;
   atualizadoEm: string;
+}
+
+/** Destino de entrega resolvido (propriedade ou, na falta, cliente). */
+export interface DestinoEntrega {
+  latitude: string;
+  longitude: string;
+  endereco: string;
+  cidade: string;
+  uf: string;
+}
+
+/** Resumo de motorista para seleção pela logística. */
+export interface MotoristaResumo {
+  id: string;
+  nome: string;
 }
 
 export interface Cliente {

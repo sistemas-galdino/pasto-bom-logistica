@@ -53,3 +53,22 @@ export const COLUNAS_KANBAN: StatusLogistico[] = [
   'em_rota',
   'entregue',
 ];
+
+/** Cor hex de cada status (espelha o token "faixa" do STATUS_META), para
+ *  gráficos recharts e outros consumidores fora do Tailwind. */
+export const STATUS_HEX: Record<StatusLogistico, string> = {
+  pendente: '#A8A293', // pedra
+  agendada: '#3C7D52', // folha
+  em_rota: '#C08A2D', // trigo
+  entregue: '#1C4E37', // mata
+  cancelada: '#B25A33', // terra
+};
+
+/** Todos os status, na ordem do fluxo (reusado por Board e Dashboard). */
+export const TODOS_STATUS: StatusLogistico[] = [
+  'pendente',
+  'agendada',
+  'em_rota',
+  'entregue',
+  'cancelada',
+];

@@ -9,7 +9,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Pedido, StatusLogistico } from '@pastobom/shared';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../auth/AuthProvider';
-import { Header } from '../components/Header';
 import { KanbanColumn } from '../components/KanbanColumn';
 import { PedidoCard } from '../components/PedidoCard';
 import {
@@ -135,9 +134,7 @@ export function Board(): React.ReactElement {
     }`;
 
   return (
-    <div className="flex h-screen flex-col">
-      <Header />
-
+    <div className="flex h-full flex-col">
       <div className="flex items-center justify-between gap-3 border-b border-linha bg-creme-50/70 px-4 py-2.5 backdrop-blur sm:px-6">
         <div className="flex items-baseline gap-2 text-sm">
           <h2 className="font-display text-base font-semibold text-mata-escuro">

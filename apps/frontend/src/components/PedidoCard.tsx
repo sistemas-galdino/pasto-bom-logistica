@@ -100,6 +100,14 @@ export function PedidoCard({
             {pedido.propriedadeCodigo ?? '—'}
           </dd>
         </div>
+        {pedido.motoristaId && (
+          <div className="flex justify-between gap-2">
+            <dt>Motorista</dt>
+            <dd className="truncate text-right text-tinta">
+              {pedido.motoristaNome || '—'}
+            </dd>
+          </div>
+        )}
         {pedido.dataAgendada && (
           <div className="flex justify-between gap-2">
             <dt>Agendada</dt>

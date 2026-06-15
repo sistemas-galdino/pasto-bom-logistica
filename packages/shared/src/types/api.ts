@@ -7,6 +7,10 @@ export interface TransicaoRequest {
   para: StatusLogistico;
   propriedadeCodigo?: string;
   dataAgendada?: string;
+  /** Observação livre gravada na transição (ex.: nota do motorista na entrega). */
+  observacao?: string;
+  /** Atribuição de motorista no despacho (logística, para==='em_rota'). */
+  motoristaId?: string | null;
 }
 
 export interface ConfigResponse {

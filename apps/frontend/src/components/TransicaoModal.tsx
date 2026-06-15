@@ -7,7 +7,12 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { Pedido, Propriedade, StatusLogistico } from '@pastobom/shared';
+import type {
+  MotoristaResumo,
+  Pedido,
+  Propriedade,
+  StatusLogistico,
+} from '@pastobom/shared';
 import { api } from '../lib/api';
 import { STATUS_META } from './status';
 
@@ -15,6 +20,7 @@ export interface TransicaoSubmit {
   para: StatusLogistico;
   propriedadeCodigo?: string;
   dataAgendada?: string;
+  motoristaId?: string | null;
 }
 
 interface Props {
@@ -75,6 +81,21 @@ export function TransicaoModal({
     pedido.dataAgendada ?? hojeISO(),
   );
 
+  // Fase 3: ao despachar (em_rota), a logística pode atribuir o motorista.
+  const motoristasQuery = useQuery({
+    queryKey: ['motoristas'],
+    queryFn: ({ signal }) => api.listarMotoristas(signal),
+    enabled: ehEmRota,
+    staleTime: 5 * 60 * 1000,
+  });
+  const motoristas: MotoristaResumo[] = useMemo(
+    () => motoristasQuery.data ?? [],
+    [motoristasQuery.data],
+  );
+  const [motoristaId, setMotoristaId] = useState<string>(
+    pedido.motoristaId ?? '',
+  );
+
   useEffect(() => {
     if (!ehAgendamento) return;
     if (propriedades.length === 1 && !propriedadeCodigo) {
@@ -106,6 +127,9 @@ export function TransicaoModal({
       if (propriedadeCodigo.trim() !== '') {
         args.propriedadeCodigo = propriedadeCodigo.trim();
       }
+    }
+    if (ehEmRota && motoristaId.trim() !== '') {
+      args.motoristaId = motoristaId.trim();
     }
     onConfirmar(args);
   }
@@ -210,19 +234,55 @@ export function TransicaoModal({
               </>
             )}
 
-            {ehEmRota &&
-              (separacaoBloqueia ? (
-                <p className="rounded-lg border border-trigo/40 bg-trigo-claro px-3 py-2.5 text-sm text-trigo-escuro">
-                  <strong>Separação incompleta ({sepItens}/{totItens}).</strong>{' '}
-                  Conclua a separação das mercadorias antes de pôr o pedido em
-                  rota.
-                </p>
-              ) : (
-                <p className="rounded-lg bg-trigo-claro px-3 py-2.5 text-sm text-trigo-escuro">
-                  O cliente receberá um WhatsApp informando que o pedido saiu
-                  para entrega.
-                </p>
-              ))}
+            {ehEmRota && (
+              <>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-tinta-suave">
+                    Motorista
+                  </label>
+                  {motoristasQuery.isLoading ? (
+                    <div className="rounded-lg border border-linha px-3 py-2 text-sm text-tinta-suave">
+                      Carregando motoristas…
+                    </div>
+                  ) : motoristasQuery.isError ? (
+                    <div className="rounded-lg border border-terra/30 bg-terra-claro px-3 py-2 text-sm text-terra-escuro">
+                      Falha ao carregar motoristas.
+                    </div>
+                  ) : (
+                    <select
+                      value={motoristaId}
+                      onChange={(e) => setMotoristaId(e.target.value)}
+                      className={inputCls}
+                    >
+                      <option value="">Atribuir depois</option>
+                      {motoristas.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.nome || m.id.slice(0, 8)}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <p className="mt-1 text-xs text-tinta-suave">
+                    Atribua o motorista que fará a entrega (opcional).
+                  </p>
+                </div>
+
+                {separacaoBloqueia ? (
+                  <p className="rounded-lg border border-trigo/40 bg-trigo-claro px-3 py-2.5 text-sm text-trigo-escuro">
+                    <strong>
+                      Separação incompleta ({sepItens}/{totItens}).
+                    </strong>{' '}
+                    Conclua a separação das mercadorias antes de pôr o pedido em
+                    rota.
+                  </p>
+                ) : (
+                  <p className="rounded-lg bg-trigo-claro px-3 py-2.5 text-sm text-trigo-escuro">
+                    O cliente receberá um WhatsApp informando que o pedido saiu
+                    para entrega.
+                  </p>
+                )}
+              </>
+            )}
 
             {para === 'entregue' && (
               <p className="rounded-lg bg-mata-claro px-3 py-2.5 text-sm text-mata-escuro">

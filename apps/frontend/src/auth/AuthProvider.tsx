@@ -25,6 +25,8 @@ export interface AuthState {
   podeEscrever: boolean;
   /** Logística e almoxarifado podem marcar a separação (RF-2.2). */
   podeSeparar: boolean;
+  /** Fase 3: motorista tem a tela própria de rota do dia. */
+  ehMotorista: boolean;
   entrar: (email: string, senha: string) => Promise<void>;
   sair: () => Promise<void>;
 }
@@ -115,6 +117,7 @@ export function AuthProvider({
       papel,
       podeEscrever: papel === 'logistica',
       podeSeparar: papel === 'logistica' || papel === 'almoxarifado',
+      ehMotorista: papel === 'motorista',
       entrar,
       sair,
     }),

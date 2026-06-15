@@ -19,7 +19,7 @@ export function Login(): React.ReactElement {
   const [enviando, setEnviando] = useState(false);
 
   const destino =
-    (location.state as LocationState | null)?.from?.pathname ?? '/board';
+    (location.state as LocationState | null)?.from?.pathname ?? '/dashboard';
 
   async function aoSubmeter(e: React.FormEvent) {
     e.preventDefault();

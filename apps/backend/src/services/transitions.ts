@@ -65,6 +65,8 @@ interface PedidoRow {
   status_logistico: StatusLogistico;
   data_agendada: string | null;
   data_entregue: string | null;
+  motorista_id: string | null;
+  observacoes: string | null;
   criado_em: string;
   atualizado_em: string;
 }
@@ -98,8 +100,15 @@ function mapearItem(row: ItemPedidoRow): ItemPedido {
   };
 }
 
-/** Mapeia a linha do banco (snake_case) + itens para o tipo Pedido (camelCase). */
-export function mapearPedido(row: PedidoRow, itens: ItemPedidoRow[]): Pedido {
+/**
+ * Mapeia a linha do banco (snake_case) + itens para o tipo Pedido (camelCase).
+ * `motoristaNome` é resolvido à parte (não há FK pedidos->profiles).
+ */
+export function mapearPedido(
+  row: PedidoRow,
+  itens: ItemPedidoRow[],
+  motoristaNome?: string | null,
+): Pedido {
   return {
     id: row.id,
     orixIdPedido: row.orix_id_pedido,
@@ -118,6 +127,9 @@ export function mapearPedido(row: PedidoRow, itens: ItemPedidoRow[]): Pedido {
     statusLogistico: row.status_logistico,
     dataAgendada: row.data_agendada,
     dataEntregue: row.data_entregue,
+    motoristaId: row.motorista_id,
+    motoristaNome: motoristaNome ?? null,
+    observacoes: row.observacoes ?? null,
     itens: itens.map(mapearItem),
     criadoEm: row.criado_em,
     atualizadoEm: row.atualizado_em,
@@ -128,7 +140,26 @@ const COLUNAS_PEDIDO =
   'id, orix_id_pedido, orix_numero, empresa, cliente_codigo, cliente_nome, ' +
   'cidade_cliente, vendedor_codigo, vendedor_nome, propriedade_codigo, ' +
   'valor_total, data_pedido, status_orix, status_orix_nome, status_logistico, ' +
-  'data_agendada, data_entregue, criado_em, atualizado_em';
+  'data_agendada, data_entregue, motorista_id, observacoes, criado_em, atualizado_em';
+
+/** Resolve o nome do motorista (profiles) pelo auth.uid; '' quando sem nome. */
+async function lerNomeMotorista(
+  motoristaId: string | null,
+): Promise<string | null> {
+  if (!motoristaId) return null;
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('nome')
+    .eq('id', motoristaId)
+    .maybeSingle<{ nome: string | null }>();
+  if (error) {
+    log.warn(
+      `[transitions] Falha ao ler nome do motorista ${motoristaId}: ${error.message}`,
+    );
+    return '';
+  }
+  return data?.nome ?? '';
+}
 
 const COLUNAS_ITEM =
   'id, produto_codigo, nome_produto, qtd, valor_unit, total, separado';
@@ -165,7 +196,12 @@ export async function carregarPedido(pedidoId: string): Promise<Pedido> {
     );
   }
 
-  return mapearPedido(pedidoRow, (itensRows ?? []) as ItemPedidoRow[]);
+  const motoristaNome = await lerNomeMotorista(pedidoRow.motorista_id);
+  return mapearPedido(
+    pedidoRow,
+    (itensRows ?? []) as ItemPedidoRow[],
+    motoristaNome,
+  );
 }
 
 /** Conta quantas propriedades o cliente possui. */
@@ -332,12 +368,20 @@ async function dispararWhatsapp(
 // API pública
 // ---------------------------------------------------------------------------
 
+/** Papel do ator (espelha api/auth.ts; local p/ evitar ciclo de import). */
+type AtorPapel = 'logistica' | 'vendedor' | 'motorista' | 'almoxarifado';
+
 export interface AplicarTransicaoArgs {
   pedidoId: string;
   para: StatusLogistico;
   propriedadeCodigo?: string;
   dataAgendada?: string;
+  /** Observação livre (gravada em pedidos.observacoes). */
+  observacao?: string;
+  /** Atribuição de motorista no despacho (logística, para==='em_rota'). */
+  motoristaId?: string | null;
   atorUserId?: string;
+  atorPapel?: AtorPapel;
 }
 
 /**
@@ -347,11 +391,38 @@ export interface AplicarTransicaoArgs {
 export async function aplicarTransicao(
   args: AplicarTransicaoArgs,
 ): Promise<Pedido> {
-  const { pedidoId, para, propriedadeCodigo, dataAgendada, atorUserId } = args;
+  const {
+    pedidoId,
+    para,
+    propriedadeCodigo,
+    dataAgendada,
+    observacao,
+    motoristaId,
+    atorUserId,
+    atorPapel,
+  } = args;
 
   // 1) Carrega o pedido atual.
   const pedidoAtual = await carregarPedido(pedidoId);
   const de = pedidoAtual.statusLogistico;
+
+  // 1.1) Fase 3: o motorista só CONFIRMA a entrega dos PRÓPRIOS pedidos.
+  if (atorPapel === 'motorista') {
+    if (para !== 'entregue') {
+      throw new TransicaoError(
+        403,
+        'sem_permissao',
+        'Motorista só pode confirmar a entrega.',
+      );
+    }
+    if (!atorUserId || pedidoAtual.motoristaId !== atorUserId) {
+      throw new TransicaoError(
+        403,
+        'sem_permissao',
+        'Você não é o motorista deste pedido.',
+      );
+    }
+  }
 
   // 2) Valida a máquina de estados.
   if (!podeTransicionar(de, para)) {
@@ -407,6 +478,13 @@ export async function aplicarTransicao(
   }
   if (para === 'entregue') {
     patch.data_entregue = agora;
+    if (observacao) {
+      patch.observacoes = observacao;
+    }
+  }
+  // Fase 3: a logística pode atribuir o motorista no mesmo passo do despacho.
+  if (atorPapel === 'logistica' && para === 'em_rota' && motoristaId !== undefined) {
+    patch.motorista_id = motoristaId;
   }
 
   const { error: errUpdate } = await supabase
@@ -506,6 +584,58 @@ export async function definirSeparacaoItem(args: {
       500,
       'erro_banco',
       `Falha ao atualizar separação do item: ${error.message}`,
+    );
+  }
+
+  return carregarPedido(pedidoId);
+}
+
+/**
+ * Fase 3: atribui (ou remove, com null) o motorista de um pedido. Apenas a
+ * logística chama isto (guard na rota). Valida que o id é um profile com
+ * papel 'motorista'. Devolve o pedido atualizado.
+ */
+export async function definirMotorista(args: {
+  pedidoId: string;
+  motoristaId: string | null;
+}): Promise<Pedido> {
+  const { pedidoId, motoristaId } = args;
+
+  // 404 se o pedido não existe.
+  await carregarPedido(pedidoId);
+
+  // Valida que o destino é mesmo um motorista cadastrado.
+  if (motoristaId) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('papel')
+      .eq('id', motoristaId)
+      .maybeSingle<{ papel: string }>();
+    if (error) {
+      throw new TransicaoError(
+        500,
+        'erro_banco',
+        `Falha ao validar motorista: ${error.message}`,
+      );
+    }
+    if (!data || data.papel !== 'motorista') {
+      throw new TransicaoError(
+        422,
+        'motorista_invalido',
+        'Usuário informado não é um motorista.',
+      );
+    }
+  }
+
+  const { error } = await supabase
+    .from('pedidos')
+    .update({ motorista_id: motoristaId, atualizado_em: new Date().toISOString() })
+    .eq('id', pedidoId);
+  if (error) {
+    throw new TransicaoError(
+      500,
+      'erro_banco',
+      `Falha ao atribuir motorista: ${error.message}`,
     );
   }
 
