@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
+import { Marca } from '../components/Marca';
 
 interface LocationState {
   from?: { pathname?: string };
@@ -34,23 +35,28 @@ export function Login(): React.ReactElement {
     }
   }
 
+  const inputCls =
+    'w-full rounded-lg border border-linha bg-creme-50 px-3 py-2.5 text-sm text-tinta outline-none transition placeholder:text-pedra focus:border-folha focus:bg-papel focus:ring-2 focus:ring-folha/25';
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
-      <div className="w-full max-w-sm">
-        <div className="mb-6 text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-600 text-2xl">
-            🐂
-          </div>
-          <h1 className="text-xl font-semibold text-slate-800">Pasto Bom</h1>
-          <p className="text-sm text-slate-500">Logística Inteligente</p>
+    <div className="relative flex min-h-screen items-center justify-center px-4 py-10">
+      <div className="w-full max-w-sm animate-sobe">
+        <div className="mb-7 flex flex-col items-center text-center">
+          <Marca className="h-14 w-14 drop-shadow" />
+          <h1 className="mt-4 font-display text-3xl font-semibold text-mata-escuro">
+            Pasto Bom
+          </h1>
+          <p className="mt-1 text-sm text-tinta-suave">
+            Sistema de Logística Inteligente
+          </p>
         </div>
 
         <form
           onSubmit={aoSubmeter}
-          className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+          className="rounded-xl2 border border-linha bg-papel/90 p-6 shadow-flutua backdrop-blur"
         >
           <label className="mb-4 block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-tinta-suave">
               E-mail
             </span>
             <input
@@ -59,13 +65,13 @@ export function Login(): React.ReactElement {
               autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
+              className={inputCls}
               placeholder="voce@pastobom.com.br"
             />
           </label>
 
           <label className="mb-5 block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-tinta-suave">
               Senha
             </span>
             <input
@@ -74,7 +80,7 @@ export function Login(): React.ReactElement {
               autoComplete="current-password"
               value={senha}
               onChange={(e) => setSenha(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
+              className={inputCls}
               placeholder="••••••••"
             />
           </label>
@@ -82,7 +88,7 @@ export function Login(): React.ReactElement {
           {erro && (
             <div
               role="alert"
-              className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+              className="mb-4 rounded-lg border border-terra/30 bg-terra-claro px-3 py-2 text-sm text-terra-escuro"
             >
               {erro}
             </div>
@@ -91,14 +97,14 @@ export function Login(): React.ReactElement {
           <button
             type="submit"
             disabled={enviando}
-            className="w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-lg bg-mata px-4 py-2.5 text-sm font-bold text-creme-50 shadow-sm transition hover:bg-mata-escuro disabled:cursor-not-allowed disabled:opacity-60"
           >
             {enviando ? 'Entrando…' : 'Entrar'}
           </button>
         </form>
 
-        <p className="mt-4 text-center text-xs text-slate-400">
-          Acesso restrito à equipe Pasto Bom.
+        <p className="mt-5 text-center text-xs text-tinta-suave">
+          Acesso restrito à equipe Pasto Bom · Três Pontas/MG
         </p>
       </div>
     </div>

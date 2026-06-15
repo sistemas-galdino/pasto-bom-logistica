@@ -22,7 +22,7 @@ import { env } from '../config/env.js';
 import { log } from '../log.js';
 import { supabase } from '../db/supabase.js';
 
-export type Papel = 'logistica' | 'vendedor' | 'motorista';
+export type Papel = 'logistica' | 'vendedor' | 'motorista' | 'almoxarifado';
 
 export interface UsuarioAutenticado {
   id: string | null;
@@ -115,9 +115,10 @@ export const autenticar: preHandlerHookHandler = async (
   const papel = await resolverPapel(data.user.id);
   req.usuario = { id: data.user.id, papel, semAuth: false };
 
-  // Autorização por método: somente 'logistica' escreve.
+  // Autorização por método: papéis com escrita = logística e almoxarifado.
+  // A restrição fina (só logística aplica transições) é feita nas rotas.
   const ehEscrita = !METODOS_LEITURA.has(req.method);
-  if (ehEscrita && papel !== 'logistica') {
+  if (ehEscrita && papel !== 'logistica' && papel !== 'almoxarifado') {
     return reply.code(403).send({
       error: 'sem_permissao',
       message: `Papel "${papel}" não tem permissão de escrita.`,

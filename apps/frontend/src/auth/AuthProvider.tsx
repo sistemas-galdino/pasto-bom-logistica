@@ -12,7 +12,7 @@ import React, {
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
-export type Papel = 'logistica' | 'vendedor' | 'motorista';
+export type Papel = 'logistica' | 'vendedor' | 'motorista' | 'almoxarifado';
 
 export interface AuthState {
   /** Sessão Supabase carregando (estado inicial / troca de sessão). */
@@ -23,13 +23,20 @@ export interface AuthState {
   papel: Papel | null;
   /** Apenas papel 'logistica' pode aplicar transições. */
   podeEscrever: boolean;
+  /** Logística e almoxarifado podem marcar a separação (RF-2.2). */
+  podeSeparar: boolean;
   entrar: (email: string, senha: string) => Promise<void>;
   sair: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
 
-const PAPEIS_VALIDOS: readonly Papel[] = ['logistica', 'vendedor', 'motorista'];
+const PAPEIS_VALIDOS: readonly Papel[] = [
+  'logistica',
+  'vendedor',
+  'motorista',
+  'almoxarifado',
+];
 
 function ehPapel(v: unknown): v is Papel {
   return typeof v === 'string' && (PAPEIS_VALIDOS as readonly string[]).includes(v);
@@ -107,6 +114,7 @@ export function AuthProvider({
       user: session?.user ?? null,
       papel,
       podeEscrever: papel === 'logistica',
+      podeSeparar: papel === 'logistica' || papel === 'almoxarifado',
       entrar,
       sair,
     }),

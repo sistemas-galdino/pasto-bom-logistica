@@ -1,9 +1,9 @@
 // Modal de confirmação de transição de status.
 //
-// Regra RF-1.8: ao mover para 'agendada', se o cliente possui MAIS DE UMA
-// propriedade, exigir a seleção da propriedade + a data agendada. Com 0 ou 1
-// propriedade, apenas a data agendada é pedida (a propriedade única é
-// pré-selecionada quando existe).
+// RF-1.8: ao mover para 'agendada', se o cliente possui MAIS DE UMA propriedade,
+// exige a seleção da propriedade + a data agendada.
+// RF-2.2: ao mover para 'em_rota', a separação precisa estar completa (o backend
+// também valida); aqui avisamos e bloqueamos o botão se ainda faltar separar.
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -34,6 +34,9 @@ function hojeISO(): string {
   return `${ano}-${mes}-${dia}`;
 }
 
+const inputCls =
+  'w-full rounded-lg border border-linha bg-creme-50 px-3 py-2 text-sm text-tinta outline-none transition focus:border-folha focus:bg-papel focus:ring-2 focus:ring-folha/25';
+
 export function TransicaoModal({
   pedido,
   para,
@@ -43,8 +46,14 @@ export function TransicaoModal({
   onConfirmar,
 }: Props): React.ReactElement {
   const ehAgendamento = para === 'agendada';
+  const ehEmRota = para === 'em_rota';
 
-  // Busca propriedades só quando vamos agendar.
+  // RF-2.2: separação precisa estar completa para liberar à rota.
+  const totItens = pedido.itens.length;
+  const sepItens = pedido.itens.filter((i) => i.separado).length;
+  const separacaoCompleta = totItens === 0 || sepItens === totItens;
+  const separacaoBloqueia = ehEmRota && !separacaoCompleta;
+
   const propsQuery = useQuery({
     queryKey: ['propriedades', pedido.clienteCodigo],
     queryFn: ({ signal }) =>
@@ -66,7 +75,6 @@ export function TransicaoModal({
     pedido.dataAgendada ?? hojeISO(),
   );
 
-  // Pré-seleciona quando há exatamente uma propriedade.
   useEffect(() => {
     if (!ehAgendamento) return;
     if (propriedades.length === 1 && !propriedadeCodigo) {
@@ -85,14 +93,16 @@ export function TransicaoModal({
   const faltaData = ehAgendamento && dataAgendada.trim() === '';
   const carregandoProps = ehAgendamento && propsQuery.isLoading;
   const bloqueado =
-    enviando || carregandoProps || faltaPropriedade || faltaData;
+    enviando ||
+    carregandoProps ||
+    faltaPropriedade ||
+    faltaData ||
+    separacaoBloqueia;
 
   function aoConfirmar() {
     const args: TransicaoSubmit = { para };
     if (ehAgendamento) {
       args.dataAgendada = dataAgendada;
-      // Envia a propriedade quando selecionada (obrigatória se >1; opcional
-      // mas útil quando há exatamente uma e já foi pré-selecionada).
       if (propriedadeCodigo.trim() !== '') {
         args.propriedadeCodigo = propriedadeCodigo.trim();
       }
@@ -102,7 +112,7 @@ export function TransicaoModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-mata-escuro/30 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-label={titulo}
@@ -110,49 +120,49 @@ export function TransicaoModal({
         if (e.target === e.currentTarget && !enviando) onCancelar();
       }}
     >
-      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+      <div className="w-full max-w-md animate-sobe rounded-xl2 bg-papel p-5 shadow-flutua">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-slate-800">{titulo}</h2>
-            <p className="mt-0.5 text-sm text-slate-500">
+            <h2 className="font-display text-lg font-semibold text-mata-escuro">
+              {titulo}
+            </h2>
+            <p className="mt-0.5 text-sm text-tinta-suave">
               Pedido nº {pedido.orixNumero || '—'} —{' '}
               {pedido.clienteNome || pedido.clienteCodigo}
             </p>
           </div>
           <span
-            className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${meta.badge}`}
+            className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-bold ${meta.badge}`}
           >
             → {meta.rotulo}
           </span>
         </div>
 
         {para === 'cancelada' ? (
-          <p className="rounded-lg border border-red-100 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+          <p className="rounded-lg border border-terra/30 bg-terra-claro px-3 py-2.5 text-sm text-terra-escuro">
             Esta ação marca o pedido como cancelado e não pode ser desfeita pelo
-            board. Nenhuma mensagem de WhatsApp é enviada.
+            quadro. Nenhuma mensagem de WhatsApp é enviada.
           </p>
         ) : (
           <div className="space-y-4">
             {ehAgendamento && (
               <>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-tinta-suave">
                     Propriedade de entrega
-                    {exigeSelecao && (
-                      <span className="ml-1 text-red-500">*</span>
-                    )}
+                    {exigeSelecao && <span className="ml-1 text-terra">*</span>}
                   </label>
 
                   {carregandoProps ? (
-                    <div className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-400">
+                    <div className="rounded-lg border border-linha px-3 py-2 text-sm text-tinta-suave">
                       Carregando propriedades…
                     </div>
                   ) : propsQuery.isError ? (
-                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+                    <div className="rounded-lg border border-terra/30 bg-terra-claro px-3 py-2 text-sm text-terra-escuro">
                       Falha ao carregar propriedades do cliente.
                     </div>
                   ) : propriedades.length === 0 ? (
-                    <p className="text-xs text-slate-400">
+                    <p className="text-xs text-tinta-suave">
                       Cliente sem propriedades cadastradas — a entrega usará o
                       endereço padrão.
                     </p>
@@ -160,7 +170,7 @@ export function TransicaoModal({
                     <select
                       value={propriedadeCodigo}
                       onChange={(e) => setPropriedadeCodigo(e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
+                      className={inputCls}
                     >
                       {(!exigeSelecao || propriedadeCodigo === '') && (
                         <option value="">
@@ -178,7 +188,7 @@ export function TransicaoModal({
                     </select>
                   )}
                   {exigeSelecao && (
-                    <p className="mt-1 text-xs text-slate-400">
+                    <p className="mt-1 text-xs text-tinta-suave">
                       Este cliente tem mais de uma propriedade; escolha onde
                       entregar.
                     </p>
@@ -186,28 +196,36 @@ export function TransicaoModal({
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Data agendada <span className="text-red-500">*</span>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-tinta-suave">
+                    Data agendada <span className="text-terra">*</span>
                   </label>
                   <input
                     type="date"
                     value={dataAgendada}
                     min={hojeISO()}
                     onChange={(e) => setDataAgendada(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
+                    className={inputCls}
                   />
                 </div>
               </>
             )}
 
-            {para === 'em_rota' && (
-              <p className="rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-700">
-                O cliente receberá um WhatsApp informando que o pedido saiu para
-                entrega.
-              </p>
-            )}
+            {ehEmRota &&
+              (separacaoBloqueia ? (
+                <p className="rounded-lg border border-trigo/40 bg-trigo-claro px-3 py-2.5 text-sm text-trigo-escuro">
+                  <strong>Separação incompleta ({sepItens}/{totItens}).</strong>{' '}
+                  Conclua a separação das mercadorias antes de pôr o pedido em
+                  rota.
+                </p>
+              ) : (
+                <p className="rounded-lg bg-trigo-claro px-3 py-2.5 text-sm text-trigo-escuro">
+                  O cliente receberá um WhatsApp informando que o pedido saiu
+                  para entrega.
+                </p>
+              ))}
+
             {para === 'entregue' && (
-              <p className="rounded-lg bg-emerald-50 px-3 py-2.5 text-sm text-emerald-700">
+              <p className="rounded-lg bg-mata-claro px-3 py-2.5 text-sm text-mata-escuro">
                 O cliente receberá um WhatsApp confirmando a entrega.
               </p>
             )}
@@ -217,7 +235,7 @@ export function TransicaoModal({
         {erro && (
           <div
             role="alert"
-            className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+            className="mt-4 rounded-lg border border-terra/30 bg-terra-claro px-3 py-2 text-sm text-terra-escuro"
           >
             {erro}
           </div>
@@ -228,7 +246,7 @@ export function TransicaoModal({
             type="button"
             onClick={onCancelar}
             disabled={enviando}
-            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-60"
+            className="rounded-lg border border-linha px-4 py-2 text-sm font-semibold text-tinta-suave transition hover:bg-creme-50 disabled:opacity-60"
           >
             Voltar
           </button>
@@ -236,10 +254,10 @@ export function TransicaoModal({
             type="button"
             onClick={aoConfirmar}
             disabled={bloqueado}
-            className={`rounded-lg px-4 py-2 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60 ${
+            className={`rounded-lg px-4 py-2 text-sm font-bold text-creme-50 transition disabled:cursor-not-allowed disabled:opacity-60 ${
               para === 'cancelada'
-                ? 'bg-red-600 hover:bg-red-700'
-                : 'bg-emerald-600 hover:bg-emerald-700'
+                ? 'bg-terra hover:bg-terra-escuro'
+                : 'bg-mata hover:bg-mata-escuro'
             }`}
           >
             {enviando ? 'Aplicando…' : 'Confirmar'}

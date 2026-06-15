@@ -1,46 +1,47 @@
 // Metadados de apresentação dos status logísticos (rótulos e cores).
+// Paleta "Campo Claro": creme + verdes do agro + acentos quentes.
 
 import type { StatusLogistico } from '@pastobom/shared';
 
 export interface StatusMeta {
   rotulo: string;
-  /** Classes Tailwind do badge (texto + fundo). */
+  /** Classes Tailwind do badge/pílula (fundo + texto). */
   badge: string;
-  /** Classe da faixa de cor do topo da coluna. */
+  /** Classe de cor da faixa/ponto de acento da coluna e do cartão. */
   faixa: string;
-  /** Botão primário da transição (texto exibido na ação). */
+  /** Texto do botão primário da transição. */
   acao: string;
 }
 
 export const STATUS_META: Record<StatusLogistico, StatusMeta> = {
   pendente: {
     rotulo: 'Pendente',
-    badge: 'bg-slate-100 text-slate-600',
-    faixa: 'bg-slate-400',
+    badge: 'bg-creme-100 text-tinta-suave',
+    faixa: 'bg-pedra',
     acao: 'Agendar',
   },
   agendada: {
     rotulo: 'Agendada',
-    badge: 'bg-blue-100 text-blue-700',
-    faixa: 'bg-blue-500',
+    badge: 'bg-folha-claro text-mata',
+    faixa: 'bg-folha',
     acao: 'Pôr em rota',
   },
   em_rota: {
     rotulo: 'Em rota',
-    badge: 'bg-amber-100 text-amber-700',
-    faixa: 'bg-amber-500',
+    badge: 'bg-trigo-claro text-trigo-escuro',
+    faixa: 'bg-trigo',
     acao: 'Marcar entregue',
   },
   entregue: {
     rotulo: 'Entregue',
-    badge: 'bg-emerald-100 text-emerald-700',
-    faixa: 'bg-emerald-500',
+    badge: 'bg-mata-claro text-mata-escuro',
+    faixa: 'bg-mata',
     acao: 'Concluído',
   },
   cancelada: {
     rotulo: 'Cancelada',
-    badge: 'bg-red-100 text-red-700',
-    faixa: 'bg-red-400',
+    badge: 'bg-terra-claro text-terra-escuro',
+    faixa: 'bg-terra',
     acao: '',
   },
 };

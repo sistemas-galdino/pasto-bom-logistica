@@ -76,6 +76,7 @@ interface ItemPedidoRow {
   qtd: number | string | null;
   valor_unit: number | string | null;
   total: number | string | null;
+  separado?: boolean | null;
 }
 
 /** Converte um valor numérico do Postgres (que pode vir como string) em number. */
@@ -93,6 +94,7 @@ function mapearItem(row: ItemPedidoRow): ItemPedido {
     qtd: num(row.qtd),
     valorUnit: num(row.valor_unit),
     total: num(row.total),
+    separado: row.separado === true,
   };
 }
 
@@ -129,7 +131,7 @@ const COLUNAS_PEDIDO =
   'data_agendada, data_entregue, criado_em, atualizado_em';
 
 const COLUNAS_ITEM =
-  'id, produto_codigo, nome_produto, qtd, valor_unit, total';
+  'id, produto_codigo, nome_produto, qtd, valor_unit, total, separado';
 
 /** Carrega um pedido + itens já mapeados; lança 404 se não existir. */
 export async function carregarPedido(pedidoId: string): Promise<Pedido> {
@@ -360,6 +362,19 @@ export async function aplicarTransicao(
     );
   }
 
+  // 2.1) RF-2.2: só libera para rota com a separação completa.
+  if (para === 'em_rota') {
+    const naoSeparados = pedidoAtual.itens.filter((i) => !i.separado);
+    if (pedidoAtual.itens.length > 0 && naoSeparados.length > 0) {
+      throw new TransicaoError(
+        422,
+        'separacao_incompleta',
+        `Separação incompleta: ${naoSeparados.length} de ${pedidoAtual.itens.length} ` +
+          `item(ns) ainda não separado(s).`,
+      );
+    }
+  }
+
   // 3) RF-1.8 + gravação de propriedade/data agendada.
   let propriedadeParaGravar = pedidoAtual.propriedadeCodigo;
 
@@ -442,6 +457,59 @@ export async function aplicarTransicao(
   }
 
   return pedidoAtualizado;
+}
+
+/**
+ * RF-2.2: marca/desmarca um item como separado. Só é permitido enquanto o
+ * pedido está 'pendente' ou 'agendada' (antes de liberar para rota). Devolve
+ * o pedido atualizado para a UI refletir o progresso na hora.
+ */
+export async function definirSeparacaoItem(args: {
+  pedidoId: string;
+  itemId: string;
+  separado: boolean;
+}): Promise<Pedido> {
+  const { pedidoId, itemId, separado } = args;
+  const pedido = await carregarPedido(pedidoId);
+
+  if (
+    pedido.statusLogistico !== 'pendente' &&
+    pedido.statusLogistico !== 'agendada'
+  ) {
+    throw new TransicaoError(
+      409,
+      'separacao_estado_invalido',
+      'A separação só pode ser ajustada em pedidos pendentes ou agendados.',
+    );
+  }
+
+  const item = pedido.itens.find((i) => i.id === itemId);
+  if (!item) {
+    throw new TransicaoError(
+      404,
+      'item_nao_encontrado',
+      'Item não encontrado neste pedido.',
+    );
+  }
+
+  const { error } = await supabase
+    .from('itens_pedido')
+    .update({
+      separado,
+      separado_em: separado ? new Date().toISOString() : null,
+    })
+    .eq('id', itemId)
+    .eq('pedido_id', pedidoId);
+
+  if (error) {
+    throw new TransicaoError(
+      500,
+      'erro_banco',
+      `Falha ao atualizar separação do item: ${error.message}`,
+    );
+  }
+
+  return carregarPedido(pedidoId);
 }
 
 /**

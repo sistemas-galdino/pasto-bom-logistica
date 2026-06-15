@@ -14,6 +14,8 @@ export interface ItemPedido {
   qtd: number;
   valorUnit: number;
   total: number;
+  /** RF-2.2: marca de separação de mercadoria (Fase 2). */
+  separado: boolean;
 }
 
 export interface Pedido {

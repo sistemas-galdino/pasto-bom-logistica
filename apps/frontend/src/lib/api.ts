@@ -117,6 +117,20 @@ export const api = {
     });
   },
 
+  /** RF-2.2: marca/desmarca um item como separado; devolve o pedido atualizado. */
+  async definirSeparacao(
+    pedidoId: string,
+    itemId: string,
+    separado: boolean,
+  ): Promise<Pedido> {
+    return request<Pedido>(
+      `/api/pedidos/${encodeURIComponent(pedidoId)}/itens/${encodeURIComponent(
+        itemId,
+      )}/separacao`,
+      { method: 'PATCH', body: { separado } },
+    );
+  },
+
   /** Propriedades de um cliente (para escolha na transição de agendamento). */
   async propriedadesDoCliente(
     clienteCodigo: string,

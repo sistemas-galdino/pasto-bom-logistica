@@ -1,4 +1,4 @@
-// Coluna do kanban: cabeçalho com faixa de cor + contador, e a lista de cartões.
+// Coluna do kanban: cabeçalho com ponto de cor + contador, e a lista de cartões.
 
 import React from 'react';
 import type { Pedido, StatusLogistico } from '@pastobom/shared';
@@ -9,38 +9,44 @@ interface Props {
   status: StatusLogistico;
   pedidos: Pedido[];
   podeEscrever: boolean;
+  podeSeparar: boolean;
   onTransicionar: (pedido: Pedido, para: StatusLogistico) => void;
+  onSeparar: (pedido: Pedido) => void;
 }
 
 export function KanbanColumn({
   status,
   pedidos,
   podeEscrever,
+  podeSeparar,
   onTransicionar,
+  onSeparar,
 }: Props): React.ReactElement {
   const meta = STATUS_META[status];
 
   return (
-    <section className="flex min-w-[260px] flex-1 flex-col rounded-2xl bg-slate-100/70">
-      <header className="sticky top-0 z-10 rounded-t-2xl bg-slate-100/95 px-3 pt-3 backdrop-blur">
+    <section className="flex min-w-[280px] max-w-[360px] flex-1 flex-col rounded-xl2 border border-linha/70 bg-creme-50/50">
+      <header className="sticky top-0 z-10 rounded-t-xl2 bg-creme-50/95 px-4 pt-3.5 backdrop-blur">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className={`h-2.5 w-2.5 rounded-full ${meta.faixa}`} />
-            <h2 className="text-sm font-semibold text-slate-700">
+            <h2 className="font-display text-[15px] font-semibold text-mata-escuro">
               {meta.rotulo}
             </h2>
           </div>
-          <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-slate-500">
+          <span className="rounded-full bg-papel px-2 py-0.5 text-xs font-semibold text-tinta-suave shadow-sm">
             {pedidos.length}
           </span>
         </div>
-        <div className={`mt-2 h-0.5 w-full rounded-full ${meta.faixa}`} />
+        <div
+          className={`mt-2.5 h-[3px] w-full rounded-full ${meta.faixa} opacity-70`}
+        />
       </header>
 
-      <div className="flex flex-1 flex-col gap-2.5 overflow-y-auto p-3">
+      <div className="scroll-suave flex flex-1 flex-col gap-3 overflow-y-auto p-3">
         {pedidos.length === 0 ? (
-          <p className="px-1 py-6 text-center text-xs text-slate-400">
-            Nenhum pedido.
+          <p className="px-1 py-10 text-center text-xs text-pedra">
+            Nenhum pedido aqui.
           </p>
         ) : (
           pedidos.map((p) => (
@@ -48,7 +54,9 @@ export function KanbanColumn({
               key={p.id}
               pedido={p}
               podeEscrever={podeEscrever}
+              podeSeparar={podeSeparar}
               onTransicionar={onTransicionar}
+              onSeparar={onSeparar}
             />
           ))
         )}

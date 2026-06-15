@@ -25,7 +25,7 @@ const queryClient = new QueryClient({
 
 function TelaCarregando(): React.ReactElement {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-slate-400">
+    <div className="flex min-h-screen items-center justify-center text-sm text-tinta-suave">
       Carregando…
     </div>
   );

@@ -18,6 +18,7 @@ import { log } from '../../log.js';
 import {
   aplicarTransicao,
   carregarPedido,
+  definirSeparacaoItem,
   mapearPedido,
   reenviarWhatsapp,
   TransicaoError,
@@ -51,6 +52,10 @@ const transicaoBodySchema = z.object({
 
 const reenviarBodySchema = z.object({
   template: z.string().min(1),
+});
+
+const separacaoBodySchema = z.object({
+  separado: z.boolean(),
 });
 
 // Status considerados "finalizados" (excluídos da listagem padrão).
@@ -91,6 +96,7 @@ interface PedidoRowLista {
         qtd: number | string | null;
         valor_unit: number | string | null;
         total: number | string | null;
+        separado?: boolean | null;
       }[]
     | null;
 }
@@ -100,7 +106,7 @@ const SELECT_LISTA =
   'cidade_cliente, vendedor_codigo, vendedor_nome, propriedade_codigo, ' +
   'valor_total, data_pedido, status_orix, status_orix_nome, status_logistico, ' +
   'data_agendada, data_entregue, criado_em, atualizado_em, ' +
-  'itens_pedido(id, produto_codigo, nome_produto, qtd, valor_unit, total)';
+  'itens_pedido(id, produto_codigo, nome_produto, qtd, valor_unit, total, separado)';
 
 function parseStatusQuery(raw: unknown): StatusLogistico[] | null {
   if (raw === undefined || raw === null || raw === '') return null;
@@ -117,6 +123,21 @@ function parseStatusQuery(raw: unknown): StatusLogistico[] | null {
 // ---------------------------------------------------------------------------
 // Plugin de rotas
 // ---------------------------------------------------------------------------
+
+/** 403 se o usuário autenticado não for logística (transições são restritas). */
+function exigirLogistica(
+  req: import('fastify').FastifyRequest,
+  reply: import('fastify').FastifyReply,
+): boolean {
+  if (req.usuario && req.usuario.papel !== 'logistica') {
+    reply.code(403).send({
+      error: 'sem_permissao',
+      message: 'Apenas a equipe de logística pode aplicar transições.',
+    });
+    return false;
+  }
+  return true;
+}
 
 export async function pedidosRoutes(app: FastifyInstance): Promise<void> {
   // GET /pedidos?status=pendente,agendada
@@ -159,6 +180,7 @@ export async function pedidosRoutes(app: FastifyInstance): Promise<void> {
   // POST /pedidos/:id/transicao
   app.post('/pedidos/:id/transicao', async (req, reply) => {
     const { id } = req.params as { id: string };
+    if (!exigirLogistica(req, reply)) return reply;
     const parsed = transicaoBodySchema.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({
@@ -179,6 +201,34 @@ export async function pedidosRoutes(app: FastifyInstance): Promise<void> {
       return reply.send(pedido);
     } catch (err) {
       return responderErro(reply, err, `[POST /pedidos/${id}/transicao]`);
+    }
+  });
+
+  // PATCH /pedidos/:id/itens/:itemId/separacao  (RF-2.2)
+  app.patch('/pedidos/:id/itens/:itemId/separacao', async (req, reply) => {
+    const { id, itemId } = req.params as { id: string; itemId: string };
+    const parsed = separacaoBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'body_invalido',
+        message: 'Informe separado: boolean.',
+        detalhes: parsed.error.issues,
+      });
+    }
+
+    try {
+      const pedido = await definirSeparacaoItem({
+        pedidoId: id,
+        itemId,
+        separado: parsed.data.separado,
+      });
+      return reply.send(pedido);
+    } catch (err) {
+      return responderErro(
+        reply,
+        err,
+        `[PATCH /pedidos/${id}/itens/${itemId}/separacao]`,
+      );
     }
   });
 
@@ -217,6 +267,7 @@ export async function pedidosRoutes(app: FastifyInstance): Promise<void> {
   // POST /pedidos/:id/reenviar-whatsapp
   app.post('/pedidos/:id/reenviar-whatsapp', async (req, reply) => {
     const { id } = req.params as { id: string };
+    if (!exigirLogistica(req, reply)) return reply;
     const parsed = reenviarBodySchema.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({
