@@ -98,7 +98,9 @@ sistema-logistica/
 
 ## Requisitos
 
-- **Node.js >= 20** (usa `fetch` nativo e `node --experimental-strip-types`).
+- **Node.js >= 20.18** (ou 22+) — o backend executa TypeScript direto via
+  `tsx` (`node --import tsx`), carrega o `.env` com `--env-file-if-exists` e usa
+  `fetch` nativo.
 - **npm >= 9** (workspaces).
 - Um **projeto Supabase** (Postgres + Auth) — para rodar a aplicação de fato.
 - Uma instância da **Evolution API v2** (WhatsApp) — opcional; sem ela o envio
@@ -275,18 +277,26 @@ Saída esperada: HTTP 200 no `/Login` com `valid:true`, registros em
 - **Migrations SQL** — schema, RLS e seeds escritos conforme o contrato (nomes
   de tabelas/colunas/enums exatos; templates PT-BR e listas de status semeadas).
 
-### Falta provisionar (não verificável neste ambiente)
+### Provisionado e verificado ao vivo (14/06/2026)
 
-- **Projeto Supabase** — não há instância provisionada aqui. As migrations
-  **não foram aplicadas** e o banco **não foi consultado**. Toda a camada de
-  persistência (upserts do worker, leituras/escritas da API, RLS, Auth) está
-  escrita contra o contrato, mas **não foi exercitada end-to-end**.
+- **Projeto Supabase** — provisionado (projeto "Pasto Bom",
+  `xphebokxfgmhbpspcuar`). As **4 migrations foram aplicadas** (`0001`–`0004`):
+  11 tabelas com RLS, função `papel_atual()` endurecida (advisor `anon`
+  resolvido) e `sync_state` semeado.
+- **Ingestão Órix → Supabase** — `pollOnce()` rodou contra a Órix real e a
+  janela de 30 dias gravou **34 pedidos / 56 itens / 28 clientes / 3
+  propriedades** (todos `pendente`), com 0 erros e idempotência confirmada.
+- **API HTTP** — `npm run dev:api` sobe limpo; `GET /api/health`, `/api/config`
+  e `/api/pedidos` (34 pedidos agrupados com itens) respondem corretamente.
+
+### Falta provisionar / executar
+
+- **Usuário de login (Auth + `profiles`)** — criar pelo painel do Supabase e
+  inserir a linha correspondente em `profiles` com o papel desejado.
+- **Frontend rodando** — `npm run dev --workspace apps/frontend` (depende apenas
+  do usuário de login para autenticar e exibir o quadro).
 - **Evolution API** — sem instância configurada; o envio de WhatsApp roda em
-  **dry-run**. O caminho real `POST /message/sendText` não foi exercitado.
-- **Execução da aplicação completa** — `npm run dev:api` e o frontend não foram
-  iniciados contra um Supabase real (dependem do provisionamento acima). O que
-  foi garantido é **compilação/typecheck limpos** e **wiring correto** entre os
-  módulos, além da **integração Órix viva**.
+  **dry-run**. O caminho real `POST /message/sendText` ainda não foi exercitado.
 - **Build de produção do frontend** (`vite build`) não foi executado (não
   requerido na Fase 1); apenas o typecheck (`tsc --noEmit` / `tsc -b`).
 
@@ -352,3 +362,10 @@ Saída esperada: HTTP 200 no `/Login` com `valid:true`, registros em
   backend/frontend. Em runtime, backend (`node --experimental-strip-types`) e
   frontend (Vite) também resolvem o shared como fonte. Esse foi o único ajuste
   estrutural de wiring necessário para zerar o typecheck.
+- O backend roda via **`tsx`** (`node --import tsx`). O `--experimental-strip-types`
+  nativo do Node **não** reescreve os specifiers `.js` (convenção NodeNext) para
+  os arquivos `.ts` reais, então `node --experimental-strip-types` falhava em
+  runtime com `ERR_MODULE_NOT_FOUND`. O `tsx` resolve `.js`→`.ts` de forma
+  transparente, mantém `--watch`/`--env-file-if-exists` e não exige reescrever
+  nenhum import. (Para produção, `npm run build` emite `dist/*.js` e `npm start`
+  roda com Node puro.)
