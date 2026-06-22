@@ -19,6 +19,7 @@
 
 import type { OrixClient } from '../orix/client.js';
 import type { OrixPedidoItem } from '@pastobom/shared';
+import { escolherNumeroWhatsApp } from '@pastobom/shared';
 import { supabase } from '../db/supabase.js';
 import { log } from '../log.js';
 
@@ -312,6 +313,16 @@ async function enriquecerCliente(
       err,
     );
   }
+
+  // Número canônico de WhatsApp (fonte única: @pastobom/shared) calculado já na
+  // ingestão. Grava o E.164 pronto p/ envio (ou null se não houver móvel) + a
+  // classificação, evitando reprocessar o número a cada disparo.
+  const whats = escolherNumeroWhatsApp(
+    typeof clienteRow.celular === 'string' ? clienteRow.celular : '',
+    typeof clienteRow.telefone === 'string' ? clienteRow.telefone : '',
+  );
+  clienteRow.numero_whatsapp = whats.e164;
+  clienteRow.whatsapp_tipo = whats.tipo;
 
   const { error: erroCli } = await supabase
     .from('clientes')

@@ -10,6 +10,8 @@
 // EVOLUTION_API_KEY) operamos em modo "dry-run": logamos e retornamos
 // { ok: false, ... } sem lançar.
 
+import { normalizarWhatsApp } from '@pastobom/shared';
+
 import { env } from '../config/env.js';
 import { log } from '../log.js';
 
@@ -17,61 +19,15 @@ import { log } from '../log.js';
 const TIMEOUT_MS = 15_000;
 
 /**
- * Normaliza um número de telefone brasileiro para o formato exigido pela
- * Evolution API: somente dígitos, com prefixo de país 55 + DDD + número.
+ * Normaliza um número brasileiro para o formato exigido pela Evolution API
+ * (somente dígitos "55DDD9XXXXXXXX"), ou null quando não há móvel alcançável.
  *
- * Regras:
- * - Remove tudo que não for dígito.
- * - Remove zeros de tronco / prefixo internacional ("00").
- * - Garante o código do país 55 (Brasil).
- * - Após o 55, exige DDD (2 dígitos) + assinante (8 ou 9 dígitos).
- *   Total esperado: 12 (fixo) ou 13 (celular com 9) dígitos.
- *
- * Retorna a string normalizada (ex.: "5535999998888") ou null se inválido.
- *
- * Exemplos:
- *   "(35) 99999-8888"        -> "5535999998888"
- *   "35 9999-8888"           -> "553599998888"
- *   "+55 (35) 99999-8888"    -> "5535999998888"
- *   "5535999998888"          -> "5535999998888"
- *   "0035 35 99999 8888"     -> "5535999998888"
+ * Mantida por compatibilidade com a assinatura histórica; delega para a FONTE
+ * ÚNICA de regra de número em @pastobom/shared (`normalizarWhatsApp`), que
+ * distingue móvel × fixo — fixo agora retorna null, pois não recebe WhatsApp.
  */
 export function normalizarNumeroBR(raw: string): string | null {
-  if (typeof raw !== 'string') return null;
-
-  // 1) Apenas dígitos.
-  let digitos = raw.replace(/\D+/g, '');
-  if (digitos.length === 0) return null;
-
-  // 2) Remove prefixo internacional de discagem "00" (ex.: "0055...").
-  while (digitos.startsWith('00')) {
-    digitos = digitos.slice(2);
-  }
-
-  // 3) Garante o código do país 55.
-  //    - Se já começa com 55 e o restante tem tamanho de número nacional
-  //      (10 ou 11 dígitos: DDD + 8/9), mantemos.
-  //    - Caso contrário, assumimos número nacional sem DDI e prefixamos 55.
-  if (digitos.startsWith('55') && (digitos.length === 12 || digitos.length === 13)) {
-    // já está em DDI + nacional
-  } else {
-    digitos = `55${digitos}`;
-  }
-
-  // 4) Valida o formato final: 55 + DDD(2) + assinante(8 ou 9).
-  const corpo = digitos.slice(2); // remove o "55"
-  // DDD válido brasileiro: começa em 1..9 no primeiro dígito (não há DDD com 0).
-  // corpo deve ter 10 (fixo: DDD + 8) ou 11 (celular: DDD + 9) dígitos.
-  if (corpo.length !== 10 && corpo.length !== 11) return null;
-
-  const ddd = corpo.slice(0, 2);
-  if (!/^[1-9][0-9]$/.test(ddd)) return null;
-
-  const assinante = corpo.slice(2);
-  // Celular (9 dígitos) deve iniciar com 9; fixo (8 dígitos) inicia 2..5/7.
-  if (assinante.length === 9 && !/^9/.test(assinante)) return null;
-
-  return digitos;
+  return normalizarWhatsApp(raw).e164;
 }
 
 /** Verifica se a integração Evolution está configurada (env completo). */

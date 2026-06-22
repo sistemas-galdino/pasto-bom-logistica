@@ -16,6 +16,7 @@
 import {
   podeTransicionar,
   templateDaTransicao,
+  escolherNumeroWhatsApp,
   type Pedido,
   type ItemPedido,
   type StatusLogistico,
@@ -24,7 +25,7 @@ import {
 
 import { supabase } from '../db/supabase.js';
 import { log } from '../log.js';
-import { enviarTexto, normalizarNumeroBR } from '../whatsapp/evolution.js';
+import { enviarTexto } from '../whatsapp/evolution.js';
 import { renderTemplate } from '../whatsapp/templates.js';
 
 /**
@@ -246,6 +247,8 @@ async function lerTemplates(): Promise<Record<string, string>> {
 interface ClienteContato {
   celular: string | null;
   telefone: string | null;
+  /** Número canônico de WhatsApp gravado na ingestão (E.164 dígitos) ou null. */
+  numeroWhatsapp: string | null;
 }
 
 /** Busca os campos de contato do cliente para o envio de WhatsApp. */
@@ -254,7 +257,7 @@ async function lerContatoCliente(
 ): Promise<ClienteContato | null> {
   const { data, error } = await supabase
     .from('clientes')
-    .select('celular, telefone')
+    .select('celular, telefone, numeroWhatsapp:numero_whatsapp')
     .eq('codigo', clienteCodigo)
     .maybeSingle<ClienteContato>();
 
@@ -265,6 +268,25 @@ async function lerContatoCliente(
     return null;
   }
   return data;
+}
+
+/**
+ * Resolve o número de WhatsApp a usar no envio: prefere o canônico já gravado
+ * na ingestão (clientes.numero_whatsapp) e cai para uma normalização defensiva
+ * em tempo de envio quando a coluna ainda não foi preenchida (cliente ingerido
+ * antes da migração 0007). Devolve o E.164 (dígitos) pronto p/ Evolution — ou
+ * null se não houver móvel — e o número bruto para a linha de auditoria.
+ */
+function resolverNumeroWhatsapp(contato: ClienteContato | null): {
+  numero: string | null;
+  numeroBruto: string;
+} {
+  const numeroBruto = contato?.celular || contato?.telefone || '';
+  let numero = contato?.numeroWhatsapp ?? null;
+  if (!numero && numeroBruto) {
+    numero = escolherNumeroWhatsApp(contato?.celular ?? '', contato?.telefone ?? '').e164;
+  }
+  return { numero, numeroBruto };
 }
 
 /** Formata uma data ISO (yyyy-mm-dd) para dd/mm/yyyy; devolve original se não casar. */
@@ -306,8 +328,7 @@ async function dispararWhatsapp(
   const corpo = renderTemplate(tpl, variaveisTemplate(pedido));
 
   const contato = await lerContatoCliente(pedido.clienteCodigo);
-  const numeroBruto = contato?.celular || contato?.telefone || '';
-  const numero = numeroBruto ? normalizarNumeroBR(numeroBruto) : null;
+  const { numero, numeroBruto } = resolverNumeroWhatsapp(contato);
 
   // Cria a linha SEMPRE (auditoria), mesmo quando o número é inválido.
   const { data: msgRow, error: errInsert } = await supabase
@@ -668,8 +689,7 @@ export async function reenviarWhatsapp(args: {
   const corpo = renderTemplate(tpl, variaveisTemplate(pedido));
 
   const contato = await lerContatoCliente(pedido.clienteCodigo);
-  const numeroBruto = contato?.celular || contato?.telefone || '';
-  const numero = numeroBruto ? normalizarNumeroBR(numeroBruto) : null;
+  const { numero, numeroBruto } = resolverNumeroWhatsapp(contato);
 
   const { data: msgRow, error: errInsert } = await supabase
     .from('mensagens_whatsapp')
