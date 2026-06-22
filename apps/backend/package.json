@@ -12,7 +12,8 @@
     "dev:worker": "node --import tsx --env-file-if-exists=.env --watch src/worker/scheduler.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "audit:contatos": "node --import tsx --env-file-if-exists=.env src/orix/auditoria-contatos.mjs"
   },
   "dependencies": {
     "@pastobom/shared": "*",
