@@ -19,6 +19,9 @@ const envSchema = z.object({
   EVOLUTION_URL: z.string().optional().default(''),
   EVOLUTION_INSTANCE: z.string().optional().default(''),
   EVOLUTION_API_KEY: z.string().optional().default(''),
+  // Modo teste: se preenchido, TODOS os envios de WhatsApp vão para este número
+  // (em vez do cliente). Vazio => comportamento normal.
+  WHATSAPP_NUMERO_TESTE: z.string().optional().default(''),
 
   // Worker / API
   POLL_CRON: z.string().min(1).default('*/5 * * * *'),

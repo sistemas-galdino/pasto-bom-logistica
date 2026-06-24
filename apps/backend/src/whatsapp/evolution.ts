@@ -57,7 +57,20 @@ export async function enviarTexto(args: {
   numero: string;
   texto: string;
 }): Promise<{ ok: boolean; status: number; resposta: unknown }> {
-  const { numero, texto } = args;
+  const { texto } = args;
+  let { numero } = args;
+
+  // MODO TESTE (trava final): se WHATSAPP_NUMERO_TESTE estiver setado, NENHUM
+  // número de cliente é discado — todo envio é redirecionado para o de teste.
+  if (env.WHATSAPP_NUMERO_TESTE) {
+    const teste =
+      normalizarWhatsApp(env.WHATSAPP_NUMERO_TESTE).e164 ??
+      env.WHATSAPP_NUMERO_TESTE.replace(/\D/g, '');
+    if (teste && teste !== numero) {
+      log.warn(`[whatsapp] MODO TESTE: redirecionando envio de ${numero} para ${teste}`);
+    }
+    numero = teste || numero;
+  }
 
   // Modo dry-run: configuração ausente.
   if (!evolutionConfigurada()) {

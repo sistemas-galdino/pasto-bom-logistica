@@ -18,12 +18,14 @@ import {
   podeReverter,
   templateDaTransicao,
   escolherNumeroWhatsApp,
+  normalizarWhatsApp,
   type Pedido,
   type ItemPedido,
   type StatusLogistico,
   type TemplateWhatsapp,
 } from '@pastobom/shared';
 
+import { env } from '../config/env.js';
 import { supabase } from '../db/supabase.js';
 import { log } from '../log.js';
 import { enviarTexto } from '../whatsapp/evolution.js';
@@ -283,6 +285,17 @@ function resolverNumeroWhatsapp(contato: ClienteContato | null): {
   numeroBruto: string;
 } {
   const numeroBruto = contato?.celular || contato?.telefone || '';
+
+  // MODO TESTE: redireciona TODOS os envios para um número fixo, ignorando o
+  // contato do cliente — inclusive quando o cliente não tem número válido (não
+  // cai na branch de "falha"). O cliente real (cliente_codigo) segue registrado.
+  if (env.WHATSAPP_NUMERO_TESTE) {
+    const teste =
+      normalizarWhatsApp(env.WHATSAPP_NUMERO_TESTE).e164 ??
+      env.WHATSAPP_NUMERO_TESTE.replace(/\D/g, '');
+    return { numero: teste, numeroBruto: numeroBruto || teste };
+  }
+
   let numero = contato?.numeroWhatsapp ?? null;
   if (!numero && numeroBruto) {
     numero = escolherNumeroWhatsApp(contato?.celular ?? '', contato?.telefone ?? '').e164;

@@ -16,6 +16,13 @@ import { startServer } from './api/server.js';
 async function main(): Promise<void> {
   log.info('Iniciando backend Pasto Bom...');
 
+  // Aviso de modo teste de WhatsApp (todos os envios redirecionados).
+  if (env.WHATSAPP_NUMERO_TESTE) {
+    log.warn(
+      `[whatsapp] MODO TESTE ativo: todos os envios serão redirecionados para ${env.WHATSAPP_NUMERO_TESTE}.`,
+    );
+  }
+
   // 1) Agendador do worker (poll Órix conforme POLL_CRON).
   startScheduler();
   log.info(`Agendador iniciado (POLL_CRON="${env.POLL_CRON}").`);
