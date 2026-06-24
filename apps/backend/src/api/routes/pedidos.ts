@@ -3,6 +3,7 @@
 //   GET  /api/pedidos?status=pendente,agendada   -> Pedido[]
 //   GET  /api/pedidos/:id                         -> Pedido
 //   POST /api/pedidos/:id/transicao               -> Pedido | 409 | 422
+//   POST /api/pedidos/:id/reverter                -> Pedido | 409 | 403  (logística)
 //   GET  /api/clientes/:codigo/propriedades       -> Propriedade[]
 //   POST /api/pedidos/:id/reenviar-whatsapp       -> { ok }
 //
@@ -29,6 +30,7 @@ import {
   definirSeparacaoItem,
   mapearPedido,
   reenviarWhatsapp,
+  reverterStatus,
   TransicaoError,
 } from '../../services/transitions.js';
 
@@ -62,6 +64,10 @@ const transicaoBodySchema = z.object({
 
 const reenviarBodySchema = z.object({
   template: z.string().min(1),
+});
+
+const reverterBodySchema = z.object({
+  para: statusEnum,
 });
 
 const separacaoBodySchema = z.object({
@@ -331,6 +337,32 @@ export async function pedidosRoutes(app: FastifyInstance): Promise<void> {
       return reply.send(pedido);
     } catch (err) {
       return responderErro(reply, err, `[POST /pedidos/${id}/transicao]`);
+    }
+  });
+
+  // POST /pedidos/:id/reverter  (voltar uma etapa — só logística)
+  app.post('/pedidos/:id/reverter', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!exigirLogistica(req, reply)) return reply;
+    const parsed = reverterBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'body_invalido',
+        message: 'Informe para: status de destino da reversão.',
+        detalhes: parsed.error.issues,
+      });
+    }
+
+    try {
+      const pedido = await reverterStatus({
+        pedidoId: id,
+        para: parsed.data.para,
+        atorUserId: req.usuario?.id ?? undefined,
+        atorPapel: req.usuario?.papel,
+      });
+      return reply.send(pedido);
+    } catch (err) {
+      return responderErro(reply, err, `[POST /pedidos/${id}/reverter]`);
     }
   });
 

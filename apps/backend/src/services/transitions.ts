@@ -15,6 +15,7 @@
 
 import {
   podeTransicionar,
+  podeReverter,
   templateDaTransicao,
   escolherNumeroWhatsApp,
   type Pedido,
@@ -556,6 +557,86 @@ export async function aplicarTransicao(
   }
 
   return pedidoAtualizado;
+}
+
+/**
+ * Reverte o status de um pedido UMA etapa para trás (apenas logística).
+ * Diferente de aplicarTransicao: NÃO dispara WhatsApp e limpa os campos que
+ * deixam de fazer sentido — o motorista ao sair da rota (em_rota->agendada) e a
+ * data agendada ao voltar para pendente. Registra o evento para auditoria.
+ */
+export async function reverterStatus(args: {
+  pedidoId: string;
+  para: StatusLogistico;
+  atorUserId?: string;
+  atorPapel?: AtorPapel;
+}): Promise<Pedido> {
+  const { pedidoId, para, atorUserId, atorPapel } = args;
+
+  // Só a logística reverte (a rota também protege com exigirLogistica).
+  if (atorPapel && atorPapel !== 'logistica') {
+    throw new TransicaoError(
+      403,
+      'sem_permissao',
+      'Apenas a logística pode reverter o status de um pedido.',
+    );
+  }
+
+  const pedidoAtual = await carregarPedido(pedidoId);
+  const de = pedidoAtual.statusLogistico;
+
+  if (!podeReverter(de, para)) {
+    throw new TransicaoError(
+      409,
+      'reversao_invalida',
+      `Reversão inválida: ${de} -> ${para}.`,
+    );
+  }
+
+  const agora = new Date().toISOString();
+  const patch: Record<string, unknown> = {
+    status_logistico: para,
+    atualizado_em: agora,
+  };
+  // Sair da rota desfaz o despacho: remove o motorista.
+  if (de === 'em_rota') {
+    patch.motorista_id = null;
+  }
+  // Voltar para pendente desfaz o agendamento: remove a data (e motorista, defensivo).
+  if (para === 'pendente') {
+    patch.data_agendada = null;
+    patch.motorista_id = null;
+  }
+
+  const { error: errUpdate } = await supabase
+    .from('pedidos')
+    .update(patch)
+    .eq('id', pedidoId);
+  if (errUpdate) {
+    throw new TransicaoError(
+      500,
+      'erro_banco',
+      `Falha ao reverter status do pedido: ${errUpdate.message}`,
+    );
+  }
+
+  // Registra o evento (auditoria); falha aqui não invalida o estado já gravado.
+  const { error: errEvento } = await supabase.from('eventos_status').insert({
+    pedido_id: pedidoId,
+    de_status: de,
+    para_status: para,
+    ator: atorUserId ? 'usuario' : 'sistema',
+    ator_user_id: atorUserId ?? null,
+  });
+  if (errEvento) {
+    log.error(
+      `[transitions] Falha ao registrar evento_status (reversão) do pedido ${pedidoId}:`,
+      errEvento.message,
+    );
+  }
+
+  // Sem disparo de WhatsApp na reversão.
+  return carregarPedido(pedidoId);
 }
 
 /**
