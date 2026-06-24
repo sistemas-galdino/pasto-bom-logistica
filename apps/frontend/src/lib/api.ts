@@ -14,6 +14,7 @@ import type {
   ConviteUsuarioResposta,
   LinkAcessoResposta,
   AtualizarUsuarioRequest,
+  PrevisaoClima,
 } from '@pastobom/shared';
 import { supabase } from './supabase';
 
@@ -172,6 +173,38 @@ export const api = {
   /** Configuração pública (status gatilho, templates). */
   async config(signal?: AbortSignal): Promise<ConfigResponse> {
     return request<ConfigResponse>('/api/config', { signal });
+  },
+
+  /**
+   * Previsão do clima do dia para UM pedido (preview do modal de agendar).
+   * `data` e `propriedadeCodigo` (ainda não salvos) sobrepõem os do pedido.
+   */
+  async climaPedido(
+    pedidoId: string,
+    data?: string,
+    propriedadeCodigo?: string,
+    signal?: AbortSignal,
+  ): Promise<PrevisaoClima> {
+    const params = new URLSearchParams();
+    if (data) params.set('data', data);
+    if (propriedadeCodigo) params.set('propriedadeCodigo', propriedadeCodigo);
+    const qs = params.toString();
+    return request<PrevisaoClima>(
+      `/api/clima/pedido/${encodeURIComponent(pedidoId)}${qs ? `?${qs}` : ''}`,
+      { signal },
+    );
+  },
+
+  /** Clima em lote (board/rota): mapa pedidoId -> previsão (ou null). */
+  async climaLote(
+    pedidoIds: string[],
+    signal?: AbortSignal,
+  ): Promise<Record<string, PrevisaoClima | null>> {
+    if (pedidoIds.length === 0) return {};
+    const qs = `?pedidos=${encodeURIComponent(pedidoIds.join(','))}`;
+    return request<Record<string, PrevisaoClima | null>>(`/api/clima${qs}`, {
+      signal,
+    });
   },
 
   /** Administração: lista todos os usuários do sistema (somente logística). */
