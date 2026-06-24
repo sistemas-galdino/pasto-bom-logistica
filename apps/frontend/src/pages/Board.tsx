@@ -16,6 +16,7 @@ import {
   type TransicaoSubmit,
 } from '../components/TransicaoModal';
 import { SeparacaoModal } from '../components/SeparacaoModal';
+import { ReverterModal } from '../components/ReverterModal';
 import { COLUNAS_KANBAN } from '../components/status';
 
 const TODOS_STATUS: StatusLogistico[] = [
@@ -45,6 +46,8 @@ export function Board(): React.ReactElement {
   const [erroModal, setErroModal] = useState<string | null>(null);
   const [separandoId, setSeparandoId] = useState<string | null>(null);
   const [erroSeparacao, setErroSeparacao] = useState<string | null>(null);
+  const [alvoReverter, setAlvoReverter] = useState<Alvo | null>(null);
+  const [erroReverter, setErroReverter] = useState<string | null>(null);
 
   const pedidosQuery = useQuery({
     queryKey: ['pedidos'],
@@ -81,6 +84,19 @@ export function Board(): React.ReactElement {
     },
     onError: (err) => {
       setErroSeparacao(mensagemDeErro(err, 'Falha ao atualizar a separação.'));
+    },
+  });
+
+  const reverterMutacao = useMutation({
+    mutationFn: ({ id, para }: { id: string; para: StatusLogistico }) =>
+      api.reverter(id, para),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['pedidos'] });
+      setAlvoReverter(null);
+      setErroReverter(null);
+    },
+    onError: (err) => {
+      setErroReverter(mensagemDeErro(err, 'Falha ao voltar o pedido.'));
     },
   });
 
@@ -139,6 +155,11 @@ export function Board(): React.ReactElement {
   function abrirSeparacao(pedido: Pedido) {
     setErroSeparacao(null);
     setSeparandoId(pedido.id);
+  }
+
+  function abrirReverter(pedido: Pedido, para: StatusLogistico) {
+    setErroReverter(null);
+    setAlvoReverter({ pedido, para });
   }
 
   function confirmar(args: TransicaoSubmit) {
@@ -247,6 +268,7 @@ export function Board(): React.ReactElement {
                 podeSeparar={podeSeparar}
                 onTransicionar={abrirTransicao}
                 onSeparar={abrirSeparacao}
+                onReverter={abrirReverter}
                 climaPorPedido={climaPorPedido}
               />
             ))}
@@ -286,6 +308,27 @@ export function Board(): React.ReactElement {
             if (!separacaoMutacao.isPending) {
               setSeparandoId(null);
               setErroSeparacao(null);
+            }
+          }}
+        />
+      )}
+
+      {alvoReverter && (
+        <ReverterModal
+          pedido={alvoReverter.pedido}
+          para={alvoReverter.para}
+          enviando={reverterMutacao.isPending}
+          erro={erroReverter}
+          onConfirmar={() =>
+            reverterMutacao.mutate({
+              id: alvoReverter.pedido.id,
+              para: alvoReverter.para,
+            })
+          }
+          onCancelar={() => {
+            if (!reverterMutacao.isPending) {
+              setAlvoReverter(null);
+              setErroReverter(null);
             }
           }}
         />

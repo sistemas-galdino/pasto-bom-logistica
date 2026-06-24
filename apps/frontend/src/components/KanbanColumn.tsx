@@ -12,6 +12,8 @@ interface Props {
   podeSeparar: boolean;
   onTransicionar: (pedido: Pedido, para: StatusLogistico) => void;
   onSeparar: (pedido: Pedido) => void;
+  /** Reverte o status uma etapa (voltar) — só logística. */
+  onReverter?: (pedido: Pedido, para: StatusLogistico) => void;
   /** Previsão por pedido (badge de clima no card). */
   climaPorPedido?: Record<string, PrevisaoClima | null>;
 }
@@ -23,6 +25,7 @@ export function KanbanColumn({
   podeSeparar,
   onTransicionar,
   onSeparar,
+  onReverter,
   climaPorPedido,
 }: Props): React.ReactElement {
   const meta = STATUS_META[status];
@@ -60,6 +63,7 @@ export function KanbanColumn({
               podeSeparar={podeSeparar}
               onTransicionar={onTransicionar}
               onSeparar={onSeparar}
+              onReverter={onReverter}
               clima={climaPorPedido?.[p.id]}
             />
           ))

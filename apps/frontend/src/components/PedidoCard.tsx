@@ -4,7 +4,7 @@
 
 import React from 'react';
 import type { Pedido, PrevisaoClima, StatusLogistico } from '@pastobom/shared';
-import { TRANSICOES } from '@pastobom/shared';
+import { TRANSICOES, REVERSOES } from '@pastobom/shared';
 import { formatarMoeda, formatarData, rotuloItens } from '../lib/format';
 import { STATUS_META } from './status';
 import { ClimaResumo } from './ClimaResumo';
@@ -15,6 +15,8 @@ interface Props {
   podeSeparar: boolean;
   onTransicionar: (pedido: Pedido, para: StatusLogistico) => void;
   onSeparar: (pedido: Pedido) => void;
+  /** Reverte o status uma etapa (voltar) — só logística. */
+  onReverter?: (pedido: Pedido, para: StatusLogistico) => void;
   /** Previsão do clima para a data agendada (badge ao lado da data). */
   clima?: PrevisaoClima | null;
 }
@@ -36,11 +38,14 @@ export function PedidoCard({
   podeSeparar,
   onTransicionar,
   onSeparar,
+  onReverter,
   clima,
 }: Props): React.ReactElement {
   const transicoes = TRANSICOES[pedido.statusLogistico];
   const avanco = transicoes.find((t) => t !== 'cancelada') ?? null;
   const podeCancelar = transicoes.includes('cancelada');
+  // Reversão de uma etapa (voltar): agendada->pendente, em_rota->agendada.
+  const reverso = REVERSOES[pedido.statusLogistico][0] ?? null;
 
   // RF-2.2: progresso da separação (apenas estados pré-rota).
   const tot = pedido.itens.length;
@@ -131,7 +136,8 @@ export function PedidoCard({
         )}
       </dl>
 
-      {(podeSeparar && mostrarSeparacao) || (podeEscrever && (avanco || podeCancelar)) ? (
+      {(podeSeparar && mostrarSeparacao) ||
+      (podeEscrever && (avanco || podeCancelar || reverso)) ? (
         <div className="mt-3 flex flex-col gap-2 border-t border-linha/70 pt-3">
           {podeSeparar && mostrarSeparacao && (
             <button
@@ -168,6 +174,16 @@ export function PedidoCard({
                 </button>
               )}
             </div>
+          )}
+
+          {podeEscrever && reverso && (
+            <button
+              type="button"
+              onClick={() => onReverter?.(pedido, reverso)}
+              className="self-start rounded-lg px-2.5 py-1.5 text-xs font-semibold text-tinta-suave transition hover:bg-creme-100 hover:text-tinta"
+            >
+              ← Voltar para {STATUS_META[reverso].rotulo}
+            </button>
           )}
         </div>
       ) : null}

@@ -8,6 +8,7 @@ import type {
   ConfigResponse,
   SyncStatusResponse,
   TransicaoRequest,
+  ReverterRequest,
   StatusLogistico,
   MotoristaResumo,
   UsuarioAdmin,
@@ -122,6 +123,14 @@ export const api = {
     return request<Pedido>(`/api/pedidos/${encodeURIComponent(id)}/transicao`, {
       method: 'POST',
       body,
+    });
+  },
+
+  /** Reverte o status uma etapa (logística); devolve o pedido atualizado. */
+  async reverter(id: string, para: StatusLogistico): Promise<Pedido> {
+    return request<Pedido>(`/api/pedidos/${encodeURIComponent(id)}/reverter`, {
+      method: 'POST',
+      body: { para } satisfies ReverterRequest,
     });
   },
 
