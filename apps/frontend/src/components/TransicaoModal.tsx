@@ -15,6 +15,7 @@ import type {
 } from '@pastobom/shared';
 import { api } from '../lib/api';
 import { STATUS_META } from './status';
+import { ClimaResumo } from './ClimaResumo';
 
 export interface TransicaoSubmit {
   para: StatusLogistico;
@@ -95,6 +96,21 @@ export function TransicaoModal({
   const [motoristaId, setMotoristaId] = useState<string>(
     pedido.motoristaId ?? '',
   );
+
+  // Previsão do clima para a data/propriedade escolhidas (preview do modal).
+  // Refaz quando a data ou a propriedade muda; clima muda devagar → staleTime alto.
+  const climaQuery = useQuery({
+    queryKey: ['clima', pedido.id, dataAgendada, propriedadeCodigo],
+    queryFn: ({ signal }) =>
+      api.climaPedido(
+        pedido.id,
+        dataAgendada,
+        propriedadeCodigo.trim() || undefined,
+        signal,
+      ),
+    enabled: ehAgendamento && dataAgendada.trim().length > 0,
+    staleTime: 30 * 60 * 1000,
+  });
 
   useEffect(() => {
     if (!ehAgendamento) return;
@@ -230,6 +246,15 @@ export function TransicaoModal({
                     onChange={(e) => setDataAgendada(e.target.value)}
                     className={inputCls}
                   />
+                  {dataAgendada.trim() && (
+                    <div className="mt-2">
+                      <ClimaResumo
+                        variant="completo"
+                        previsao={climaQuery.data}
+                        carregando={climaQuery.isLoading}
+                      />
+                    </div>
+                  )}
                 </div>
               </>
             )}
