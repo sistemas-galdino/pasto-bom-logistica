@@ -85,3 +85,62 @@ export interface Propriedade {
   latitude: string;
   longitude: string;
 }
+
+// ---------------------------------------------------------------------------
+// Administração de usuários (console da logística)
+// ---------------------------------------------------------------------------
+
+/** Papel/setor de um usuário do sistema (espelha profiles.papel). */
+export type PapelUsuario =
+  | 'logistica'
+  | 'almoxarifado'
+  | 'vendedor'
+  | 'motorista';
+
+/** Situação de acesso de um usuário no diretório administrativo. */
+export type StatusUsuario =
+  | 'ativo' // login habilitado e e-mail confirmado
+  | 'pendente' // convidado; ainda não definiu a senha / confirmou
+  | 'inativo'; // acesso bloqueado (banido)
+
+/** Usuário do sistema na visão do console de administração (logística). */
+export interface UsuarioAdmin {
+  id: string;
+  email: string;
+  /** Nome do perfil (profiles.nome); pode ser vazio. */
+  nome: string;
+  /** Papel do perfil; null se o usuário ainda não tem linha em profiles. */
+  papel: PapelUsuario | null;
+  status: StatusUsuario;
+  /** Último login (auth.users.last_sign_in_at); null se nunca acessou. */
+  ultimoAcesso: string | null;
+  /** Criação do usuário no Auth (auth.users.created_at). */
+  criadoEm: string;
+}
+
+/** Corpo do convite de um novo usuário por e-mail. */
+export interface ConviteUsuarioRequest {
+  email: string;
+  nome: string;
+  papel: PapelUsuario;
+}
+
+/** Atualização de papel e/ou nome de um usuário existente. */
+export interface AtualizarUsuarioRequest {
+  papel?: PapelUsuario;
+  nome?: string;
+}
+
+/**
+ * Resposta do convite: o usuário criado + o link de acesso a ser repassado
+ * (ex.: WhatsApp). O Supabase NÃO envia e-mail; quem entrega o link é a logística.
+ */
+export interface ConviteUsuarioResposta {
+  usuario: UsuarioAdmin;
+  link: string;
+}
+
+/** Resposta ao (re)gerar um link de acesso para um usuário já existente. */
+export interface LinkAcessoResposta {
+  link: string;
+}

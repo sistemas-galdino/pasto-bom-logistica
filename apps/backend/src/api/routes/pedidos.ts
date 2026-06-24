@@ -21,6 +21,7 @@ import type {
 
 import { supabase } from '../../db/supabase.js';
 import { log } from '../../log.js';
+import { exigirLogistica } from '../guards.js';
 import {
   aplicarTransicao,
   carregarPedido,
@@ -138,21 +139,6 @@ function parseStatusQuery(raw: unknown): StatusLogistico[] | null {
 // ---------------------------------------------------------------------------
 // Plugin de rotas
 // ---------------------------------------------------------------------------
-
-/** 403 se o usuário autenticado não for logística (rotas restritas). */
-function exigirLogistica(
-  req: import('fastify').FastifyRequest,
-  reply: import('fastify').FastifyReply,
-): boolean {
-  if (req.usuario && req.usuario.papel !== 'logistica') {
-    reply.code(403).send({
-      error: 'sem_permissao',
-      message: 'Apenas a equipe de logística pode executar esta ação.',
-    });
-    return false;
-  }
-  return true;
-}
 
 /**
  * 403 se não for logística nem motorista. A logística faz qualquer transição;

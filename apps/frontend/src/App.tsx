@@ -14,11 +14,13 @@ import {
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth, type Papel } from './auth/AuthProvider';
 import { Login } from './auth/Login';
+import { DefinirSenha } from './auth/DefinirSenha';
 import { AppShell } from './components/layout/AppShell';
 import { Board } from './pages/Board';
 import { Dashboard } from './pages/Dashboard';
 import { Rotas } from './pages/Rotas';
 import { Motoristas } from './pages/Motoristas';
+import { Usuarios } from './pages/Usuarios';
 import { RotaDoDia } from './pages/RotaDoDia';
 
 const queryClient = new QueryClient({
@@ -81,6 +83,17 @@ function SomenteMotorista({
   return children;
 }
 
+/** Restringe rotas administrativas ao papel 'logistica'. */
+function SomenteLogistica({
+  children,
+}: {
+  children: React.ReactElement;
+}): React.ReactElement {
+  const { papel } = useAuth();
+  if (papel && papel !== 'logistica') return <Navigate to="/dashboard" replace />;
+  return children;
+}
+
 /** Em /login, se já houver sessão, manda ao destino do papel. */
 function RotaLogin(): React.ReactElement {
   const { carregando, session, papel } = useAuth();
@@ -116,7 +129,16 @@ export function App(): React.ReactElement {
               <Route path="/entregas" element={<Board />} />
               <Route path="/rotas" element={<Rotas />} />
               <Route path="/motoristas" element={<Motoristas />} />
+              <Route
+                path="/usuarios"
+                element={
+                  <SomenteLogistica>
+                    <Usuarios />
+                  </SomenteLogistica>
+                }
+              />
             </Route>
+            <Route path="/definir-senha" element={<DefinirSenha />} />
             <Route path="/board" element={<Navigate to="/entregas" replace />} />
             <Route
               path="/rota"

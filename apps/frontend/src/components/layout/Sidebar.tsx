@@ -50,9 +50,11 @@ export function Sidebar({
         </button>
       </div>
 
-      {/* Navegação por seções */}
+      {/* Navegação por seções (seções com `papeis` só aparecem ao papel certo) */}
       <nav className="scroll-suave flex-1 overflow-y-auto px-3 py-2">
-        {NAV_SECTIONS.map((secao) => (
+        {NAV_SECTIONS.filter(
+          (s) => !s.papeis || (papel != null && s.papeis.includes(papel)),
+        ).map((secao) => (
           <div key={secao.titulo} className="mb-4">
             {!collapsed && (
               <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-creme-100/50">

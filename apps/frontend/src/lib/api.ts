@@ -9,6 +9,11 @@ import type {
   TransicaoRequest,
   StatusLogistico,
   MotoristaResumo,
+  UsuarioAdmin,
+  ConviteUsuarioRequest,
+  ConviteUsuarioResposta,
+  LinkAcessoResposta,
+  AtualizarUsuarioRequest,
 } from '@pastobom/shared';
 import { supabase } from './supabase';
 
@@ -167,5 +172,50 @@ export const api = {
   /** Configuração pública (status gatilho, templates). */
   async config(signal?: AbortSignal): Promise<ConfigResponse> {
     return request<ConfigResponse>('/api/config', { signal });
+  },
+
+  /** Administração: lista todos os usuários do sistema (somente logística). */
+  async listarUsuarios(signal?: AbortSignal): Promise<UsuarioAdmin[]> {
+    return request<UsuarioAdmin[]>('/api/usuarios', { signal });
+  },
+
+  /** Administração: gera o link de acesso de um novo usuário (não envia e-mail). */
+  async convidarUsuario(
+    body: ConviteUsuarioRequest,
+  ): Promise<ConviteUsuarioResposta> {
+    return request<ConviteUsuarioResposta>('/api/usuarios/convite', {
+      method: 'POST',
+      body,
+    });
+  },
+
+  /** Administração: atualiza papel e/ou nome de um usuário existente. */
+  async atualizarUsuario(
+    id: string,
+    body: AtualizarUsuarioRequest,
+  ): Promise<UsuarioAdmin> {
+    return request<UsuarioAdmin>(`/api/usuarios/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body,
+    });
+  },
+
+  /** Administração: ativa (true) ou desativa (false) o acesso de um usuário. */
+  async definirStatusUsuario(
+    id: string,
+    ativo: boolean,
+  ): Promise<UsuarioAdmin> {
+    return request<UsuarioAdmin>(
+      `/api/usuarios/${encodeURIComponent(id)}/status`,
+      { method: 'PATCH', body: { ativo } },
+    );
+  },
+
+  /** Administração: (re)gera um link de acesso para um usuário existente. */
+  async regenerarLink(id: string): Promise<LinkAcessoResposta> {
+    return request<LinkAcessoResposta>(
+      `/api/usuarios/${encodeURIComponent(id)}/link`,
+      { method: 'POST' },
+    );
   },
 };
