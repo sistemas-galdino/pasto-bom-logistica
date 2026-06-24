@@ -4,6 +4,7 @@ import React from 'react';
 import { useAuth } from '../auth/AuthProvider';
 import { PAPEL_ROTULO, PAPEL_BADGE, PAPEL_ACESSO } from '../lib/papeis';
 import { Marca } from './Marca';
+import { StatusSincronizacao } from './StatusSincronizacao';
 
 export function Header(): React.ReactElement {
   const { user, papel, sair } = useAuth();
@@ -24,6 +25,7 @@ export function Header(): React.ReactElement {
         </div>
 
         <div className="flex items-center gap-3">
+          <StatusSincronizacao />
           <div className="hidden text-right sm:block">
             <p className="text-xs font-semibold text-tinta">
               {user?.email ?? '—'}

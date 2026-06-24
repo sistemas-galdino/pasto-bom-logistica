@@ -35,3 +35,23 @@ export function formatarData(iso: string | null | undefined): string {
 export function rotuloItens(n: number): string {
   return n === 1 ? '1 item' : `${n} itens`;
 }
+
+/**
+ * Tempo relativo curto em PT-BR a partir de um timestamp ISO:
+ * "agora", "há N min", "há N h", "há N d". Datas com mais de ~7 dias caem
+ * em formatarData (dd/mm/aaaa). Entrada nula/ inválida → "—".
+ */
+export function tempoRelativo(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const ms = new Date(iso).getTime();
+  if (Number.isNaN(ms)) return '—';
+  const diff = Date.now() - ms;
+  if (diff < 60_000) return 'agora';
+  const min = Math.floor(diff / 60_000);
+  if (min < 60) return `há ${min} min`;
+  const horas = Math.floor(min / 60);
+  if (horas < 24) return `há ${horas} h`;
+  const dias = Math.floor(horas / 24);
+  if (dias <= 7) return `há ${dias} d`;
+  return formatarData(iso);
+}

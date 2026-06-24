@@ -6,6 +6,7 @@ import type {
   Pedido,
   Propriedade,
   ConfigResponse,
+  SyncStatusResponse,
   TransicaoRequest,
   StatusLogistico,
   MotoristaResumo,
@@ -173,6 +174,11 @@ export const api = {
   /** Configuração pública (status gatilho, templates). */
   async config(signal?: AbortSignal): Promise<ConfigResponse> {
     return request<ConfigResponse>('/api/config', { signal });
+  },
+
+  /** Última sincronização com o Órix (heartbeat do worker de poll). */
+  async statusSync(signal?: AbortSignal): Promise<SyncStatusResponse> {
+    return request<SyncStatusResponse>('/api/sync', { signal });
   },
 
   /**
