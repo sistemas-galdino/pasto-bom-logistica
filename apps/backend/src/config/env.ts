@@ -21,7 +21,7 @@ const envSchema = z.object({
   EVOLUTION_API_KEY: z.string().optional().default(''),
 
   // Worker / API
-  POLL_CRON: z.string().min(1).default('*/30 * * * *'),
+  POLL_CRON: z.string().min(1).default('*/5 * * * *'),
   API_PORT: z.coerce.number().int().positive().default(3333),
   // URL do frontend — usada no link de convite por e-mail (definir senha).
   APP_URL: z.string().url().default('http://localhost:5173'),
