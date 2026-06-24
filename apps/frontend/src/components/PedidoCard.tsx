@@ -3,10 +3,11 @@
 // papel, as ações de transição (logística) e de separar (logística/almoxarifado).
 
 import React from 'react';
-import type { Pedido, StatusLogistico } from '@pastobom/shared';
+import type { Pedido, PrevisaoClima, StatusLogistico } from '@pastobom/shared';
 import { TRANSICOES } from '@pastobom/shared';
 import { formatarMoeda, formatarData, rotuloItens } from '../lib/format';
 import { STATUS_META } from './status';
+import { ClimaResumo } from './ClimaResumo';
 
 interface Props {
   pedido: Pedido;
@@ -14,6 +15,8 @@ interface Props {
   podeSeparar: boolean;
   onTransicionar: (pedido: Pedido, para: StatusLogistico) => void;
   onSeparar: (pedido: Pedido) => void;
+  /** Previsão do clima para a data agendada (badge ao lado da data). */
+  clima?: PrevisaoClima | null;
 }
 
 function IconePin(): React.ReactElement {
@@ -33,6 +36,7 @@ export function PedidoCard({
   podeSeparar,
   onTransicionar,
   onSeparar,
+  clima,
 }: Props): React.ReactElement {
   const transicoes = TRANSICOES[pedido.statusLogistico];
   const avanco = transicoes.find((t) => t !== 'cancelada') ?? null;
@@ -111,8 +115,9 @@ export function PedidoCard({
         {pedido.dataAgendada && (
           <div className="flex justify-between gap-2">
             <dt>Agendada</dt>
-            <dd className="text-right text-tinta">
-              {formatarData(pedido.dataAgendada)}
+            <dd className="flex items-center justify-end gap-2 text-right text-tinta">
+              <ClimaResumo variant="badge" previsao={clima} />
+              <span>{formatarData(pedido.dataAgendada)}</span>
             </dd>
           </div>
         )}

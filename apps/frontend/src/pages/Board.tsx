@@ -86,6 +86,32 @@ export function Board(): React.ReactElement {
 
   const pedidos = useMemo(() => pedidosQuery.data ?? [], [pedidosQuery.data]);
 
+  // Clima das entregas futuras (agendada/em_rota com data) — busca em lote.
+  const idsClima = useMemo(
+    () =>
+      pedidos
+        .filter(
+          (p) =>
+            p.dataAgendada &&
+            (p.statusLogistico === 'agendada' ||
+              p.statusLogistico === 'em_rota'),
+        )
+        .map((p) => p.id),
+    [pedidos],
+  );
+  const idsClimaKey = useMemo(
+    () => idsClima.slice().sort().join(','),
+    [idsClima],
+  );
+  const climaQuery = useQuery({
+    queryKey: ['clima-lote', idsClimaKey],
+    queryFn: ({ signal }) => api.climaLote(idsClima, signal),
+    enabled: idsClima.length > 0,
+    staleTime: 30 * 60 * 1000,
+    refetchInterval: 30 * 60 * 1000,
+  });
+  const climaPorPedido = climaQuery.data ?? {};
+
   const porStatus = useMemo(() => {
     const mapa: Record<StatusLogistico, Pedido[]> = {
       pendente: [],
@@ -221,6 +247,7 @@ export function Board(): React.ReactElement {
                 podeSeparar={podeSeparar}
                 onTransicionar={abrirTransicao}
                 onSeparar={abrirSeparacao}
+                climaPorPedido={climaPorPedido}
               />
             ))}
           </div>

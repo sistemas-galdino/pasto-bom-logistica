@@ -1,7 +1,7 @@
 // Coluna do kanban: cabeçalho com ponto de cor + contador, e a lista de cartões.
 
 import React from 'react';
-import type { Pedido, StatusLogistico } from '@pastobom/shared';
+import type { Pedido, PrevisaoClima, StatusLogistico } from '@pastobom/shared';
 import { PedidoCard } from './PedidoCard';
 import { STATUS_META } from './status';
 
@@ -12,6 +12,8 @@ interface Props {
   podeSeparar: boolean;
   onTransicionar: (pedido: Pedido, para: StatusLogistico) => void;
   onSeparar: (pedido: Pedido) => void;
+  /** Previsão por pedido (badge de clima no card). */
+  climaPorPedido?: Record<string, PrevisaoClima | null>;
 }
 
 export function KanbanColumn({
@@ -21,6 +23,7 @@ export function KanbanColumn({
   podeSeparar,
   onTransicionar,
   onSeparar,
+  climaPorPedido,
 }: Props): React.ReactElement {
   const meta = STATUS_META[status];
 
@@ -57,6 +60,7 @@ export function KanbanColumn({
               podeSeparar={podeSeparar}
               onTransicionar={onTransicionar}
               onSeparar={onSeparar}
+              clima={climaPorPedido?.[p.id]}
             />
           ))
         )}
