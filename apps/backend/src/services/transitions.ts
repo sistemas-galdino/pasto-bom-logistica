@@ -252,6 +252,8 @@ interface ClienteContato {
   telefone: string | null;
   /** Número canônico de WhatsApp gravado na ingestão (E.164 dígitos) ou null. */
   numeroWhatsapp: string | null;
+  /** CPF (11 díg.) ou CNPJ (14 díg.) — distingue pessoa física × empresa. */
+  cpfCnpj: string | null;
 }
 
 /** Busca os campos de contato do cliente para o envio de WhatsApp. */
@@ -260,7 +262,7 @@ async function lerContatoCliente(
 ): Promise<ClienteContato | null> {
   const { data, error } = await supabase
     .from('clientes')
-    .select('celular, telefone, numeroWhatsapp:numero_whatsapp')
+    .select('celular, telefone, numeroWhatsapp:numero_whatsapp, cpfCnpj:cpf_cnpj')
     .eq('codigo', clienteCodigo)
     .maybeSingle<ClienteContato>();
 
@@ -322,10 +324,66 @@ function primeiroNomeProprio(nomeCompleto: string): string {
   return primeiro.charAt(0).toUpperCase() + primeiro.slice(1).toLowerCase();
 }
 
+/** Conectores que ficam minúsculos no nome de empresa em Título. */
+const CONECTORES_NOME = new Set(['de', 'da', 'do', 'dos', 'das', 'e', 'di', 'du']);
+/** Sufixos jurídicos removidos do fim do nome da empresa. */
+const SUFIXOS_PJ = new Set([
+  'ltda',
+  's/a',
+  'sa',
+  's.a',
+  'me',
+  'epp',
+  'eireli',
+  'mei',
+  'cia',
+  'ei',
+]);
+
+/**
+ * Nome de empresa em Caixa de Título, sem o sufixo jurídico:
+ * "PASTO BOM GESTAO DE NEGOCIOS S/A" -> "Pasto Bom Gestao de Negocios".
+ */
+function tituloEmpresa(nome: string): string {
+  let palavras = nome.trim().split(/\s+/).filter(Boolean);
+  while (palavras.length > 1) {
+    const ultima = (palavras[palavras.length - 1] ?? '')
+      .toLowerCase()
+      .replace(/\.$/, '');
+    if (SUFIXOS_PJ.has(ultima)) palavras = palavras.slice(0, -1);
+    else break;
+  }
+  return palavras
+    .map((p, i) => {
+      const baixa = p.toLowerCase();
+      if (i > 0 && CONECTORES_NOME.has(baixa)) return baixa;
+      return baixa.charAt(0).toUpperCase() + baixa.slice(1);
+    })
+    .join(' ');
+}
+
+/**
+ * Nome para a saudação do WhatsApp: pessoa física (CPF) -> primeiro nome;
+ * empresa (CNPJ, 14 dígitos) -> nome completo em Título sem sufixo jurídico.
+ */
+function nomeParaSaudacao(
+  nomeLegal: string,
+  cpfCnpj: string | null | undefined,
+): string {
+  const digitos = (cpfCnpj ?? '').replace(/\D/g, '');
+  if (digitos.length === 14) {
+    return tituloEmpresa(nomeLegal) || primeiroNomeProprio(nomeLegal);
+  }
+  return primeiroNomeProprio(nomeLegal);
+}
+
 /** Monta as variáveis usadas na renderização dos templates de transição. */
-function variaveisTemplate(pedido: Pedido): Record<string, string> {
+function variaveisTemplate(
+  pedido: Pedido,
+  nomeSaudacao?: string,
+): Record<string, string> {
   return {
-    nome_cliente: primeiroNomeProprio(pedido.clienteNome),
+    nome_cliente: nomeSaudacao ?? primeiroNomeProprio(pedido.clienteNome),
     numero: pedido.orixNumero || pedido.orixIdPedido,
     data_agendada: formatarDataBR(pedido.dataAgendada),
     propriedade: pedido.propriedadeCodigo ?? '',
@@ -350,9 +408,12 @@ async function dispararWhatsapp(
     return;
   }
 
-  const corpo = renderTemplate(tpl, variaveisTemplate(pedido));
-
   const contato = await lerContatoCliente(pedido.clienteCodigo);
+  const corpo = renderTemplate(
+    tpl,
+    variaveisTemplate(pedido, nomeParaSaudacao(pedido.clienteNome, contato?.cpfCnpj)),
+  );
+
   const { numero, numeroBruto } = resolverNumeroWhatsapp(contato);
 
   // Cria a linha SEMPRE (auditoria), mesmo quando o número é inválido.
@@ -791,9 +852,12 @@ export async function reenviarWhatsapp(args: {
     );
   }
 
-  const corpo = renderTemplate(tpl, variaveisTemplate(pedido));
-
   const contato = await lerContatoCliente(pedido.clienteCodigo);
+  const corpo = renderTemplate(
+    tpl,
+    variaveisTemplate(pedido, nomeParaSaudacao(pedido.clienteNome, contato?.cpfCnpj)),
+  );
+
   const { numero, numeroBruto } = resolverNumeroWhatsapp(contato);
 
   const { data: msgRow, error: errInsert } = await supabase
