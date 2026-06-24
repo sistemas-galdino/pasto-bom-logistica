@@ -5,6 +5,7 @@ import React from 'react';
 import { useLocation } from 'react-router-dom';
 import { Bell, Menu } from 'lucide-react';
 import { ROTAS_META } from './navConfig';
+import { StatusSincronizacao } from '../StatusSincronizacao';
 
 interface TopbarProps {
   onOpenMenu: () => void;
@@ -46,6 +47,7 @@ export function Topbar({ onOpenMenu }: TopbarProps): React.ReactElement {
           </span>
           Sistema Operacional
         </span>
+        <StatusSincronizacao />
         <button
           type="button"
           aria-label="Notificações"
