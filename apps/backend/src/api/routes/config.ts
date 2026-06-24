@@ -1,12 +1,13 @@
 // [AGENTE API] Rota de configuração pública para o frontend.
 //
 //   GET /api/config -> ConfigResponse { statusGatilho, templates }
+//   GET /api/sync   -> SyncStatusResponse { ultimoSucesso, sucesso, pedidos }
 //
-// Os valores vêm de sync_state (chaves 'status_gatilho' e 'templates').
+// Os valores vêm de sync_state (chaves 'status_gatilho', 'templates', 'sync_status').
 
 import type { FastifyInstance } from 'fastify';
 
-import type { ConfigResponse } from '@pastobom/shared';
+import type { ConfigResponse, SyncStatusResponse } from '@pastobom/shared';
 
 import { supabase } from '../../db/supabase.js';
 import { log } from '../../log.js';
@@ -35,6 +36,22 @@ export async function configRoutes(app: FastifyInstance): Promise<void> {
     );
 
     const resposta: ConfigResponse = { statusGatilho, templates };
+    return reply.send(resposta);
+  });
+
+  // GET /sync — última sincronização com o Órix (heartbeat do worker).
+  app.get('/sync', async (_req, reply) => {
+    const s = await lerSyncState<{
+      ultimoSucesso?: string | null;
+      sucesso?: boolean;
+      pedidos?: number | null;
+    }>('sync_status', {});
+
+    const resposta: SyncStatusResponse = {
+      ultimoSucesso: s.ultimoSucesso ?? null,
+      sucesso: s.sucesso ?? false,
+      pedidos: s.pedidos ?? null,
+    };
     return reply.send(resposta);
   });
 }

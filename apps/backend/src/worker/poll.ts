@@ -270,3 +270,32 @@ export async function pollOnce(): Promise<ResultadoPoll> {
     pedidos: totalPedidos,
   };
 }
+
+/**
+ * Grava um "heartbeat" de sincronização em sync_state (chave 'sync_status'),
+ * chamado ao fim de TODO tick (sucesso ou falha contida). Preserva o timestamp
+ * do último tick BEM-SUCEDIDO (ultimoSucesso) quando a tentativa atual falha,
+ * para que a UI mostre "atualizado há X" baseado no último sucesso real.
+ * Read-modify-write é seguro: há um único worker e o scheduler não sobrepõe ticks.
+ */
+export async function registrarSincronizacao(
+  resultado: ResultadoPoll,
+): Promise<void> {
+  const agora = new Date().toISOString();
+  const anterior = await lerSyncState<{ ultimoSucesso?: string | null }>(
+    'sync_status',
+  );
+  const valor = {
+    ultimoSucesso: resultado.ok ? agora : (anterior?.ultimoSucesso ?? null),
+    ultimoTick: agora,
+    sucesso: resultado.ok,
+    pedidos: resultado.pedidos,
+  };
+  const { error } = await supabase.from('sync_state').upsert(
+    { chave: 'sync_status', valor, atualizado_em: agora },
+    { onConflict: 'chave' },
+  );
+  if (error) {
+    log.warn(`[poll] Falha ao gravar sync_status: ${error.message}`);
+  }
+}

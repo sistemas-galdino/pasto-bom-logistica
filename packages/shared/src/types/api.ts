@@ -18,6 +18,15 @@ export interface ConfigResponse {
   templates: Record<string, string>;
 }
 
+export interface SyncStatusResponse {
+  /** ISO do último tick de poll BEM-SUCEDIDO (null antes da 1ª sincronização). */
+  ultimoSucesso: string | null;
+  /** A última tentativa de poll teve sucesso? (false => Órix instável/fora do ar). */
+  sucesso: boolean;
+  /** Pedidos processados no último tick (null se nunca sincronizou). */
+  pedidos: number | null;
+}
+
 export interface ListaPedidosQuery {
   status?: StatusLogistico[];
 }

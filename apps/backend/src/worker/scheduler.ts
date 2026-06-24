@@ -1,6 +1,6 @@
 // [AGENTE WORKER] Agendador do polling com node-cron.
 //
-// - start(): registra o cron com a expressão POLL_CRON (default "*/30 * * * *")
+// - start(): registra o cron com a expressão POLL_CRON (default "*/5 * * * *")
 //   e dispara pollOnce() a cada tick.
 // - Reexporta pollOnce para uso manual (CLI/integração/teste).
 //
@@ -12,7 +12,7 @@
 //    intervalo do cron, o próximo é ignorado até o atual terminar).
 
 import cron from 'node-cron';
-import { pollOnce } from './poll.js';
+import { pollOnce, registrarSincronizacao } from './poll.js';
 import { env } from '../config/env.js';
 import { log } from '../log.js';
 
@@ -30,10 +30,18 @@ async function tickProtegido(): Promise<void> {
   }
   executando = true;
   try {
-    await pollOnce();
+    const resultado = await pollOnce();
+    await registrarSincronizacao(resultado);
   } catch (err) {
     // pollOnce não deveria lançar, mas garantimos a contenção aqui.
     log.error('[scheduler] Erro inesperado no tick de polling (contido):', err);
+    // Registra a falha no heartbeat (sem deixar um erro aqui derrubar o tick).
+    await registrarSincronizacao({
+      ok: false,
+      janelas: 0,
+      itens: 0,
+      pedidos: 0,
+    }).catch(() => {});
   } finally {
     executando = false;
   }
