@@ -5,11 +5,12 @@
 // opcional). Mobile-first, no visual "Campo Claro". O backend é a fonte de
 // verdade: a confirmação só vale para os próprios pedidos do motorista.
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Pedido } from '@pastobom/shared';
 import { api, ApiError } from '../lib/api';
 import { Header } from '../components/Header';
+import { ClimaResumo } from '../components/ClimaResumo';
 import { formatarMoeda, rotuloItens } from '../lib/format';
 import { linkGoogleMaps } from '../lib/maps';
 
@@ -95,6 +96,23 @@ export function RotaDoDia(): React.ReactElement {
 
   const pedidos = rotaQuery.data ?? [];
 
+  // Clima por parada da rota (entregas em rota têm data agendada).
+  const idsClima = useMemo(
+    () => pedidos.filter((p) => p.dataAgendada).map((p) => p.id),
+    [pedidos],
+  );
+  const idsClimaKey = useMemo(
+    () => idsClima.slice().sort().join(','),
+    [idsClima],
+  );
+  const climaQuery = useQuery({
+    queryKey: ['clima-rota', idsClimaKey],
+    queryFn: ({ signal }) => api.climaLote(idsClima, signal),
+    enabled: idsClima.length > 0,
+    staleTime: 30 * 60 * 1000,
+  });
+  const climaPorPedido = climaQuery.data ?? {};
+
   function abrirConfirmacao(p: Pedido) {
     setObservacao('');
     setErroModal(null);
@@ -172,6 +190,12 @@ export function RotaDoDia(): React.ReactElement {
                     <IconePin />
                     <span>{enderecoDoPedido(p)}</span>
                   </p>
+
+                  {climaPorPedido[p.id]?.disponivel && (
+                    <div className="mt-1.5 pl-5">
+                      <ClimaResumo variant="badge" previsao={climaPorPedido[p.id]} />
+                    </div>
+                  )}
 
                   <div className="mt-2 flex items-center justify-between text-xs text-tinta-suave">
                     <span>{rotuloItens(p.itens.length)}</span>
