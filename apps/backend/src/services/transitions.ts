@@ -311,10 +311,21 @@ function formatarDataBR(iso: string | null): string {
   return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
+/**
+ * Primeiro nome com inicial maiúscula, para a saudação do WhatsApp.
+ * O Órix devolve o nome todo em CAIXA ALTA (ex.: "GABRIEL SERGIO GRACIANI");
+ * aqui viramos só "Gabriel". Não afeta o nome exibido no sistema.
+ */
+function primeiroNomeProprio(nomeCompleto: string): string {
+  const primeiro = nomeCompleto.trim().split(/\s+/)[0] ?? '';
+  if (!primeiro) return '';
+  return primeiro.charAt(0).toUpperCase() + primeiro.slice(1).toLowerCase();
+}
+
 /** Monta as variáveis usadas na renderização dos templates de transição. */
 function variaveisTemplate(pedido: Pedido): Record<string, string> {
   return {
-    nome_cliente: pedido.clienteNome,
+    nome_cliente: primeiroNomeProprio(pedido.clienteNome),
     numero: pedido.orixNumero || pedido.orixIdPedido,
     data_agendada: formatarDataBR(pedido.dataAgendada),
     propriedade: pedido.propriedadeCodigo ?? '',
