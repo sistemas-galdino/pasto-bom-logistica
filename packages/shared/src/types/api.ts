@@ -18,6 +18,11 @@ export interface ConfigResponse {
   templates: Record<string, string>;
 }
 
+/** Reversão de status (voltar uma etapa) — `para` deve casar com REVERSOES[de]. */
+export interface ReverterRequest {
+  para: StatusLogistico;
+}
+
 export interface SyncStatusResponse {
   /** ISO do último tick de poll BEM-SUCEDIDO (null antes da 1ª sincronização). */
   ultimoSucesso: string | null;

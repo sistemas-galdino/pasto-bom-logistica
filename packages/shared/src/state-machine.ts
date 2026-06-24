@@ -27,6 +27,31 @@ export function podeTransicionar(
 }
 
 /**
+ * Reversões permitidas (voltar UMA etapa) — exclusivas da logística e SEM
+ * disparo de WhatsApp. Mapa separado de TRANSICOES para não interferir na
+ * lógica do botão de avançar. Estados finais (entregue/cancelada) não voltam.
+ *   agendada -> pendente  (desfaz o agendamento)
+ *   em_rota  -> agendada  (desfaz o despacho)
+ */
+export const REVERSOES: Record<StatusLogistico, StatusLogistico[]> = {
+  pendente: [],
+  agendada: ['pendente'],
+  em_rota: ['agendada'],
+  entregue: [],
+  cancelada: [],
+};
+
+/**
+ * Indica se a reversão `de` -> `para` é permitida segundo REVERSOES.
+ */
+export function podeReverter(
+  de: StatusLogistico,
+  para: StatusLogistico,
+): boolean {
+  return REVERSOES[de].includes(para);
+}
+
+/**
  * Template de WhatsApp disparado por uma transição (ou null se nenhum).
  */
 export type TemplateWhatsapp = 'agendamento' | 'em_rota' | 'entregue' | null;
