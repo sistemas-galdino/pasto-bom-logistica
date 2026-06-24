@@ -6,3 +6,4 @@ export * from './types/api.js';
 export * from './types/orix.js';
 export * from './state-machine.js';
 export * from './phone.js';
+export * from './clima.js';
