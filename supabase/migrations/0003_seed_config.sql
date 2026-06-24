@@ -47,9 +47,9 @@ insert into sync_state (chave, valor)
 values (
   'templates',
   jsonb_build_object(
-    'agendamento', 'Olá, {nome_cliente}! 🚜 Seu pedido nº {numero} da Pasto Bom foi *agendado para entrega em {data_agendada}* na propriedade {propriedade}. Qualquer dúvida, é só responder por aqui. 🙏',
-    'em_rota',     'Olá, {nome_cliente}! 📦 Seu pedido nº {numero} *saiu para entrega* e chega hoje na propriedade {propriedade}. Pedimos que tenha alguém disponível para receber.',
-    'entregue',    '{nome_cliente}, seu pedido nº {numero} foi *entregue com sucesso*! ✅ Obrigado por comprar com a Pasto Bom. 🐂'
+    'agendamento', E'Olá, {nome_cliente}! 🚜\n\nSeu pedido nº {numero} foi *agendado para entrega em {data_agendada}*.\n\n_Pasto Bom Agropecuária_ 🐂',
+    'em_rota',     E'Olá, {nome_cliente}! 📦\n\nSeu pedido nº {numero} *saiu para entrega* e chega hoje.\n\nPedimos que tenha alguém disponível para receber.\n\n_Pasto Bom Agropecuária_ 🐂',
+    'entregue',    E'Olá, {nome_cliente}! ✅\n\nSeu pedido nº {numero} foi *entregue com sucesso*!\n\nObrigado por comprar com a Pasto Bom. 🐂'
   )
 )
 on conflict (chave) do update set
