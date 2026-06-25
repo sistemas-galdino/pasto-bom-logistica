@@ -6,7 +6,11 @@
 //   - GET /api/health fora do escopo autenticado.
 //   - Porta = env.API_PORT.
 
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import Fastify, { type FastifyInstance } from 'fastify';
+import fastifyStatic from '@fastify/static';
 
 import { env } from '../config/env.js';
 import { log } from '../log.js';
@@ -50,6 +54,40 @@ function aplicarCors(app: FastifyInstance): void {
 }
 
 /**
+ * Modo "serviço único": serve o frontend React buildado (apps/frontend/dist)
+ * no mesmo processo/porta da API. Resolve o caminho a partir deste arquivo
+ * (independe do cwd), e só ativa se o build existir — em dev o front roda no
+ * Vite (5173) e o dist não existe, então a API segue só como API.
+ *
+ * Fallback SPA: qualquer GET que não seja /api e não bata num arquivo estático
+ * devolve index.html (o React Router resolve a rota no cliente). Rotas /api
+ * desconhecidas continuam 404 JSON.
+ */
+function servirFrontend(app: FastifyInstance): void {
+  const frontendDist = fileURLToPath(
+    new URL('../../../frontend/dist', import.meta.url),
+  );
+
+  if (!existsSync(frontendDist)) {
+    log.warn(
+      `[api] Frontend buildado não encontrado em ${frontendDist}; servindo apenas a API.`,
+    );
+    return;
+  }
+
+  app.register(fastifyStatic, { root: frontendDist, wildcard: false });
+
+  app.setNotFoundHandler((req, reply) => {
+    if (req.method === 'GET' && !req.url.startsWith('/api')) {
+      return reply.sendFile('index.html');
+    }
+    return reply.code(404).send({ error: 'not_found' });
+  });
+
+  log.info(`[api] Servindo frontend de ${frontendDist}`);
+}
+
+/**
  * Constrói a instância Fastify com rotas, CORS e autenticação registradas.
  */
 export function buildServer(): FastifyInstance {
@@ -74,6 +112,9 @@ export function buildServer(): FastifyInstance {
     },
     { prefix: '/api' },
   );
+
+  // Serviço único: front + API no mesmo domínio (no-op em dev sem build).
+  servirFrontend(app);
 
   return app;
 }

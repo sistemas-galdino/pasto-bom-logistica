@@ -16,6 +16,7 @@
     "audit:contatos": "node --import tsx --env-file-if-exists=.env src/orix/auditoria-contatos.mjs"
   },
   "dependencies": {
+    "@fastify/static": "^7.0.4",
     "@pastobom/shared": "*",
     "@supabase/supabase-js": "^2.45.0",
     "fastify": "^4.28.0",
