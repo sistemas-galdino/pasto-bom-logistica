@@ -241,6 +241,56 @@ npm run dev --workspace apps/frontend    # frontend: http://localhost:5173
 
 ---
 
+## Deploy (Easypanel)
+
+O sistema sobe como **serviço único**: o backend Fastify também serve o
+frontend React buildado (mesmo domínio, sem CORS). O `Dockerfile` na raiz faz
+todo o trabalho; o Easypanel builda direto do GitHub.
+
+**Como funciona o serviço único**
+
+- O `Dockerfile` instala as deps, roda `vite build` (gera `apps/frontend/dist`)
+  e sobe `node --import tsx apps/backend/src/index.ts` na porta `3333`.
+- Em produção, `apps/frontend/.env.production` deixa `VITE_API_URL` vazio, então
+  o front chama `/api/...` no **mesmo domínio**. O `server.ts` serve os arquivos
+  estáticos com **fallback SPA** (qualquer GET fora de `/api` devolve
+  `index.html`).
+- O `@pastobom/shared` roda como código TS via `tsx` (não há passo de compilação
+  separado), o que evita problemas de resolução do pacote.
+
+**Passo a passo no painel**
+
+1. Crie um **App** apontando para o repositório GitHub, **Build = Dockerfile**.
+2. **Porta**: `3333`. **Réplicas**: **1** (o agendador roda no mesmo processo e
+   não tem lock distribuído — mais de uma réplica duplicaria o polling do Órix).
+3. **Domínio**: gere o subdomínio do Easypanel (HTTPS automático).
+4. **Healthcheck**: `GET /api/health` → `{ "ok": true }`.
+5. **Environment** (runtime) — copie os valores do seu `apps/backend/.env`, com
+   estes ajustes de produção:
+
+   | Variável | Valor |
+   |----------|-------|
+   | `ORIX_BASE_URL`, `ORIX_LOGIN`, `ORIX_SENHA`, `ORIX_EMPRESA` | (do `.env`) |
+   | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY` | (do `.env`) |
+   | `EVOLUTION_URL`, `EVOLUTION_INSTANCE`, `EVOLUTION_API_KEY` | (do `.env`) |
+   | `POLL_CRON` | `*/5 * * * *` |
+   | `API_PORT` | `3333` |
+   | `ALLOW_NO_AUTH` | **`false`** (liga a autenticação real) |
+   | `APP_URL` | `https://<seu-subdominio>.easypanel.host` (links de convite) |
+   | `WHATSAPP_NUMERO_TESTE` | `5514998859650` no 1º deploy (valida sem disparar p/ clientes); **esvazie** para ir "pra valer" |
+
+> A `SUPABASE_SERVICE_ROLE_KEY` é **secreta** e só existe como env de runtime do
+> backend — nunca vai para o repositório nem para o bundle do front. A anon key
+> (pública) fica no `.env.production` por ser embarcada no browser por design.
+
+**Primeiro acesso (auth)**
+
+Com `ALLOW_NO_AUTH=false` é preciso um login Supabase válido. Crie o primeiro
+usuário com papel `logistica` (via painel do Supabase ou Auth Admin) — depois,
+novos colaboradores entram pela tela **Usuários** (convite por link).
+
+---
+
 ## Smoke test da integração Órix
 
 O `apps/backend/src/orix/smoke.mjs` é **autônomo** (só usa `fetch` nativo) e

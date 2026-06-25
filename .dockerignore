@@ -1,0 +1,22 @@
+# Dependências e builds: reconstruídos dentro da imagem.
+node_modules
+**/node_modules
+**/dist
+*.tsbuildinfo
+
+# Segredos: NUNCA entram na imagem (envs vêm do Easypanel em runtime).
+# Atenção: estes padrões NÃO casam com apps/frontend/.env.production (valores
+# públicos, necessário para o build do Vite), que por isso é incluído.
+.env
+.env.local
+**/.env
+**/.env.local
+
+# Git, logs, lixo de editor/OS.
+.git
+.gitignore
+*.log
+npm-debug.log*
+.DS_Store
+.idea
+.vscode
