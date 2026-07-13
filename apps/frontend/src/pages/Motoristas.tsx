@@ -40,11 +40,12 @@ export function Motoristas(): React.ReactElement {
     return mapa;
   }, [pedidosQuery.data]);
 
-  const isLoading = motoristasQuery.isLoading || pedidosQuery.isLoading;
-  const isError = motoristasQuery.isError || pedidosQuery.isError;
   const motoristas = motoristasQuery.data ?? [];
+  // Só a lista de motoristas derruba a página: o resumo vem de ['pedidos'] e,
+  // se essa query falhar, os cartões seguem visíveis sem o resumo em rota.
+  const semPedidos = pedidosQuery.isError;
 
-  if (isLoading) {
+  if (motoristasQuery.isLoading) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-tinta-suave">
         Carregando motoristas…
@@ -52,8 +53,8 @@ export function Motoristas(): React.ReactElement {
     );
   }
 
-  if (isError) {
-    const erro = motoristasQuery.error ?? pedidosQuery.error;
+  if (motoristasQuery.isError) {
+    const erro = motoristasQuery.error;
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-tinta-suave">
         <p>
@@ -108,12 +109,14 @@ export function Motoristas(): React.ReactElement {
                         className="h-4 w-4 text-trigo-escuro"
                         aria-hidden="true"
                       />
-                      {resumo.entregas === 1
-                        ? '1 entrega em rota'
-                        : `${resumo.entregas} entregas em rota`}
+                      {semPedidos
+                        ? 'Entregas indisponíveis'
+                        : resumo.entregas === 1
+                          ? '1 entrega em rota'
+                          : `${resumo.entregas} entregas em rota`}
                     </span>
                     <span className="font-display text-lg font-semibold text-mata-escuro">
-                      {formatarMoeda(resumo.valor)}
+                      {semPedidos ? '—' : formatarMoeda(resumo.valor)}
                     </span>
                   </div>
                 </article>

@@ -1,7 +1,7 @@
 // Contrato REST compartilhado entre backend (implementa) e frontend (consome).
 // As respostas de pedido usam o tipo `Pedido` de domain.ts.
 
-import type { StatusLogistico } from './domain.js';
+import type { PeriodoEntrega, StatusLogistico } from './domain.js';
 
 export interface TransicaoRequest {
   para: StatusLogistico;
@@ -9,8 +9,37 @@ export interface TransicaoRequest {
   dataAgendada?: string;
   /** Observação livre gravada na transição (ex.: nota do motorista na entrega). */
   observacao?: string;
-  /** Atribuição de motorista no despacho (logística, para==='em_rota'). */
+  /**
+   * Motorista responsável. Desde a reunião de 25/06 é escolhido já no
+   * AGENDAMENTO (para==='agendada'), não mais só no despacho.
+   */
   motoristaId?: string | null;
+  /** Turno da entrega — obrigatório no agendamento. */
+  periodo?: PeriodoEntrega;
+  /** Caminhão da carga — obrigatório no agendamento, separado do motorista. */
+  caminhaoId?: string | null;
+}
+
+/** Cadastro de um caminhão (a tela envia toneladas; a API guarda kg). */
+export interface CriarCaminhaoRequest {
+  nome: string;
+  placa?: string | null;
+  capacidadeKg: number;
+}
+
+export interface AtualizarCaminhaoRequest {
+  nome?: string;
+  placa?: string | null;
+  capacidadeKg?: number;
+  ativo?: boolean;
+}
+
+/**
+ * Peso digitado pela equipe para um produto sem peso conhecido.
+ * Fica salvo NO PRODUTO e vale para todos os pedidos seguintes.
+ */
+export interface DefinirPesoProdutoRequest {
+  pesoKg: number;
 }
 
 export interface ConfigResponse {

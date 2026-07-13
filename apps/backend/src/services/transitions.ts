@@ -4,8 +4,10 @@
 // pedido. Ela:
 //   1) carrega o pedido (mapeado snake_case -> camelCase de @pastobom/shared);
 //   2) valida a máquina de estados (podeTransicionar) — senão erro 409;
-//   3) RF-1.8: se para==='agendada' e o cliente tem >1 propriedade, exige
-//      propriedadeCodigo (senão erro 422); grava propriedade_codigo/data_agendada;
+//   3) se para==='agendada': exige data, período, motorista, caminhão e o peso de
+//      TODOS os itens (422); RF-1.8: exige propriedadeCodigo quando o cliente tem
+//      >1 propriedade; aplica as travas de carga (services/carga.ts) e grava
+//      data_agendada/periodo/motorista_id/caminhao_id/propriedade_codigo;
 //   4) atualiza status_logistico + atualizado_em;
 //   5) registra evento em eventos_status (de, para, ator);
 //   6) EXACTLY-ONCE: se a transição dispara um template, cria UMA linha em
@@ -21,6 +23,7 @@ import {
   normalizarWhatsApp,
   type Pedido,
   type ItemPedido,
+  type PeriodoEntrega,
   type StatusLogistico,
   type TemplateWhatsapp,
 } from '@pastobom/shared';
@@ -28,24 +31,22 @@ import {
 import { env } from '../config/env.js';
 import { supabase } from '../db/supabase.js';
 import { log } from '../log.js';
+import {
+  itensSemPeso,
+  lerPesosProdutos,
+  pesoTotalDoPedido,
+  validarCargaDoAgendamento,
+} from './carga.js';
 import { enviarTexto } from '../whatsapp/evolution.js';
 import { renderTemplate } from '../whatsapp/templates.js';
 
 /**
  * Erro de domínio com código HTTP associado, para que as rotas mapeiem
  * diretamente (409 transição inválida, 422 propriedade exigida, 404, etc).
+ * Definido em erros.ts; reexportado aqui para não quebrar quem já importava daqui.
  */
-export class TransicaoError extends Error {
-  readonly statusCode: number;
-  readonly codigo: string;
-
-  constructor(statusCode: number, codigo: string, mensagem: string) {
-    super(mensagem);
-    this.name = 'TransicaoError';
-    this.statusCode = statusCode;
-    this.codigo = codigo;
-  }
-}
+export { TransicaoError } from './erros.js';
+import { TransicaoError } from './erros.js';
 
 // ---------------------------------------------------------------------------
 // Linhas cruas do banco (snake_case)
@@ -68,8 +69,10 @@ interface PedidoRow {
   status_orix_nome: string | null;
   status_logistico: StatusLogistico;
   data_agendada: string | null;
+  periodo: PeriodoEntrega | null;
   data_entregue: string | null;
   motorista_id: string | null;
+  caminhao_id: string | null;
   observacoes: string | null;
   criado_em: string;
   atualizado_em: string;
@@ -85,6 +88,19 @@ interface ItemPedidoRow {
   separado?: boolean | null;
 }
 
+/**
+ * Dados que NÃO estão na linha de pedidos e precisam ser resolvidos à parte
+ * (profiles, caminhoes, clientes.bairro e produtos_peso). Vêm de fora para que
+ * a listagem os resolva em LOTE, sem N+1.
+ */
+export interface ExtrasPedido {
+  motoristaNome?: string | null;
+  caminhaoNome?: string | null;
+  bairro?: string | null;
+  /** produto_codigo -> peso UNITÁRIO em kg. Ausente = peso desconhecido. */
+  pesosPorProduto?: Map<string, number>;
+}
+
 /** Converte um valor numérico do Postgres (que pode vir como string) em number. */
 function num(v: number | string | null | undefined): number {
   if (v === null || v === undefined) return 0;
@@ -92,27 +108,35 @@ function num(v: number | string | null | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function mapearItem(row: ItemPedidoRow): ItemPedido {
+function mapearItem(
+  row: ItemPedidoRow,
+  pesosPorProduto?: Map<string, number>,
+): ItemPedido {
+  const produtoCodigo = row.produto_codigo ?? '';
   return {
     id: row.id,
-    produtoCodigo: row.produto_codigo ?? '',
+    produtoCodigo,
     nomeProduto: row.nome_produto ?? '',
     qtd: num(row.qtd),
     valorUnit: num(row.valor_unit),
     total: num(row.total),
     separado: row.separado === true,
+    pesoUnitKg: pesosPorProduto?.get(produtoCodigo) ?? null,
   };
 }
 
 /**
  * Mapeia a linha do banco (snake_case) + itens para o tipo Pedido (camelCase).
- * `motoristaNome` é resolvido à parte (não há FK pedidos->profiles).
+ * Os `extras` (nome do motorista/caminhão, bairro do cliente e os pesos dos
+ * produtos) são resolvidos à parte — não há FK pedidos->profiles nem coluna de
+ * peso no pedido.
  */
 export function mapearPedido(
   row: PedidoRow,
   itens: ItemPedidoRow[],
-  motoristaNome?: string | null,
+  extras: ExtrasPedido = {},
 ): Pedido {
+  const itensMapeados = itens.map((i) => mapearItem(i, extras.pesosPorProduto));
   return {
     id: row.id,
     orixIdPedido: row.orix_id_pedido,
@@ -130,11 +154,16 @@ export function mapearPedido(
     statusOrixNome: row.status_orix_nome ?? '',
     statusLogistico: row.status_logistico,
     dataAgendada: row.data_agendada,
+    periodo: row.periodo,
     dataEntregue: row.data_entregue,
     motoristaId: row.motorista_id,
-    motoristaNome: motoristaNome ?? null,
+    motoristaNome: extras.motoristaNome ?? null,
+    caminhaoId: row.caminhao_id,
+    caminhaoNome: extras.caminhaoNome ?? null,
+    bairro: extras.bairro ?? null,
+    pesoTotalKg: pesoTotalDoPedido(itensMapeados),
     observacoes: row.observacoes ?? null,
-    itens: itens.map(mapearItem),
+    itens: itensMapeados,
     criadoEm: row.criado_em,
     atualizadoEm: row.atualizado_em,
   };
@@ -144,7 +173,8 @@ const COLUNAS_PEDIDO =
   'id, orix_id_pedido, orix_numero, empresa, cliente_codigo, cliente_nome, ' +
   'cidade_cliente, vendedor_codigo, vendedor_nome, propriedade_codigo, ' +
   'valor_total, data_pedido, status_orix, status_orix_nome, status_logistico, ' +
-  'data_agendada, data_entregue, motorista_id, observacoes, criado_em, atualizado_em';
+  'data_agendada, periodo, data_entregue, motorista_id, caminhao_id, observacoes, ' +
+  'criado_em, atualizado_em';
 
 /** Resolve o nome do motorista (profiles) pelo auth.uid; '' quando sem nome. */
 async function lerNomeMotorista(
@@ -163,6 +193,40 @@ async function lerNomeMotorista(
     return '';
   }
   return data?.nome ?? '';
+}
+
+/** Resolve o nome do caminhão do pedido; null quando não há caminhão. */
+async function lerNomeCaminhao(caminhaoId: string | null): Promise<string | null> {
+  if (!caminhaoId) return null;
+  const { data, error } = await supabase
+    .from('caminhoes')
+    .select('nome')
+    .eq('id', caminhaoId)
+    .maybeSingle<{ nome: string | null }>();
+  if (error) {
+    log.warn(
+      `[transitions] Falha ao ler nome do caminhão ${caminhaoId}: ${error.message}`,
+    );
+    return null;
+  }
+  return data?.nome ?? null;
+}
+
+/** Bairro do cliente (entregas rurais se orientam por bairro + cidade). */
+async function lerBairroCliente(clienteCodigo: string): Promise<string | null> {
+  if (!clienteCodigo) return null;
+  const { data, error } = await supabase
+    .from('clientes')
+    .select('bairro')
+    .eq('codigo', clienteCodigo)
+    .maybeSingle<{ bairro: string | null }>();
+  if (error) {
+    log.warn(
+      `[transitions] Falha ao ler bairro do cliente ${clienteCodigo}: ${error.message}`,
+    );
+    return null;
+  }
+  return data?.bairro ?? null;
 }
 
 const COLUNAS_ITEM =
@@ -200,12 +264,22 @@ export async function carregarPedido(pedidoId: string): Promise<Pedido> {
     );
   }
 
-  const motoristaNome = await lerNomeMotorista(pedidoRow.motorista_id);
-  return mapearPedido(
-    pedidoRow,
-    (itensRows ?? []) as ItemPedidoRow[],
+  const itens = (itensRows ?? []) as ItemPedidoRow[];
+
+  const [motoristaNome, caminhaoNome, bairro, pesosPorProduto] =
+    await Promise.all([
+      lerNomeMotorista(pedidoRow.motorista_id),
+      lerNomeCaminhao(pedidoRow.caminhao_id),
+      lerBairroCliente(pedidoRow.cliente_codigo ?? ''),
+      lerPesosProdutos(itens.map((i) => i.produto_codigo ?? '')),
+    ]);
+
+  return mapearPedido(pedidoRow, itens, {
     motoristaNome,
-  );
+    caminhaoNome,
+    bairro,
+    pesosPorProduto,
+  });
 }
 
 /** Conta quantas propriedades o cliente possui. */
@@ -485,8 +559,12 @@ export interface AplicarTransicaoArgs {
   dataAgendada?: string;
   /** Observação livre (gravada em pedidos.observacoes). */
   observacao?: string;
-  /** Atribuição de motorista no despacho (logística, para==='em_rota'). */
+  /** Motorista da entrega — obrigatório no agendamento (para==='agendada'). */
   motoristaId?: string | null;
+  /** Turno da entrega — obrigatório no agendamento. */
+  periodo?: PeriodoEntrega;
+  /** Caminhão da carga — obrigatório no agendamento, separado do motorista. */
+  caminhaoId?: string | null;
   atorUserId?: string;
   atorPapel?: AtorPapel;
 }
@@ -505,6 +583,8 @@ export async function aplicarTransicao(
     dataAgendada,
     observacao,
     motoristaId,
+    periodo,
+    caminhaoId,
     atorUserId,
     atorPapel,
   } = args;
@@ -540,8 +620,17 @@ export async function aplicarTransicao(
     );
   }
 
-  // 2.1) RF-2.2: só libera para rota com a separação completa.
+  // 2.1) Despacho: motorista e caminhão vêm do AGENDAMENTO — aqui só conferimos.
   if (para === 'em_rota') {
+    if (!pedidoAtual.motoristaId || !pedidoAtual.caminhaoId) {
+      throw new TransicaoError(
+        422,
+        'dados_incompletos',
+        'Pedido sem motorista ou caminhão definidos. Volte-o para pendente e agende de novo, escolhendo motorista e caminhão.',
+      );
+    }
+
+    // RF-2.2: só libera para rota com a separação completa.
     const naoSeparados = pedidoAtual.itens.filter((i) => !i.separado);
     if (pedidoAtual.itens.length > 0 && naoSeparados.length > 0) {
       throw new TransicaoError(
@@ -553,10 +642,54 @@ export async function aplicarTransicao(
     }
   }
 
-  // 3) RF-1.8 + gravação de propriedade/data agendada.
+  // 3) Agendamento (data + período + motorista + caminhão + peso completo),
+  //    RF-1.8 e as travas de carga.
   let propriedadeParaGravar = pedidoAtual.propriedadeCodigo;
+  let patchAgendamento: Record<string, unknown> | null = null;
 
   if (para === 'agendada') {
+    if (!dataAgendada) {
+      throw new TransicaoError(
+        422,
+        'data_obrigatoria',
+        'Informe a data da entrega.',
+      );
+    }
+    if (!periodo) {
+      throw new TransicaoError(
+        422,
+        'periodo_obrigatorio',
+        'Escolha o período da entrega: manhã ou tarde.',
+      );
+    }
+    if (!motoristaId) {
+      throw new TransicaoError(
+        422,
+        'motorista_obrigatorio',
+        'Escolha o motorista da entrega.',
+      );
+    }
+    if (!caminhaoId) {
+      throw new TransicaoError(
+        422,
+        'caminhao_obrigatorio',
+        'Escolha o caminhão da entrega.',
+      );
+    }
+
+    // Sem o peso de TODOS os itens não dá para saber se a carga cabe no caminhão.
+    const semPeso = itensSemPeso(pedidoAtual.itens);
+    if (semPeso.length > 0) {
+      const nomes = semPeso
+        .map((i) => i.nomeProduto || i.produtoCodigo)
+        .join(', ');
+      throw new TransicaoError(
+        422,
+        'peso_pendente',
+        `Falta o peso de: ${nomes}. Cadastre o peso desses produtos para agendar.`,
+      );
+    }
+
     const totalProps = await contarPropriedades(pedidoAtual.clienteCodigo);
     if (totalProps > 1 && !propriedadeCodigo) {
       throw new TransicaoError(
@@ -568,6 +701,22 @@ export async function aplicarTransicao(
     if (propriedadeCodigo) {
       propriedadeParaGravar = propriedadeCodigo;
     }
+
+    await validarCargaDoAgendamento({
+      pedidoId,
+      data: dataAgendada,
+      periodo,
+      motoristaId,
+      caminhaoId,
+      pesoDoPedidoKg: pedidoAtual.pesoTotalKg ?? 0,
+    });
+
+    patchAgendamento = {
+      data_agendada: dataAgendada,
+      periodo,
+      motorista_id: motoristaId,
+      caminhao_id: caminhaoId,
+    };
   } else if (propriedadeCodigo) {
     // Permite ajustar a propriedade em outras transições, se enviada.
     propriedadeParaGravar = propriedadeCodigo;
@@ -579,19 +728,13 @@ export async function aplicarTransicao(
     status_logistico: para,
     atualizado_em: agora,
     propriedade_codigo: propriedadeParaGravar,
+    ...(patchAgendamento ?? {}),
   };
-  if (para === 'agendada' && dataAgendada) {
-    patch.data_agendada = dataAgendada;
-  }
   if (para === 'entregue') {
     patch.data_entregue = agora;
     if (observacao) {
       patch.observacoes = observacao;
     }
-  }
-  // Fase 3: a logística pode atribuir o motorista no mesmo passo do despacho.
-  if (atorPapel === 'logistica' && para === 'em_rota' && motoristaId !== undefined) {
-    patch.motorista_id = motoristaId;
   }
 
   const { error: errUpdate } = await supabase
@@ -646,9 +789,9 @@ export async function aplicarTransicao(
 
 /**
  * Reverte o status de um pedido UMA etapa para trás (apenas logística).
- * Diferente de aplicarTransicao: NÃO dispara WhatsApp e limpa os campos que
- * deixam de fazer sentido — o motorista ao sair da rota (em_rota->agendada) e a
- * data agendada ao voltar para pendente. Registra o evento para auditoria.
+ * Diferente de aplicarTransicao: NÃO dispara WhatsApp (nem no cancelada->pendente,
+ * que restaura um cancelamento) e limpa o agendamento — data, período, motorista e
+ * caminhão — ao voltar para pendente. Registra o evento para auditoria.
  */
 export async function reverterStatus(args: {
   pedidoId: string;
@@ -683,14 +826,14 @@ export async function reverterStatus(args: {
     status_logistico: para,
     atualizado_em: agora,
   };
-  // Sair da rota desfaz o despacho: remove o motorista.
-  if (de === 'em_rota') {
-    patch.motorista_id = null;
-  }
-  // Voltar para pendente desfaz o agendamento: remove a data (e motorista, defensivo).
+  // Voltar para pendente desfaz o AGENDAMENTO inteiro: data, período, motorista e
+  // caminhão foram escolhidos juntos e juntos deixam de valer. (Sair da rota para
+  // 'agendada' NÃO limpa nada: o par motorista/caminhão pertence ao agendamento.)
   if (para === 'pendente') {
     patch.data_agendada = null;
+    patch.periodo = null;
     patch.motorista_id = null;
+    patch.caminhao_id = null;
   }
 
   const { error: errUpdate } = await supabase

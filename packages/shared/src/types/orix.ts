@@ -24,6 +24,15 @@ export interface OrixPedidoItem {
   cidade_cliente: string;
   status: string;
   nome_status: string;
+  /**
+   * Natureza da OPERAÇÃO (fiscal), zero-padded: '00001' VENDA, '00012' VENDA
+   * ORIGINADA DE FAT P/ ENTREGA FUTURA (a remessa), '00011' SIMPLES FATURAMENTO
+   * (só a nota — nada sai do galpão), '00049' REMESSA EM GARANTIA (oficina)...
+   * Só '00001' e '00012' viram entrega. A 11 é o par fiscal da 12: ingerir as
+   * duas faria a mesma entrega aparecer DUAS vezes no painel.
+   */
+  natureza: string;
+  nome_natureza: string;
   [k: string]: unknown;
 }
 

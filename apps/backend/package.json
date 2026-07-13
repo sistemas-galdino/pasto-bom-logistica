@@ -13,7 +13,9 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/index.js",
-    "audit:contatos": "node --import tsx --env-file-if-exists=.env src/orix/auditoria-contatos.mjs"
+    "audit:contatos": "node --import tsx --env-file-if-exists=.env src/orix/auditoria-contatos.mjs",
+    "backfill:pesos": "node --import tsx --env-file-if-exists=.env src/scripts/backfill-pesos.ts",
+    "backfill:natureza": "node --import tsx --env-file-if-exists=.env src/scripts/backfill-natureza.ts"
   },
   "dependencies": {
     "@fastify/static": "^7.0.4",

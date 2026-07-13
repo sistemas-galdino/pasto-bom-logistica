@@ -29,16 +29,19 @@ export function podeTransicionar(
 /**
  * Reversões permitidas (voltar UMA etapa) — exclusivas da logística e SEM
  * disparo de WhatsApp. Mapa separado de TRANSICOES para não interferir na
- * lógica do botão de avançar. Estados finais (entregue/cancelada) não voltam.
- *   agendada -> pendente  (desfaz o agendamento)
- *   em_rota  -> agendada  (desfaz o despacho)
+ * lógica do botão de avançar.
+ *   agendada  -> pendente  (desfaz o agendamento; ex.: choveu, caminhão quebrou)
+ *   em_rota   -> agendada  (desfaz o despacho)
+ *   cancelada -> pendente  (restaura um cancelamento — "é só por causa de
+ *                           clicar errado", Johnny na reunião de 25/06)
+ * `entregue` é o único estado realmente final.
  */
 export const REVERSOES: Record<StatusLogistico, StatusLogistico[]> = {
   pendente: [],
   agendada: ['pendente'],
   em_rota: ['agendada'],
   entregue: [],
-  cancelada: [],
+  cancelada: ['pendente'],
 };
 
 /**

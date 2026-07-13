@@ -7,6 +7,9 @@ export type StatusLogistico =
   | 'entregue'
   | 'cancelada';
 
+/** Período de entrega. A reunião decidiu planejar por turno, não por horário. */
+export type PeriodoEntrega = 'manha' | 'tarde';
+
 export interface ItemPedido {
   id: string;
   produtoCodigo: string;
@@ -16,6 +19,12 @@ export interface ItemPedido {
   total: number;
   /** RF-2.2: marca de separação de mercadoria (Fase 2). */
   separado: boolean;
+  /**
+   * Peso UNITÁRIO do produto em kg (tabela produtos_peso), ou null quando ainda
+   * não se sabe o peso — aí a equipe digita no agendamento. Nunca vem da API do
+   * Órix, cujo campo `peso` é inutilizável (ver packages/shared/src/peso.ts).
+   */
+  pesoUnitKg: number | null;
 }
 
 export interface Pedido {
@@ -35,11 +44,27 @@ export interface Pedido {
   statusOrixNome: string;
   statusLogistico: StatusLogistico;
   dataAgendada: string | null;
+  /** Turno da entrega, escolhido no agendamento (junto com data/motorista/caminhão). */
+  periodo: PeriodoEntrega | null;
   dataEntregue: string | null;
   /** Fase 3: motorista atribuído ao pedido (auth.uid). */
   motoristaId: string | null;
   /** Fase 3: nome do motorista resolvido via profiles (pode ser vazio). */
   motoristaNome: string | null;
+  /** Caminhão que leva a carga; escolhido no agendamento, separado do motorista. */
+  caminhaoId: string | null;
+  caminhaoNome: string | null;
+  /**
+   * Bairro do cliente. Entregas são rurais (sem rua/número): o motorista se
+   * orienta por bairro + cidade + nome do cliente.
+   */
+  bairro: string | null;
+  /**
+   * Peso total da carga em kg = Σ(pesoUnitKg × qtd).
+   * `null` quando ALGUM item ainda está sem peso — nesse caso o pedido não pode
+   * ser agendado até a equipe completar os pesos que faltam.
+   */
+  pesoTotalKg: number | null;
   /** Observação livre (ex.: anotação do motorista na entrega). */
   observacoes?: string | null;
   /** Fase 3: destino resolvido (só preenchido na rota do motorista). */
@@ -84,6 +109,78 @@ export interface Propriedade {
   uf: string;
   latitude: string;
   longitude: string;
+}
+
+// ---------------------------------------------------------------------------
+// Carga: caminhões e peso dos produtos
+// ---------------------------------------------------------------------------
+
+/** Caminhão da frota, com a capacidade máxima que pode carregar. */
+export interface Caminhao {
+  id: string;
+  nome: string;
+  placa: string | null;
+  /** Capacidade máxima em kg (a tela mostra em toneladas). */
+  capacidadeKg: number;
+  ativo: boolean;
+}
+
+/** Peso unitário conhecido de um produto (tabela produtos_peso). */
+export interface PesoProduto {
+  produtoCodigo: string;
+  nomeProduto: string | null;
+  pesoKg: number;
+  /** 'auto' = extraído do nome pelo parser; 'manual' = digitado pela equipe. */
+  origem: 'auto' | 'manual';
+  atualizadoEm: string;
+}
+
+// ---------------------------------------------------------------------------
+// Agenda (calendário de entregas — mês/semana/dia)
+// ---------------------------------------------------------------------------
+
+/** Entrega como aparece no card da agenda. */
+export interface AgendaEntrega {
+  pedidoId: string;
+  orixNumero: string;
+  clienteNome: string;
+  /** O vendedor usa o bairro para saber se "cabe" mais uma entrega na região. */
+  bairro: string | null;
+  cidade: string;
+  motoristaId: string | null;
+  motoristaNome: string | null;
+  caminhaoId: string | null;
+  caminhaoNome: string | null;
+  pesoTotalKg: number | null;
+  statusLogistico: StatusLogistico;
+}
+
+/** Ocupação de um caminhão dentro de um slot (data + período). */
+export interface AgendaOcupacao {
+  caminhaoId: string;
+  caminhaoNome: string;
+  capacidadeKg: number;
+  usadoKg: number;
+  /** Motorista que leva esse caminhão no slot (o par é único por slot). */
+  motoristaId: string | null;
+  motoristaNome: string | null;
+  entregas: number;
+}
+
+/** Um slot da agenda: um período (manhã ou tarde) de um dia. */
+export interface AgendaSlot {
+  /** Data ISO (YYYY-MM-DD). */
+  data: string;
+  periodo: PeriodoEntrega;
+  entregas: AgendaEntrega[];
+  ocupacao: AgendaOcupacao[];
+}
+
+/** Resposta de GET /api/agenda?de=&ate= — só os slots com alguma entrega. */
+export interface AgendaResposta {
+  slots: AgendaSlot[];
+  /** Frota ativa, para a tela mostrar capacidade total mesmo em slot vazio. */
+  caminhoes: Caminhao[];
 }
 
 // ---------------------------------------------------------------------------

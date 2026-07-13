@@ -19,6 +19,9 @@ import { pedidosRoutes } from './routes/pedidos.js';
 import { configRoutes } from './routes/config.js';
 import { usuariosRoutes } from './routes/usuarios.js';
 import { climaRoutes } from './routes/clima.js';
+import { caminhoesRoutes } from './routes/caminhoes.js';
+import { produtosRoutes } from './routes/produtos.js';
+import { agendaRoutes } from './routes/agenda.js';
 
 // Origens permitidas para CORS. Por padrão o dev server do Vite (5173).
 const ORIGENS_PERMITIDAS = new Set<string>([
@@ -109,6 +112,9 @@ export function buildServer(): FastifyInstance {
       await api.register(configRoutes);
       await api.register(usuariosRoutes);
       await api.register(climaRoutes);
+      await api.register(caminhoesRoutes);
+      await api.register(produtosRoutes);
+      await api.register(agendaRoutes);
     },
     { prefix: '/api' },
   );

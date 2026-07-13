@@ -16,6 +16,7 @@ import type {
   DestinoEntrega,
   MotoristaResumo,
   Pedido,
+  PeriodoEntrega,
   Propriedade,
   StatusLogistico,
 } from '@pastobom/shared';
@@ -23,6 +24,7 @@ import type {
 import { supabase } from '../../db/supabase.js';
 import { log } from '../../log.js';
 import { exigirLogistica } from '../guards.js';
+import { lerPesosProdutos } from '../../services/carga.js';
 import {
   aplicarTransicao,
   carregarPedido,
@@ -32,6 +34,7 @@ import {
   reenviarWhatsapp,
   reverterStatus,
   TransicaoError,
+  type ExtrasPedido,
 } from '../../services/transitions.js';
 
 // ---------------------------------------------------------------------------
@@ -60,6 +63,8 @@ const transicaoBodySchema = z.object({
   dataAgendada: z.string().min(1).optional(),
   observacao: z.string().max(1000).optional(),
   motoristaId: z.string().uuid().nullable().optional(),
+  periodo: z.enum(['manha', 'tarde']).optional(),
+  caminhaoId: z.string().uuid().nullable().optional(),
 });
 
 const reenviarBodySchema = z.object({
@@ -105,8 +110,10 @@ interface PedidoRowLista {
   status_orix_nome: string | null;
   status_logistico: StatusLogistico;
   data_agendada: string | null;
+  periodo: PeriodoEntrega | null;
   data_entregue: string | null;
   motorista_id: string | null;
+  caminhao_id: string | null;
   observacoes: string | null;
   criado_em: string;
   atualizado_em: string;
@@ -127,7 +134,8 @@ const SELECT_LISTA =
   'id, orix_id_pedido, orix_numero, empresa, cliente_codigo, cliente_nome, ' +
   'cidade_cliente, vendedor_codigo, vendedor_nome, propriedade_codigo, ' +
   'valor_total, data_pedido, status_orix, status_orix_nome, status_logistico, ' +
-  'data_agendada, data_entregue, motorista_id, observacoes, criado_em, atualizado_em, ' +
+  'data_agendada, periodo, data_entregue, motorista_id, caminhao_id, observacoes, ' +
+  'criado_em, atualizado_em, ' +
   'itens_pedido(id, produto_codigo, nome_produto, qtd, valor_unit, total, separado)';
 
 function parseStatusQuery(raw: unknown): StatusLogistico[] | null {
@@ -163,17 +171,22 @@ function exigirTransicao(
   return false;
 }
 
-/** Resolve nomes de motorista em lote (não há FK pedidos->profiles). */
-async function resolverNomesMotorista(
-  linhas: { motorista_id: string | null }[],
-): Promise<Map<string, string>> {
-  const ids = [
+/** Valores não-vazios e sem repetição de uma coluna das linhas. */
+function chavesDe<T>(linhas: T[], campo: (l: T) => string | null): string[] {
+  return [
     ...new Set(
       linhas
-        .map((l) => l.motorista_id)
+        .map(campo)
         .filter((v): v is string => typeof v === 'string' && v.length > 0),
     ),
   ];
+}
+
+/** Resolve nomes de motorista em lote (não há FK pedidos->profiles). */
+async function resolverNomesMotorista(
+  linhas: PedidoRowLista[],
+): Promise<Map<string, string>> {
+  const ids = chavesDe(linhas, (l) => l.motorista_id);
   if (ids.length === 0) return new Map();
   const { data, error } = await supabase
     .from('profiles')
@@ -188,6 +201,81 @@ async function resolverNomesMotorista(
     mapa.set(r.id as string, (r.nome as string) ?? '');
   }
   return mapa;
+}
+
+/** Resolve nomes de caminhão em lote. */
+async function resolverNomesCaminhao(
+  linhas: PedidoRowLista[],
+): Promise<Map<string, string>> {
+  const ids = chavesDe(linhas, (l) => l.caminhao_id);
+  if (ids.length === 0) return new Map();
+  const { data, error } = await supabase
+    .from('caminhoes')
+    .select('id, nome')
+    .in('id', ids);
+  if (error) {
+    log.warn(`[pedidos] Falha ao resolver nomes de caminhão: ${error.message}`);
+    return new Map();
+  }
+  const mapa = new Map<string, string>();
+  for (const r of data ?? []) {
+    mapa.set(r.id as string, (r.nome as string) ?? '');
+  }
+  return mapa;
+}
+
+/** Bairro de cada cliente da lista (entregas rurais se orientam por bairro). */
+async function resolverBairros(
+  linhas: PedidoRowLista[],
+): Promise<Map<string, string | null>> {
+  const codigos = chavesDe(linhas, (l) => l.cliente_codigo);
+  if (codigos.length === 0) return new Map();
+  const { data, error } = await supabase
+    .from('clientes')
+    .select('codigo, bairro')
+    .in('codigo', codigos);
+  if (error) {
+    log.warn(`[pedidos] Falha ao resolver bairros dos clientes: ${error.message}`);
+    return new Map();
+  }
+  const mapa = new Map<string, string | null>();
+  for (const r of data ?? []) {
+    mapa.set(r.codigo as string, (r.bairro as string | null) ?? null);
+  }
+  return mapa;
+}
+
+/**
+ * Resolve, em LOTE (4 queries para a lista inteira, sem N+1), tudo o que não
+ * está na linha de pedidos: nome do motorista, nome do caminhão, bairro do
+ * cliente e o peso unitário de cada produto.
+ */
+async function resolverExtrasDaLista(
+  linhas: PedidoRowLista[],
+): Promise<(row: PedidoRowLista) => ExtrasPedido> {
+  const codigosProduto = (linhas ?? []).flatMap((l) =>
+    (l.itens_pedido ?? []).map((i) => i.produto_codigo ?? ''),
+  );
+
+  const [motoristas, caminhoes, bairros, pesosPorProduto] = await Promise.all([
+    resolverNomesMotorista(linhas),
+    resolverNomesCaminhao(linhas),
+    resolverBairros(linhas),
+    lerPesosProdutos(codigosProduto),
+  ]);
+
+  return (row) => ({
+    motoristaNome: row.motorista_id
+      ? (motoristas.get(row.motorista_id) ?? '')
+      : null,
+    caminhaoNome: row.caminhao_id
+      ? (caminhoes.get(row.caminhao_id) ?? null)
+      : null,
+    bairro: row.cliente_codigo
+      ? (bairros.get(row.cliente_codigo) ?? null)
+      : null,
+    pesosPorProduto,
+  });
 }
 
 function toDestino(r: Record<string, unknown>): DestinoEntrega {
@@ -282,13 +370,9 @@ export async function pedidosRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const linhas = (data ?? []) as unknown as PedidoRowLista[];
-    const nomes = await resolverNomesMotorista(linhas);
+    const extrasDe = await resolverExtrasDaLista(linhas);
     let pedidos: Pedido[] = linhas.map((row) =>
-      mapearPedido(
-        row,
-        row.itens_pedido ?? [],
-        row.motorista_id ? nomes.get(row.motorista_id) ?? '' : null,
-      ),
+      mapearPedido(row, row.itens_pedido ?? [], extrasDe(row)),
     );
 
     // Na rota do motorista, anexa o destino (lat/long ou endereço) p/ o mapa.
@@ -331,6 +415,8 @@ export async function pedidosRoutes(app: FastifyInstance): Promise<void> {
         dataAgendada: parsed.data.dataAgendada,
         observacao: parsed.data.observacao,
         motoristaId: parsed.data.motoristaId,
+        periodo: parsed.data.periodo,
+        caminhaoId: parsed.data.caminhaoId,
         atorUserId: req.usuario?.id ?? undefined,
         atorPapel: req.usuario?.papel,
       });
@@ -418,9 +504,10 @@ export async function pedidosRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  // GET /motoristas  (Fase 3 — lista p/ a logística atribuir)
-  app.get('/motoristas', async (req, reply) => {
-    if (!exigirLogistica(req, reply)) return reply;
+  // GET /motoristas  — leitura para qualquer papel autenticado (o Dashboard de
+  // almoxarifado/vendedor também mostra o motorista da entrega). Só devolve
+  // {id, nome}; a ESCRITA continua protegida pelo write-gate global.
+  app.get('/motoristas', async (_req, reply) => {
     const { data, error } = await supabase
       .from('profiles')
       .select('id, nome')

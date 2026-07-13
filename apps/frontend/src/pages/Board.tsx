@@ -248,10 +248,11 @@ export function Board(): React.ReactElement {
                   <PedidoCard
                     key={p.id}
                     pedido={p}
-                    podeEscrever={false}
+                    podeEscrever={podeEscrever}
                     podeSeparar={false}
                     onTransicionar={abrirTransicao}
                     onSeparar={abrirSeparacao}
+                    onReverter={abrirReverter}
                   />
                 ))}
               </div>

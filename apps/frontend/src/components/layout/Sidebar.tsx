@@ -8,12 +8,25 @@ import { ChevronLeft, ChevronRight, LogOut, X } from 'lucide-react';
 import { useAuth } from '../../auth/AuthProvider';
 import { Marca } from '../Marca';
 import { PAPEL_ROTULO, PAPEL_ACESSO } from '../../lib/papeis';
-import { NAV_SECTIONS } from './navConfig';
+import { NAV_SECTIONS, type NavSection } from './navConfig';
+import type { Papel } from '../../auth/AuthProvider';
 
 interface SidebarProps {
   onClose: () => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
+}
+
+/** Item/seção sem `papeis` é livre; com `papeis`, exige papel resolvido e listado. */
+function visivelPara(papel: Papel | null, papeis?: Papel[]): boolean {
+  return !papeis || (papel != null && papeis.includes(papel));
+}
+
+/** Aplica o filtro de papel a seções e itens, descartando seções sem itens. */
+function secoesVisiveis(papel: Papel | null): NavSection[] {
+  return NAV_SECTIONS.filter((s) => visivelPara(papel, s.papeis))
+    .map((s) => ({ ...s, itens: s.itens.filter((i) => visivelPara(papel, i.papeis)) }))
+    .filter((s) => s.itens.length > 0);
 }
 
 export function Sidebar({
@@ -22,6 +35,7 @@ export function Sidebar({
   onToggleCollapse,
 }: SidebarProps): React.ReactElement {
   const { user, papel, sair } = useAuth();
+  const secoes = secoesVisiveis(papel);
 
   return (
     <aside className="flex h-full w-full flex-col bg-mata-escuro text-creme-100">
@@ -50,11 +64,9 @@ export function Sidebar({
         </button>
       </div>
 
-      {/* Navegação por seções (seções com `papeis` só aparecem ao papel certo) */}
+      {/* Navegação por seções (seções e itens com `papeis` só aparecem ao papel certo) */}
       <nav className="scroll-suave flex-1 overflow-y-auto px-3 py-2">
-        {NAV_SECTIONS.filter(
-          (s) => !s.papeis || (papel != null && s.papeis.includes(papel)),
-        ).map((secao) => (
+        {secoes.map((secao) => (
           <div key={secao.titulo} className="mb-4">
             {!collapsed && (
               <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-creme-100/50">

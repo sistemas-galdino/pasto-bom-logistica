@@ -147,10 +147,11 @@ export function Dashboard(): React.ReactElement {
     [contagem],
   );
 
-  const carregando = pedidosQuery.isLoading || motoristasQuery.isLoading;
-  const erro = pedidosQuery.isError || motoristasQuery.isError;
+  // Só a query de PEDIDOS derruba o painel: a de motoristas é acessória (o
+  // papel do usuário pode não ter leitura dela) e degrada para o KPI em "—".
+  const semMotoristas = motoristasQuery.isError;
 
-  if (carregando) {
+  if (pedidosQuery.isLoading) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-tinta-suave">
         Carregando indicadores…
@@ -158,13 +159,11 @@ export function Dashboard(): React.ReactElement {
     );
   }
 
-  if (erro) {
+  if (pedidosQuery.isError) {
     const msg =
       pedidosQuery.error instanceof Error
         ? pedidosQuery.error.message
-        : motoristasQuery.error instanceof Error
-          ? motoristasQuery.error.message
-          : 'Não foi possível carregar o painel.';
+        : 'Não foi possível carregar o painel.';
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-tinta-suave">
         <p>{msg}</p>
@@ -240,8 +239,12 @@ export function Dashboard(): React.ReactElement {
           />
           <StatCard
             label="Motoristas Ativos"
-            value={motoristasAtivos}
-            sub={`${motoristas.length} cadastrados`}
+            value={semMotoristas ? '—' : motoristasAtivos}
+            sub={
+              semMotoristas
+                ? 'Cadastro indisponível'
+                : `${motoristas.length} cadastrados`
+            }
             icon={Users}
             accent="trigo"
           />

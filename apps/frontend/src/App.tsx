@@ -1,6 +1,6 @@
 // Composição do app: provedores (react-query + auth) e rotas.
-// /login é pública; a casca de equipe (dashboard/entregas/rotas/motoristas) e
-// /rota (motorista) exigem sessão.
+// /login é pública; a casca de equipe (dashboard/entregas/agenda/rotas/
+// motoristas/caminhões) e /rota (motorista) exigem sessão.
 // O destino pós-login depende do papel: motorista vai para /rota; demais, /dashboard.
 
 import React from 'react';
@@ -18,6 +18,8 @@ import { DefinirSenha } from './auth/DefinirSenha';
 import { AppShell } from './components/layout/AppShell';
 import { Board } from './pages/Board';
 import { Dashboard } from './pages/Dashboard';
+import Agenda from './pages/Agenda';
+import Caminhoes from './pages/Caminhoes';
 import { Rotas } from './pages/Rotas';
 import { Motoristas } from './pages/Motoristas';
 import { Usuarios } from './pages/Usuarios';
@@ -127,8 +129,17 @@ export function App(): React.ReactElement {
             >
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/entregas" element={<Board />} />
+              <Route path="/agenda" element={<Agenda />} />
               <Route path="/rotas" element={<Rotas />} />
               <Route path="/motoristas" element={<Motoristas />} />
+              <Route
+                path="/caminhoes"
+                element={
+                  <SomenteLogistica>
+                    <Caminhoes />
+                  </SomenteLogistica>
+                }
+              />
               <Route
                 path="/usuarios"
                 element={

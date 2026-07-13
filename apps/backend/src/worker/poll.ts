@@ -24,8 +24,9 @@ const MAX_DIAS_JANELA = 16;
 // Janela inicial padrão quando ainda não há cursor (hoje - 30 dias).
 const DIAS_FALLBACK = 30;
 
-/** Status de gatilho default caso sync_state não tenha sido semeado. */
-const STATUS_GATILHO_DEFAULT = ['00041', '00045', '00027', '00028'];
+/** Status de gatilho default caso sync_state não tenha sido semeado.
+ *  O 00028 ("aguardando faturamento 2") saiu na reunião de 25/06/2026. */
+const STATUS_GATILHO_DEFAULT = ['00041', '00045', '00027'];
 
 interface JanelaDatas {
   dataInicial: string; // yyyy-mm-dd

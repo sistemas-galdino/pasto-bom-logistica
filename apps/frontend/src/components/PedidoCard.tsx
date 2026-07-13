@@ -1,4 +1,4 @@
-// Cartão de pedido no kanban: cliente, cidade, valor, itens e propriedade.
+// Cartão de pedido no kanban: cliente, bairro/cidade, valor, itens e propriedade.
 // Mostra o progresso da separação (RF-2.2) nos estados pré-rota e, conforme o
 // papel, as ações de transição (logística) e de separar (logística/almoxarifado).
 
@@ -15,10 +15,25 @@ interface Props {
   podeSeparar: boolean;
   onTransicionar: (pedido: Pedido, para: StatusLogistico) => void;
   onSeparar: (pedido: Pedido) => void;
-  /** Reverte o status uma etapa (voltar) — só logística. */
+  /** Reverte o status uma etapa (voltar/restaurar) — só logística. */
   onReverter?: (pedido: Pedido, para: StatusLogistico) => void;
   /** Previsão do clima para a data agendada (badge ao lado da data). */
   clima?: PrevisaoClima | null;
+}
+
+const PERIODO_ROTULO: Record<'manha' | 'tarde', string> = {
+  manha: 'Manhã',
+  tarde: 'Tarde',
+};
+
+/** Peso compacto para a pílula do cartão: kg abaixo de 1 t, toneladas acima. */
+function pesoCurto(kg: number): string {
+  if (kg < 1000) {
+    return `${kg.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} kg`;
+  }
+  return `${(kg / 1000).toLocaleString('pt-BR', {
+    maximumFractionDigits: 2,
+  })} t`;
 }
 
 function IconePin(): React.ReactElement {
@@ -32,6 +47,9 @@ function IconePin(): React.ReactElement {
   );
 }
 
+const pilulaCls =
+  'rounded-md px-1.5 py-0.5 text-[10px] font-semibold tracking-wide';
+
 export function PedidoCard({
   pedido,
   podeEscrever,
@@ -44,8 +62,13 @@ export function PedidoCard({
   const transicoes = TRANSICOES[pedido.statusLogistico];
   const avanco = transicoes.find((t) => t !== 'cancelada') ?? null;
   const podeCancelar = transicoes.includes('cancelada');
-  // Reversão de uma etapa (voltar): agendada->pendente, em_rota->agendada.
+  // Reversão de uma etapa (voltar): agendada->pendente, em_rota->agendada e
+  // cancelada->pendente (restaurar quem foi cancelado por engano).
   const reverso = REVERSOES[pedido.statusLogistico][0] ?? null;
+  const ehCancelada = pedido.statusLogistico === 'cancelada';
+  // Pedido pendente é "lixo" do Órix que ainda não virou compromisso: descartar
+  // não avisa ninguém. Nos demais status a palavra certa é cancelar.
+  const ehDescarte = pedido.statusLogistico === 'pendente';
 
   // RF-2.2: progresso da separação (apenas estados pré-rota).
   const tot = pedido.itens.length;
@@ -56,6 +79,17 @@ export function PedidoCard({
     pedido.statusLogistico === 'agendada';
   const mostrarSeparacao = preRota && tot > 0;
   const pct = tot > 0 ? Math.round((sep / tot) * 100) : 0;
+
+  // Entrega rural: o motorista se guia por bairro + cidade (não há rua/número).
+  const local = [pedido.bairro, pedido.cidadeCliente]
+    .filter((parte) => parte && parte.trim() !== '')
+    .join(' · ');
+
+  const temBadges =
+    pedido.periodo !== null ||
+    pedido.caminhaoNome !== null ||
+    preRota ||
+    pedido.pesoTotalKg !== null;
 
   return (
     <article className="animate-sobe rounded-xl border border-linha bg-papel p-3.5 shadow-carta transition duration-200 hover:-translate-y-0.5 hover:shadow-flutua">
@@ -70,8 +104,37 @@ export function PedidoCard({
 
       <p className="mt-1 flex items-center gap-1 text-xs text-tinta-suave">
         <IconePin />
-        {pedido.cidadeCliente || '—'}
+        {local || '—'}
       </p>
+
+      {temBadges && (
+        <div className="mt-2 flex flex-wrap items-center gap-1">
+          {pedido.periodo && (
+            <span className={`${pilulaCls} bg-folha-claro text-mata`}>
+              {PERIODO_ROTULO[pedido.periodo]}
+            </span>
+          )}
+          {pedido.caminhaoNome && (
+            <span className={`${pilulaCls} bg-creme-100 text-tinta-suave`}>
+              🚚 {pedido.caminhaoNome}
+            </span>
+          )}
+          {pedido.pesoTotalKg !== null ? (
+            <span className={`${pilulaCls} bg-creme-100 text-tinta-suave`}>
+              {pesoCurto(pedido.pesoTotalKg)}
+            </span>
+          ) : (
+            preRota && (
+              <span
+                className={`${pilulaCls} bg-trigo-claro text-trigo-escuro`}
+                title="Algum item do pedido está sem peso cadastrado. Informe o peso no agendamento."
+              >
+                peso pendente
+              </span>
+            )
+          )}
+        </div>
+      )}
 
       <div className="mt-2.5 flex items-end justify-between">
         <span className="font-display text-xl font-semibold text-mata-escuro">
@@ -122,7 +185,10 @@ export function PedidoCard({
             <dt>Agendada</dt>
             <dd className="flex items-center justify-end gap-2 text-right text-tinta">
               <ClimaResumo variant="badge" previsao={clima} />
-              <span>{formatarData(pedido.dataAgendada)}</span>
+              <span>
+                {formatarData(pedido.dataAgendada)}
+                {pedido.periodo ? ` · ${PERIODO_ROTULO[pedido.periodo]}` : ''}
+              </span>
             </dd>
           </div>
         )}
@@ -168,23 +234,39 @@ export function PedidoCard({
                 <button
                   type="button"
                   onClick={() => onTransicionar(pedido, 'cancelada')}
+                  title={
+                    ehDescarte
+                      ? 'Tira o pedido do quadro (vai para Cancelados, de onde pode ser restaurado). O cliente NÃO é notificado.'
+                      : 'Cancela o pedido. O cliente NÃO é notificado.'
+                  }
                   className="rounded-lg border border-linha px-2.5 py-1.5 text-xs font-semibold text-tinta-suave transition hover:border-terra/40 hover:bg-terra-claro hover:text-terra-escuro"
                 >
-                  Cancelar
+                  {ehDescarte ? 'Descartar' : 'Cancelar'}
                 </button>
               )}
             </div>
           )}
 
-          {podeEscrever && reverso && (
-            <button
-              type="button"
-              onClick={() => onReverter?.(pedido, reverso)}
-              className="self-start rounded-lg px-2.5 py-1.5 text-xs font-semibold text-tinta-suave transition hover:bg-creme-100 hover:text-tinta"
-            >
-              ← Voltar para {STATUS_META[reverso].rotulo}
-            </button>
-          )}
+          {podeEscrever &&
+            reverso &&
+            (ehCancelada ? (
+              <button
+                type="button"
+                onClick={() => onReverter?.(pedido, reverso)}
+                title="Devolve o pedido para Pendente. O cliente NÃO é notificado."
+                className="rounded-lg border border-folha/40 bg-folha-claro px-2.5 py-1.5 text-xs font-bold text-mata transition hover:bg-folha-claro/70"
+              >
+                Restaurar
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onReverter?.(pedido, reverso)}
+                className="self-start rounded-lg px-2.5 py-1.5 text-xs font-semibold text-tinta-suave transition hover:bg-creme-100 hover:text-tinta"
+              >
+                ← Voltar para {STATUS_META[reverso].rotulo}
+              </button>
+            ))}
         </div>
       ) : null}
     </article>

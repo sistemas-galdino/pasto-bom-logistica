@@ -22,6 +22,8 @@ import type { OrixPedidoItem } from '@pastobom/shared';
 import { escolherNumeroWhatsApp } from '@pastobom/shared';
 import { supabase } from '../db/supabase.js';
 import { log } from '../log.js';
+import { getNaturezaPermitida, normalizarNatureza } from '../orix/status.js';
+import { semearPesosAuto } from '../services/carga.js';
 
 /** Converte uma data dd/mm/yyyy (formato da Órix) para ISO yyyy-mm-dd.
  *  Retorna null se a entrada estiver vazia ou em formato inesperado. */
@@ -72,6 +74,8 @@ interface ResultadoIngestao {
   atualizados: number;
   itensGravados: number;
   erros: number;
+  /** Pedidos ignorados por natureza de operação (não viram entrega). */
+  descartadosNatureza: number;
 }
 
 /**
@@ -89,6 +93,7 @@ export async function ingest(
     atualizados: 0,
     itensGravados: 0,
     erros: 0,
+    descartadosNatureza: 0,
   };
 
   if (!itens || itens.length === 0) {
@@ -105,9 +110,41 @@ export async function ingest(
     else grupos.set(idPedido, [item]);
   }
 
+  // 1b) Filtrar por NATUREZA DA OPERAÇÃO (só '00001' VENDA e '00012' VENDA
+  // ORIGINADA DE FAT P/ ENTREGA FUTURA viram entrega). Descartar aqui é o que
+  // impede a '00011' (SIMPLES FATURAMENTO — só a nota, nada sai do galpão) de
+  // duplicar no painel a mesma entrega que a '00012' já representa.
+  // A natureza é do PEDIDO (repetida em todas as suas linhas), por isso o corte
+  // é no grupo inteiro.
+  const permitidas = await getNaturezaPermitida();
+  const descartadas = new Map<string, number>();
+  for (const [idPedido, linhas] of grupos) {
+    const cab = linhas[0];
+    if (!cab) continue;
+    const natureza = normalizarNatureza(cab.natureza);
+    if (natureza !== '' && !permitidas.includes(natureza)) {
+      grupos.delete(idPedido);
+      resultado.descartadosNatureza += 1;
+      const rotulo = `${natureza} ${texto(cab.nome_natureza)}`.trim();
+      descartadas.set(rotulo, (descartadas.get(rotulo) ?? 0) + 1);
+    }
+  }
+  if (descartadas.size > 0) {
+    const resumo = [...descartadas]
+      .map(([rotulo, n]) => `${n}× ${rotulo}`)
+      .join('; ');
+    log.info(
+      `[ingest] ${resultado.descartadosNatureza} pedido(s) fora das naturezas ${permitidas.join(
+        '/',
+      )}: ${resumo}`,
+    );
+  }
+
   // Cache de enriquecimento para evitar chamadas/upserts repetidos dentro do tick.
   const clientesEnriquecidos = new Set<string>();
   const propriedadesEnriquecidas = new Set<string>();
+  // Produtos cujos itens foram efetivamente gravados (codigo -> nome).
+  const produtosDoLote = new Map<string, string>();
 
   for (const [orixIdPedido, linhas] of grupos) {
     resultado.pedidosProcessados += 1;
@@ -118,6 +155,7 @@ export async function ingest(
         orix,
         clientesEnriquecidos,
         propriedadesEnriquecidas,
+        produtosDoLote,
         resultado,
       );
     } catch (err) {
@@ -130,6 +168,17 @@ export async function ingest(
     }
   }
 
+  // O cadastro de peso se auto-completa conforme os pedidos chegam: o parser lê o
+  // kg do NOME do produto (o campo `peso` do Órix é inutilizável). O que não tiver
+  // peso no nome fica para a equipe digitar. Peso NUNCA derruba a ingestão.
+  try {
+    await semearPesosAuto(
+      [...produtosDoLote].map(([codigo, nome]) => ({ codigo, nome })),
+    );
+  } catch (err) {
+    log.warn('[ingest] Falha ao semear pesos automáticos do lote:', err);
+  }
+
   return resultado;
 }
 
@@ -139,6 +188,7 @@ async function processarGrupo(
   orix: OrixClient,
   clientesEnriquecidos: Set<string>,
   propriedadesEnriquecidas: Set<string>,
+  produtosDoLote: Map<string, string>,
   resultado: ResultadoIngestao,
 ): Promise<void> {
   // Cabeçalho do pedido vem da primeira linha (campos repetidos entre itens).
@@ -202,6 +252,8 @@ async function processarGrupo(
         data_pedido: dataPedido,
         status_orix: texto(cab.status),
         status_orix_nome: texto(cab.nome_status),
+        natureza: normalizarNatureza(cab.natureza) || null,
+        natureza_nome: texto(cab.nome_natureza) || null,
         // status_logistico: NÃO incluído de propósito (estado manual).
         atualizado_em: new Date().toISOString(),
       })
@@ -231,6 +283,8 @@ async function processarGrupo(
         data_pedido: dataPedido,
         status_orix: texto(cab.status),
         status_orix_nome: texto(cab.nome_status),
+        natureza: normalizarNatureza(cab.natureza) || null,
+        natureza_nome: texto(cab.nome_natureza) || null,
         status_logistico: 'pendente',
       })
       .select('id')
@@ -265,6 +319,12 @@ async function processarGrupo(
       throw new Error(`insert itens: ${erroInsItens.message}`);
     }
     resultado.itensGravados += linhasItens.length;
+
+    for (const it of itensCalculados) {
+      if (it.produto_codigo) {
+        produtosDoLote.set(it.produto_codigo, it.nome_produto);
+      }
+    }
   }
 }
 

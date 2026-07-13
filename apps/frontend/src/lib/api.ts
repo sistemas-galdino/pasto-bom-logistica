@@ -17,6 +17,11 @@ import type {
   LinkAcessoResposta,
   AtualizarUsuarioRequest,
   PrevisaoClima,
+  Caminhao,
+  CriarCaminhaoRequest,
+  AtualizarCaminhaoRequest,
+  AgendaResposta,
+  PesoProduto,
 } from '@pastobom/shared';
 import { supabase } from './supabase';
 
@@ -220,6 +225,51 @@ export const api = {
     return request<Record<string, PrevisaoClima | null>>(`/api/clima${qs}`, {
       signal,
     });
+  },
+
+  /** Frota: lista os caminhões (leitura liberada; escrita só logística). */
+  async listarCaminhoes(signal?: AbortSignal): Promise<Caminhao[]> {
+    return request<Caminhao[]>('/api/caminhoes', { signal });
+  },
+
+  /** Frota: cadastra um caminhão. */
+  async criarCaminhao(body: CriarCaminhaoRequest): Promise<Caminhao> {
+    return request<Caminhao>('/api/caminhoes', { method: 'POST', body });
+  },
+
+  /** Frota: atualiza nome, placa, capacidade ou o flag de ativo. */
+  async atualizarCaminhao(
+    id: string,
+    body: AtualizarCaminhaoRequest,
+  ): Promise<Caminhao> {
+    return request<Caminhao>(`/api/caminhoes/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body,
+    });
+  },
+
+  /**
+   * Peso: grava o peso unitário de um produto (origem 'manual'). Fica salvo NO
+   * PRODUTO — os próximos pedidos com esse item já vêm com o peso preenchido.
+   */
+  async definirPesoProduto(
+    produtoCodigo: string,
+    pesoKg: number,
+  ): Promise<PesoProduto> {
+    return request<PesoProduto>(
+      `/api/produtos/${encodeURIComponent(produtoCodigo)}/peso`,
+      { method: 'PUT', body: { pesoKg } },
+    );
+  },
+
+  /** Agenda: entregas agrupadas por (data, período), com ocupação dos caminhões. */
+  async agenda(
+    de: string,
+    ate: string,
+    signal?: AbortSignal,
+  ): Promise<AgendaResposta> {
+    const qs = `?de=${encodeURIComponent(de)}&ate=${encodeURIComponent(ate)}`;
+    return request<AgendaResposta>(`/api/agenda${qs}`, { signal });
   },
 
   /** Administração: lista todos os usuários do sistema (somente logística). */

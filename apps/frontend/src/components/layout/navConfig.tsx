@@ -2,7 +2,15 @@
 // (consumidas pela Sidebar) e metadados de título/subtítulo por rota
 // (consumidos pela Topbar).
 
-import { LayoutDashboard, Package, Route, UserCog, Users } from 'lucide-react';
+import {
+  CalendarDays,
+  LayoutDashboard,
+  Package,
+  Route,
+  Truck,
+  UserCog,
+  Users,
+} from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Papel } from '../../auth/AuthProvider';
 
@@ -10,6 +18,8 @@ export interface NavItem {
   rotulo: string;
   to: string;
   icone: LucideIcon;
+  /** Se definido, o item só aparece para estes papéis. */
+  papeis?: Papel[];
 }
 
 export interface NavSection {
@@ -25,13 +35,15 @@ export const NAV_SECTIONS: NavSection[] = [
     itens: [
       { rotulo: 'Dashboard', to: '/dashboard', icone: LayoutDashboard },
       { rotulo: 'Entregas', to: '/entregas', icone: Package },
+      { rotulo: 'Agenda', to: '/agenda', icone: CalendarDays },
     ],
   },
   {
     titulo: 'Operações',
     itens: [
-      { rotulo: 'Rotas', to: '/rotas', icone: Route },
-      { rotulo: 'Motoristas', to: '/motoristas', icone: Users },
+      { rotulo: 'Rotas', to: '/rotas', icone: Route, papeis: ['logistica', 'vendedor'] },
+      { rotulo: 'Motoristas', to: '/motoristas', icone: Users, papeis: ['logistica'] },
+      { rotulo: 'Caminhões', to: '/caminhoes', icone: Truck, papeis: ['logistica'] },
     ],
   },
   {
@@ -49,7 +61,9 @@ export interface RotaMeta {
 export const ROTAS_META: Record<string, RotaMeta> = {
   '/dashboard': { titulo: 'Dashboard', subtitulo: 'Visão geral da operação' },
   '/entregas': { titulo: 'Entregas', subtitulo: 'Quadro de pedidos por status' },
+  '/agenda': { titulo: 'Agenda', subtitulo: 'Entregas por dia e período' },
   '/rotas': { titulo: 'Rotas', subtitulo: 'Pedidos em rota por motorista' },
   '/motoristas': { titulo: 'Motoristas', subtitulo: 'Equipe e cargas em rota' },
+  '/caminhoes': { titulo: 'Caminhões', subtitulo: 'Frota e capacidade de carga' },
   '/usuarios': { titulo: 'Usuários', subtitulo: 'Acessos e papéis da equipe' },
 };
