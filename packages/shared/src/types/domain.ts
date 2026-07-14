@@ -5,6 +5,8 @@ export type StatusLogistico =
   | 'agendada'
   | 'em_rota'
   | 'entregue'
+  /** Saiu para entrega e não deu: cliente ausente, porteira fechada, chuva… */
+  | 'nao_realizado'
   | 'cancelada';
 
 /** Período de entrega. A reunião decidiu planejar por turno, não por horário. */
@@ -67,6 +69,11 @@ export interface Pedido {
   pesoTotalKg: number | null;
   /** Observação livre (ex.: anotação do motorista na entrega). */
   observacoes?: string | null;
+  /**
+   * Por que a entrega não foi realizada. Obrigatório na transição para
+   * `nao_realizado` — sem o motivo, a logística não sabe o que remarcar.
+   */
+  motivoNaoEntrega?: string | null;
   /** Fase 3: destino resolvido (só preenchido na rota do motorista). */
   destino?: DestinoEntrega | null;
   itens: ItemPedido[];

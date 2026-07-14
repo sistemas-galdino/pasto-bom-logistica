@@ -30,6 +30,7 @@ import {
   carregarPedido,
   definirMotorista,
   definirSeparacaoItem,
+  definirSeparacaoPedido,
   mapearPedido,
   reenviarWhatsapp,
   reverterStatus,
@@ -46,6 +47,7 @@ const STATUS_VALIDOS: StatusLogistico[] = [
   'agendada',
   'em_rota',
   'entregue',
+  'nao_realizado',
   'cancelada',
 ];
 
@@ -54,6 +56,7 @@ const statusEnum = z.enum([
   'agendada',
   'em_rota',
   'entregue',
+  'nao_realizado',
   'cancelada',
 ]);
 
@@ -62,6 +65,8 @@ const transicaoBodySchema = z.object({
   propriedadeCodigo: z.string().min(1).optional(),
   dataAgendada: z.string().min(1).optional(),
   observacao: z.string().max(1000).optional(),
+  /** Obrigatório quando para==='nao_realizado' (validado no serviço). */
+  motivo: z.string().max(1000).optional(),
   motoristaId: z.string().uuid().nullable().optional(),
   periodo: z.enum(['manha', 'tarde']).optional(),
   caminhaoId: z.string().uuid().nullable().optional(),
@@ -84,6 +89,8 @@ const motoristaBodySchema = z.object({
 });
 
 // Status considerados "finalizados" (excluídos da listagem padrão).
+// 'nao_realizado' NÃO entra aqui de propósito: a entrega falhou, mas a venda
+// continua de pé e alguém precisa remarcar — é trabalho em aberto.
 const FINALIZADOS: StatusLogistico[] = ['entregue', 'cancelada'];
 const NAO_FINALIZADOS: StatusLogistico[] = STATUS_VALIDOS.filter(
   (s) => !FINALIZADOS.includes(s),
@@ -115,6 +122,7 @@ interface PedidoRowLista {
   motorista_id: string | null;
   caminhao_id: string | null;
   observacoes: string | null;
+  motivo_nao_entrega: string | null;
   criado_em: string;
   atualizado_em: string;
   itens_pedido?:
@@ -135,8 +143,41 @@ const SELECT_LISTA =
   'cidade_cliente, vendedor_codigo, vendedor_nome, propriedade_codigo, ' +
   'valor_total, data_pedido, status_orix, status_orix_nome, status_logistico, ' +
   'data_agendada, periodo, data_entregue, motorista_id, caminhao_id, observacoes, ' +
-  'criado_em, atualizado_em, ' +
+  'motivo_nao_entrega, criado_em, atualizado_em, ' +
   'itens_pedido(id, produto_codigo, nome_produto, qtd, valor_unit, total, separado)';
+
+/** Aceita 'YYYY-MM-DD' e nada mais (evita injetar lixo no filtro do PostgREST). */
+function parseDataISO(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
+}
+
+/** CSV de status do Órix ('00041,00027'). Só dígitos, no máximo 10 valores. */
+function parseStatusOrix(raw: unknown): string[] | null {
+  if (raw === undefined || raw === null || raw === '') return null;
+  const partes = String(raw)
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => /^\d{1,10}$/.test(s))
+    .slice(0, 10);
+  return partes.length > 0 ? partes : null;
+}
+
+/**
+ * Teto de histórico quando o usuário NÃO pede um período explícito.
+ *
+ * `GET /pedidos` não tem paginação e o PostgREST corta em 1000 linhas EM SILÊNCIO
+ * — some pedido da tela sem erro nenhum. Os finalizados (entregue/cancelada) só
+ * crescem, então limitamos o histórico deles; os pedidos ABERTOS aparecem sempre,
+ * por mais velhos que sejam (é justamente o que a equipe precisa ver).
+ */
+const DIAS_HISTORICO_PADRAO = 180;
+
+function dataMenosDias(dias: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - dias);
+  return d.toISOString().slice(0, 10);
+}
 
 function parseStatusQuery(raw: unknown): StatusLogistico[] | null {
   if (raw === undefined || raw === null || raw === '') return null;
@@ -356,10 +397,32 @@ export async function pedidosRoutes(app: FastifyInstance): Promise<void> {
     } else {
       const filtro = parseStatusQuery(query.status);
       consulta = consulta.in('status_logistico', filtro ?? NAO_FINALIZADOS);
+
+      // Filtros da tela de Entregas (todos opcionais).
+      const de = parseDataISO(query.de);
+      const ate = parseDataISO(query.ate);
+      const statusOrix = parseStatusOrix(query.statusOrix);
+
+      if (de) consulta = consulta.gte('data_pedido', de);
+      if (ate) consulta = consulta.lte('data_pedido', ate);
+      if (statusOrix) consulta = consulta.in('status_orix', statusOrix);
+
+      // Sem período explícito: mantém TODOS os abertos e corta o histórico dos
+      // finalizados, para não bater no teto silencioso de 1000 linhas.
+      if (!de && !ate) {
+        const abertos = NAO_FINALIZADOS.join(',');
+        consulta = consulta.or(
+          `status_logistico.in.(${abertos}),` +
+            `data_pedido.gte.${dataMenosDias(DIAS_HISTORICO_PADRAO)}`,
+        );
+      }
     }
 
+    // Mais ANTIGAS primeiro: a fila de entrega é FIFO — quem espera há mais tempo
+    // aparece no topo (pedido do Johnny/Natália).
     const { data, error } = await consulta.order('data_pedido', {
-      ascending: false,
+      ascending: true,
+      nullsFirst: false,
     });
 
     if (error) {
@@ -414,6 +477,7 @@ export async function pedidosRoutes(app: FastifyInstance): Promise<void> {
         propriedadeCodigo: parsed.data.propriedadeCodigo,
         dataAgendada: parsed.data.dataAgendada,
         observacao: parsed.data.observacao,
+        motivo: parsed.data.motivo,
         motoristaId: parsed.data.motoristaId,
         periodo: parsed.data.periodo,
         caminhaoId: parsed.data.caminhaoId,
@@ -449,6 +513,30 @@ export async function pedidosRoutes(app: FastifyInstance): Promise<void> {
       return reply.send(pedido);
     } catch (err) {
       return responderErro(reply, err, `[POST /pedidos/${id}/reverter]`);
+    }
+  });
+
+  // PATCH /pedidos/:id/separacao  ("dar OK": marca TODOS os itens de uma vez)
+  // Escrita já restrita a logística + almoxarifado pelo write-gate global (auth.ts).
+  app.patch('/pedidos/:id/separacao', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const parsed = separacaoBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'body_invalido',
+        message: 'Informe separado: boolean.',
+        detalhes: parsed.error.issues,
+      });
+    }
+
+    try {
+      const pedido = await definirSeparacaoPedido({
+        pedidoId: id,
+        separado: parsed.data.separado,
+      });
+      return reply.send(pedido);
+    } catch (err) {
+      return responderErro(reply, err, `[PATCH /pedidos/${id}/separacao]`);
     }
   });
 

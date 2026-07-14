@@ -3,8 +3,12 @@
 // Reaproveita a query ['pedidos'] (mesma do quadro) e filtra client-side os
 // pedidos em rota, agrupando por motorista. Cada grupo mostra o nº de pedidos
 // e o valor total. Os cartões são exibidos sem ações (modo leitura).
+//
+// No topo há um filtro por motorista (pílulas) derivado da própria lista — os
+// motoristas que aparecem são só os que TÊM pedido em rota agora, então não há
+// chamada extra de API.
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Pedido } from '@pastobom/shared';
 import { api } from '../lib/api';
@@ -19,6 +23,12 @@ interface GrupoRota {
 }
 
 export function Rotas(): React.ReactElement {
+  // null = "Todos os motoristas". Guarda a CHAVE do grupo (nome do motorista
+  // ou 'Sem motorista'), a mesma usada no agrupamento.
+  const [motoristaSelecionado, setMotoristaSelecionado] = useState<
+    string | null
+  >(null);
+
   const pedidosQuery = useQuery({
     queryKey: ['pedidos'],
     queryFn: ({ signal }) => api.listarPedidos(TODOS_STATUS, signal),
@@ -46,6 +56,36 @@ export function Rotas(): React.ReactElement {
       return a.chave.localeCompare(b.chave, 'pt-BR');
     });
   }, [pedidosQuery.data]);
+
+  const totalEmRota = useMemo(
+    () => grupos.reduce((s, g) => s + g.pedidos.length, 0),
+    [grupos],
+  );
+
+  // Filtro EFETIVO: se o motorista escolhido sumiu da rota (terminou as
+  // entregas, por exemplo), cai de volta para "Todos" em vez de mostrar uma
+  // tela vazia. Derivado na renderização para não piscar vazio antes do efeito.
+  const filtroAtivo =
+    motoristaSelecionado !== null &&
+    grupos.some((g) => g.chave === motoristaSelecionado)
+      ? motoristaSelecionado
+      : null;
+
+  // Sincroniza o estado com o filtro efetivo, senão o motorista voltaria a ser
+  // filtrado sozinho caso reaparecesse num refetch posterior.
+  useEffect(() => {
+    if (motoristaSelecionado !== null && filtroAtivo === null) {
+      setMotoristaSelecionado(null);
+    }
+  }, [motoristaSelecionado, filtroAtivo]);
+
+  const gruposVisiveis = useMemo(
+    () =>
+      filtroAtivo === null
+        ? grupos
+        : grupos.filter((g) => g.chave === filtroAtivo),
+    [grupos, filtroAtivo],
+  );
 
   if (pedidosQuery.isLoading) {
     return (
@@ -82,33 +122,72 @@ export function Rotas(): React.ReactElement {
             Nenhum pedido em rota no momento.
           </p>
         ) : (
-          grupos.map((grupo) => (
-            <section key={grupo.chave}>
-              <div className="flex items-baseline justify-between gap-3 border-b border-linha pb-2">
-                <h2 className="font-display text-lg font-semibold text-mata-escuro">
-                  {grupo.chave}
-                </h2>
-                <span className="shrink-0 text-sm text-tinta-suave">
-                  {grupo.pedidos.length === 1
-                    ? '1 pedido'
-                    : `${grupo.pedidos.length} pedidos`}{' '}
-                  · {formatarMoeda(grupo.total)}
-                </span>
-              </div>
-              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {grupo.pedidos.map((p) => (
-                  <PedidoCard
-                    key={p.id}
-                    pedido={p}
-                    podeEscrever={false}
-                    podeSeparar={false}
-                    onTransicionar={() => {}}
-                    onSeparar={() => {}}
-                  />
-                ))}
-              </div>
-            </section>
-          ))
+          <>
+            <div
+              role="group"
+              aria-label="Filtrar por motorista"
+              className="flex flex-wrap items-center gap-2"
+            >
+              <button
+                type="button"
+                onClick={() => setMotoristaSelecionado(null)}
+                aria-pressed={filtroAtivo === null}
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                  filtroAtivo === null
+                    ? 'border-mata bg-mata text-creme shadow-carta'
+                    : 'border-linha bg-papel text-tinta-suave hover:border-mata/30 hover:text-mata'
+                }`}
+              >
+                Todos os motoristas ({totalEmRota})
+              </button>
+              {grupos.map((grupo) => {
+                const ativo = filtroAtivo === grupo.chave;
+                return (
+                  <button
+                    key={grupo.chave}
+                    type="button"
+                    onClick={() => setMotoristaSelecionado(grupo.chave)}
+                    aria-pressed={ativo}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                      ativo
+                        ? 'border-mata bg-mata text-creme shadow-carta'
+                        : 'border-linha bg-papel text-tinta-suave hover:border-mata/30 hover:text-mata'
+                    }`}
+                  >
+                    {grupo.chave} ({grupo.pedidos.length})
+                  </button>
+                );
+              })}
+            </div>
+
+            {gruposVisiveis.map((grupo) => (
+              <section key={grupo.chave}>
+                <div className="flex items-baseline justify-between gap-3 border-b border-linha pb-2">
+                  <h2 className="font-display text-lg font-semibold text-mata-escuro">
+                    {grupo.chave}
+                  </h2>
+                  <span className="shrink-0 text-sm text-tinta-suave">
+                    {grupo.pedidos.length === 1
+                      ? '1 pedido'
+                      : `${grupo.pedidos.length} pedidos`}{' '}
+                    · {formatarMoeda(grupo.total)}
+                  </span>
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {grupo.pedidos.map((p) => (
+                    <PedidoCard
+                      key={p.id}
+                      pedido={p}
+                      podeEscrever={false}
+                      podeSeparar={false}
+                      onTransicionar={() => {}}
+                      onSeparar={() => {}}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </>
         )}
       </div>
     </div>

@@ -74,6 +74,7 @@ interface PedidoRow {
   motorista_id: string | null;
   caminhao_id: string | null;
   observacoes: string | null;
+  motivo_nao_entrega: string | null;
   criado_em: string;
   atualizado_em: string;
 }
@@ -163,6 +164,7 @@ export function mapearPedido(
     bairro: extras.bairro ?? null,
     pesoTotalKg: pesoTotalDoPedido(itensMapeados),
     observacoes: row.observacoes ?? null,
+    motivoNaoEntrega: row.motivo_nao_entrega ?? null,
     itens: itensMapeados,
     criadoEm: row.criado_em,
     atualizadoEm: row.atualizado_em,
@@ -174,7 +176,7 @@ const COLUNAS_PEDIDO =
   'cidade_cliente, vendedor_codigo, vendedor_nome, propriedade_codigo, ' +
   'valor_total, data_pedido, status_orix, status_orix_nome, status_logistico, ' +
   'data_agendada, periodo, data_entregue, motorista_id, caminhao_id, observacoes, ' +
-  'criado_em, atualizado_em';
+  'motivo_nao_entrega, criado_em, atualizado_em';
 
 /** Resolve o nome do motorista (profiles) pelo auth.uid; '' quando sem nome. */
 async function lerNomeMotorista(
@@ -559,6 +561,8 @@ export interface AplicarTransicaoArgs {
   dataAgendada?: string;
   /** Observação livre (gravada em pedidos.observacoes). */
   observacao?: string;
+  /** Por que a entrega não foi feita — OBRIGATÓRIO em para==='nao_realizado'. */
+  motivo?: string;
   /** Motorista da entrega — obrigatório no agendamento (para==='agendada'). */
   motoristaId?: string | null;
   /** Turno da entrega — obrigatório no agendamento. */
@@ -582,6 +586,7 @@ export async function aplicarTransicao(
     propriedadeCodigo,
     dataAgendada,
     observacao,
+    motivo,
     motoristaId,
     periodo,
     caminhaoId,
@@ -593,13 +598,14 @@ export async function aplicarTransicao(
   const pedidoAtual = await carregarPedido(pedidoId);
   const de = pedidoAtual.statusLogistico;
 
-  // 1.1) Fase 3: o motorista só CONFIRMA a entrega dos PRÓPRIOS pedidos.
+  // 1.1) Fase 3: o motorista só encerra a entrega dos PRÓPRIOS pedidos — para
+  //      BEM ('entregue') ou para MAL ('nao_realizado'). Nada além disso.
   if (atorPapel === 'motorista') {
-    if (para !== 'entregue') {
+    if (para !== 'entregue' && para !== 'nao_realizado') {
       throw new TransicaoError(
         403,
         'sem_permissao',
-        'Motorista só pode confirmar a entrega.',
+        'Motorista só pode confirmar a entrega ou marcá-la como não realizada.',
       );
     }
     if (!atorUserId || pedidoAtual.motoristaId !== atorUserId) {
@@ -722,6 +728,17 @@ export async function aplicarTransicao(
     propriedadeParaGravar = propriedadeCodigo;
   }
 
+  // 3.9) Não realizado exige MOTIVO. Sem ele a logística fica sem saber o que
+  //      remarcar (e o motorista não tem como explicar a porteira fechada).
+  const motivoLimpo = motivo?.trim() ?? '';
+  if (para === 'nao_realizado' && motivoLimpo === '') {
+    throw new TransicaoError(
+      422,
+      'motivo_obrigatorio',
+      'Informe por que a entrega não foi realizada.',
+    );
+  }
+
   // 4) Atualiza o pedido.
   const agora = new Date().toISOString();
   const patch: Record<string, unknown> = {
@@ -735,6 +752,9 @@ export async function aplicarTransicao(
     if (observacao) {
       patch.observacoes = observacao;
     }
+  }
+  if (para === 'nao_realizado') {
+    patch.motivo_nao_entrega = motivoLimpo;
   }
 
   const { error: errUpdate } = await supabase
@@ -834,6 +854,8 @@ export async function reverterStatus(args: {
     patch.periodo = null;
     patch.motorista_id = null;
     patch.caminhao_id = null;
+    // Remarcar zera o motivo da falha anterior: o pedido volta limpo para a fila.
+    patch.motivo_nao_entrega = null;
   }
 
   const { error: errUpdate } = await supabase
@@ -914,6 +936,50 @@ export async function definirSeparacaoItem(args: {
       500,
       'erro_banco',
       `Falha ao atualizar separação do item: ${error.message}`,
+    );
+  }
+
+  return carregarPedido(pedidoId);
+}
+
+/**
+ * "Dar OK na separação": marca (ou desmarca) TODOS os itens do pedido de uma vez.
+ * É o botão da tela de Separação — o almoxarifado confere a carga inteira e dá um
+ * clique só, em vez de tiquetar item a item.
+ *
+ * Mesma trava de estado do `definirSeparacaoItem`: só em pedido pendente/agendado.
+ */
+export async function definirSeparacaoPedido(args: {
+  pedidoId: string;
+  separado: boolean;
+}): Promise<Pedido> {
+  const { pedidoId, separado } = args;
+  const pedido = await carregarPedido(pedidoId);
+
+  if (
+    pedido.statusLogistico !== 'pendente' &&
+    pedido.statusLogistico !== 'agendada'
+  ) {
+    throw new TransicaoError(
+      409,
+      'separacao_estado_invalido',
+      'A separação só pode ser ajustada em pedidos pendentes ou agendados.',
+    );
+  }
+
+  const { error } = await supabase
+    .from('itens_pedido')
+    .update({
+      separado,
+      separado_em: separado ? new Date().toISOString() : null,
+    })
+    .eq('pedido_id', pedidoId);
+
+  if (error) {
+    throw new TransicaoError(
+      500,
+      'erro_banco',
+      `Falha ao atualizar a separação do pedido: ${error.message}`,
     );
   }
 

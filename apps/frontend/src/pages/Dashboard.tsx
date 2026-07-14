@@ -24,6 +24,7 @@ import {
   CalendarClock,
   Truck,
   CheckCircle2,
+  PackageX,
   XCircle,
   TrendingUp,
   Users,
@@ -88,6 +89,7 @@ export function Dashboard(): React.ReactElement {
       agendada: 0,
       em_rota: 0,
       entregue: 0,
+      nao_realizado: 0,
       cancelada: 0,
     };
     for (const p of pedidos) c[p.statusLogistico] += 1;
@@ -192,7 +194,9 @@ export function Dashboard(): React.ReactElement {
   return (
     <div className="scroll-suave h-full overflow-y-auto">
       <div className="animate-sobe mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* 9 KPIs: 3x3 no desktop (fecha a grade sem cartão órfão e alinha com
+            a grade de 3 colunas dos gráficos abaixo). */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <StatCard
             label="Total"
             value={total}
@@ -223,6 +227,16 @@ export function Dashboard(): React.ReactElement {
             value={contagem.entregue}
             icon={CheckCircle2}
             accent="mata"
+          />
+          {/* O caminhão foi e a entrega não aconteceu: precisa saltar aos olhos
+              da logística. O acento fica em "terra" porque o StatCard ainda não
+              expõe o vermelho "brasa" da paleta. */}
+          <StatCard
+            label="Não realizadas"
+            value={contagem.nao_realizado}
+            sub="Entregas que falharam na rua"
+            icon={PackageX}
+            accent="terra"
           />
           <StatCard
             label="Cancelados"

@@ -38,6 +38,13 @@ export const STATUS_META: Record<StatusLogistico, StatusMeta> = {
     faixa: 'bg-mata',
     acao: 'Concluído',
   },
+  nao_realizado: {
+    rotulo: 'Não realizado',
+    badge: 'bg-brasa-claro text-brasa-escuro',
+    faixa: 'bg-brasa',
+    // Sem ação de avanço: sai daqui pela REVERSÃO ("Reagendar" -> pendente).
+    acao: '',
+  },
   cancelada: {
     rotulo: 'Cancelada',
     badge: 'bg-terra-claro text-terra-escuro',
@@ -52,6 +59,9 @@ export const COLUNAS_KANBAN: StatusLogistico[] = [
   'agendada',
   'em_rota',
   'entregue',
+  // Desfecho ruim de uma saída. Fica ao lado de 'entregue' porque é a outra
+  // maneira de uma rota terminar — e precisa saltar aos olhos do Johnny.
+  'nao_realizado',
 ];
 
 /** Cor hex de cada status (espelha o token "faixa" do STATUS_META), para
@@ -61,6 +71,7 @@ export const STATUS_HEX: Record<StatusLogistico, string> = {
   agendada: '#199A3C', // folha
   em_rota: '#D9AE07', // trigo
   entregue: '#176D2E', // mata
+  nao_realizado: '#B3261E', // brasa
   cancelada: '#8C5A2B', // terra
 };
 
@@ -70,5 +81,6 @@ export const TODOS_STATUS: StatusLogistico[] = [
   'agendada',
   'em_rota',
   'entregue',
+  'nao_realizado',
   'cancelada',
 ];

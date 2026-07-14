@@ -105,17 +105,31 @@ async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
   return payload as T;
 }
 
+/** Filtros server-side da lista de entregas (todos opcionais). */
+export interface FiltrosPedidos {
+  /** Data de ENTRADA do pedido (data_pedido), 'YYYY-MM-DD'. */
+  de?: string;
+  ate?: string;
+  /** Status do Órix ('00041', '00045', '00027'). */
+  statusOrix?: string[];
+}
+
 export const api = {
-  /** Lista pedidos; opcionalmente filtra por uma lista de status. */
+  /** Lista pedidos; opcionalmente filtra por status logístico, período e status Órix. */
   async listarPedidos(
     status?: StatusLogistico[],
     signal?: AbortSignal,
+    filtros?: FiltrosPedidos,
   ): Promise<Pedido[]> {
-    const qs =
-      status && status.length > 0
-        ? `?status=${encodeURIComponent(status.join(','))}`
-        : '';
-    return request<Pedido[]>(`/api/pedidos${qs}`, { signal });
+    const params = new URLSearchParams();
+    if (status && status.length > 0) params.set('status', status.join(','));
+    if (filtros?.de) params.set('de', filtros.de);
+    if (filtros?.ate) params.set('ate', filtros.ate);
+    if (filtros?.statusOrix && filtros.statusOrix.length > 0) {
+      params.set('statusOrix', filtros.statusOrix.join(','));
+    }
+    const qs = params.toString();
+    return request<Pedido[]>(`/api/pedidos${qs ? `?${qs}` : ''}`, { signal });
   },
 
   /** Detalhe de um pedido. */
@@ -149,6 +163,17 @@ export const api = {
       `/api/pedidos/${encodeURIComponent(pedidoId)}/itens/${encodeURIComponent(
         itemId,
       )}/separacao`,
+      { method: 'PATCH', body: { separado } },
+    );
+  },
+
+  /** "Dar OK na separação": marca/desmarca TODOS os itens do pedido de uma vez. */
+  async definirSeparacaoPedido(
+    pedidoId: string,
+    separado: boolean,
+  ): Promise<Pedido> {
+    return request<Pedido>(
+      `/api/pedidos/${encodeURIComponent(pedidoId)}/separacao`,
       { method: 'PATCH', body: { separado } },
     );
   },

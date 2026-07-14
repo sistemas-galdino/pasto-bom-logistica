@@ -17,6 +17,12 @@ interface Props {
   onSeparar: (pedido: Pedido) => void;
   /** Reverte o status uma etapa (voltar/restaurar) — só logística. */
   onReverter?: (pedido: Pedido, para: StatusLogistico) => void;
+  /**
+   * Abre o registro de "entrega não realizada" (em_rota -> nao_realizado).
+   * Opcional: só o quadro oferece essa ação; Rotas e Separação não passam nada
+   * e o botão simplesmente não aparece.
+   */
+  onNaoRealizado?: (pedido: Pedido) => void;
   /** Previsão do clima para a data agendada (badge ao lado da data). */
   clima?: PrevisaoClima | null;
 }
@@ -57,15 +63,28 @@ export function PedidoCard({
   onTransicionar,
   onSeparar,
   onReverter,
+  onNaoRealizado,
   clima,
 }: Props): React.ReactElement {
+  const acaoNaoRealizado = onNaoRealizado;
+
   const transicoes = TRANSICOES[pedido.statusLogistico];
-  const avanco = transicoes.find((t) => t !== 'cancelada') ?? null;
+  // 'nao_realizado' é desfecho de rota, não avanço do fluxo: nunca vira o botão
+  // primário (em_rota tem o seu botão próprio, mais abaixo).
+  const avanco =
+    transicoes.find((t) => t !== 'cancelada' && t !== 'nao_realizado') ?? null;
   const podeCancelar = transicoes.includes('cancelada');
-  // Reversão de uma etapa (voltar): agendada->pendente, em_rota->agendada e
-  // cancelada->pendente (restaurar quem foi cancelado por engano).
+  // Reversão de uma etapa (voltar): agendada->pendente, em_rota->agendada,
+  // cancelada->pendente (restaurar quem foi cancelado por engano) e
+  // nao_realizado->pendente (remarcar a entrega que não deu certo).
   const reverso = REVERSOES[pedido.statusLogistico][0] ?? null;
   const ehCancelada = pedido.statusLogistico === 'cancelada';
+  const ehNaoRealizado = pedido.statusLogistico === 'nao_realizado';
+  // Só quem está na rua pode "não dar certo": o botão vive no cartão em_rota.
+  const mostrarNaoRealizado =
+    pedido.statusLogistico === 'em_rota' &&
+    podeEscrever &&
+    acaoNaoRealizado !== null;
   // Pedido pendente é "lixo" do Órix que ainda não virou compromisso: descartar
   // não avisa ninguém. Nos demais status a palavra certa é cancelar.
   const ehDescarte = pedido.statusLogistico === 'pendente';
@@ -84,6 +103,12 @@ export function PedidoCard({
   const local = [pedido.bairro, pedido.cidadeCliente]
     .filter((parte) => parte && parte.trim() !== '')
     .join(' · ');
+
+  // Data em que a ordem de venda ENTROU (o pedido nº 1 da lista do Johnny) e o
+  // status do Órix — é por ele que a equipe filtra o quadro.
+  const statusOrixNome = pedido.statusOrixNome ? pedido.statusOrixNome.trim() : '';
+  const temLinhaOrigem = Boolean(pedido.dataPedido) || statusOrixNome !== '';
+  const motivo = pedido.motivoNaoEntrega ? pedido.motivoNaoEntrega.trim() : '';
 
   const temBadges =
     pedido.periodo !== null ||
@@ -106,6 +131,47 @@ export function PedidoCard({
         <IconePin />
         {local || '—'}
       </p>
+
+      {temLinhaOrigem && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-pedra">
+          {pedido.dataPedido && (
+            <span>
+              Entrada:{' '}
+              <span className="font-semibold text-tinta-suave">
+                {formatarData(pedido.dataPedido)}
+              </span>
+            </span>
+          )}
+          {statusOrixNome !== '' && (
+            <span
+              title={`Status no Órix: ${statusOrixNome}`}
+              className="max-w-full truncate rounded-md bg-creme-100 px-1.5 py-0.5 font-semibold text-tinta-suave"
+            >
+              {statusOrixNome}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* O motivo é O dado deste cartão: é ele que diz o que resolver antes de
+          remarcar. Registros antigos podem não ter motivo — melhor dizer isso
+          do que deixar o espaço vazio. */}
+      {ehNaoRealizado && (
+        <div className="mt-2.5 rounded-lg border border-brasa/30 bg-brasa-claro px-2.5 py-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-brasa">
+            Motivo da não entrega
+          </p>
+          {motivo !== '' ? (
+            <p className="mt-0.5 text-xs font-medium leading-snug text-brasa-escuro">
+              {motivo}
+            </p>
+          ) : (
+            <p className="mt-0.5 text-xs italic leading-snug text-brasa-escuro/70">
+              Motivo não informado.
+            </p>
+          )}
+        </div>
+      )}
 
       {temBadges && (
         <div className="mt-2 flex flex-wrap items-center gap-1">
@@ -203,6 +269,7 @@ export function PedidoCard({
       </dl>
 
       {(podeSeparar && mostrarSeparacao) ||
+      mostrarNaoRealizado ||
       (podeEscrever && (avanco || podeCancelar || reverso)) ? (
         <div className="mt-3 flex flex-col gap-2 border-t border-linha/70 pt-3">
           {podeSeparar && mostrarSeparacao && (
@@ -219,7 +286,32 @@ export function PedidoCard({
             </button>
           )}
 
-          {podeEscrever && (avanco || podeCancelar) && (
+          {/* Não realizado: a saída daqui é remarcar. Reagendar (reversão para
+              pendente) é a ação principal; cancelar continua disponível. */}
+          {podeEscrever && ehNaoRealizado && reverso && (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => onReverter?.(pedido, reverso)}
+                title="Devolve o pedido para Pendente para remarcar a entrega. O cliente NÃO é notificado."
+                className="flex-1 rounded-lg bg-mata px-2.5 py-1.5 text-xs font-bold text-creme-50 transition hover:bg-mata-escuro"
+              >
+                Reagendar
+              </button>
+              {podeCancelar && (
+                <button
+                  type="button"
+                  onClick={() => onTransicionar(pedido, 'cancelada')}
+                  title="Cancela o pedido. O cliente NÃO é notificado."
+                  className="rounded-lg border border-linha px-2.5 py-1.5 text-xs font-semibold text-tinta-suave transition hover:border-terra/40 hover:bg-terra-claro hover:text-terra-escuro"
+                >
+                  Cancelar
+                </button>
+              )}
+            </div>
+          )}
+
+          {podeEscrever && !ehNaoRealizado && (avanco || podeCancelar) && (
             <div className="flex gap-2">
               {avanco && (
                 <button
@@ -247,7 +339,20 @@ export function PedidoCard({
             </div>
           )}
 
+          {/* O caminhão foi e a entrega não aconteceu — não é cancelamento. */}
+          {mostrarNaoRealizado && acaoNaoRealizado && (
+            <button
+              type="button"
+              onClick={() => acaoNaoRealizado(pedido)}
+              title="A entrega não aconteceu (cliente ausente, porteira fechada…). A venda continua de pé e o cliente NÃO é notificado."
+              className="rounded-lg border border-brasa/30 bg-brasa-claro px-2.5 py-1.5 text-xs font-semibold text-brasa-escuro transition hover:border-brasa/50 hover:bg-brasa-claro/70"
+            >
+              Não realizado
+            </button>
+          )}
+
           {podeEscrever &&
+            !ehNaoRealizado &&
             reverso &&
             (ehCancelada ? (
               <button

@@ -8,3 +8,4 @@ export * from './state-machine.js';
 export * from './phone.js';
 export * from './clima.js';
 export * from './peso.js';
+export * from './separacao.js';

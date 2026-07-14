@@ -6,6 +6,7 @@ import {
   CalendarDays,
   LayoutDashboard,
   Package,
+  PackageCheck,
   Route,
   Truck,
   UserCog,
@@ -41,6 +42,12 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     titulo: 'Operações',
     itens: [
+      {
+        rotulo: 'Separação',
+        to: '/separacao',
+        icone: PackageCheck,
+        papeis: ['logistica', 'almoxarifado'],
+      },
       { rotulo: 'Rotas', to: '/rotas', icone: Route, papeis: ['logistica', 'vendedor'] },
       { rotulo: 'Motoristas', to: '/motoristas', icone: Users, papeis: ['logistica'] },
       { rotulo: 'Caminhões', to: '/caminhoes', icone: Truck, papeis: ['logistica'] },
@@ -62,6 +69,10 @@ export const ROTAS_META: Record<string, RotaMeta> = {
   '/dashboard': { titulo: 'Dashboard', subtitulo: 'Visão geral da operação' },
   '/entregas': { titulo: 'Entregas', subtitulo: 'Quadro de pedidos por status' },
   '/agenda': { titulo: 'Agenda', subtitulo: 'Entregas por dia e período' },
+  '/separacao': {
+    titulo: 'Separação',
+    subtitulo: 'O que separar no dia, por período',
+  },
   '/rotas': { titulo: 'Rotas', subtitulo: 'Pedidos em rota por motorista' },
   '/motoristas': { titulo: 'Motoristas', subtitulo: 'Equipe e cargas em rota' },
   '/caminhoes': { titulo: 'Caminhões', subtitulo: 'Frota e capacidade de carga' },

@@ -19,7 +19,7 @@
 
 import type { OrixClient } from '../orix/client.js';
 import type { OrixPedidoItem } from '@pastobom/shared';
-import { escolherNumeroWhatsApp } from '@pastobom/shared';
+import { escolherNumeroWhatsApp, transportarSeparacao } from '@pastobom/shared';
 import { supabase } from '../db/supabase.js';
 import { log } from '../log.js';
 import { getNaturezaPermitida, normalizarNatureza } from '../orix/status.js';
@@ -299,6 +299,29 @@ async function processarGrupo(
 
   // 5) Recriar (substituir) os itens_pedido do pedido.
   //    Determinístico => reprocessar não duplica itens.
+  //
+  //    ATENÇÃO: recriar os itens APAGA a separação do almoxarifado (`separado` e
+  //    `separado_em` voltam ao default). Como o poll reprocessa a janela a cada 5
+  //    min, um pedido conferido de manhã aparecia "não separado" minutos depois.
+  //    Por isso lemos as marcas ANTES do delete e as transportamos para os itens
+  //    recriados (regra pura e testada em @pastobom/shared: transportarSeparacao).
+  const { data: itensAntigos, error: erroLeitura } = await supabase
+    .from('itens_pedido')
+    .select('produto_codigo, separado, separado_em')
+    .eq('pedido_id', pedidoId);
+  if (erroLeitura) {
+    throw new Error(`ler itens (separação): ${erroLeitura.message}`);
+  }
+
+  const marcas = transportarSeparacao(
+    (itensAntigos ?? []).map((i) => ({
+      produtoCodigo: i.produto_codigo ?? '',
+      separado: i.separado ?? false,
+      separadoEm: i.separado_em ?? null,
+    })),
+    itensCalculados.map((it) => it.produto_codigo),
+  );
+
   const { error: erroDel } = await supabase
     .from('itens_pedido')
     .delete()
@@ -308,10 +331,15 @@ async function processarGrupo(
   }
 
   if (itensCalculados.length > 0) {
-    const linhasItens = itensCalculados.map((it) => ({
-      pedido_id: pedidoId,
-      ...it,
-    }));
+    const linhasItens = itensCalculados.map((it, i) => {
+      const marca = marcas[i];
+      return {
+        pedido_id: pedidoId,
+        ...it,
+        separado: marca?.separado ?? false,
+        separado_em: marca?.separadoEm ?? null,
+      };
+    });
     const { error: erroInsItens } = await supabase
       .from('itens_pedido')
       .insert(linhasItens);

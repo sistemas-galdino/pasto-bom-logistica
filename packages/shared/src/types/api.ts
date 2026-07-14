@@ -10,6 +10,11 @@ export interface TransicaoRequest {
   /** Observação livre gravada na transição (ex.: nota do motorista na entrega). */
   observacao?: string;
   /**
+   * Por que a entrega não foi feita. OBRIGATÓRIO quando para==='nao_realizado'
+   * (o backend devolve 422 `motivo_obrigatorio` se vier vazio).
+   */
+  motivo?: string;
+  /**
    * Motorista responsável. Desde a reunião de 25/06 é escolhido já no
    * AGENDAMENTO (para==='agendada'), não mais só no despacho.
    */

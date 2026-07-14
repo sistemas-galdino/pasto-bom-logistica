@@ -30,6 +30,10 @@ export default {
         trigo: { DEFAULT: '#D9AE07', claro: '#FBF1C9', escuro: '#7A5E00' },
         // Madeira do "Rede do Campo"
         terra: { DEFAULT: '#8C5A2B', claro: '#EFE4D7', escuro: '#523B22' },
+        // Alerta: entrega NÃO REALIZADA. Único vermelho da paleta — precisa se
+        // separar do trigo (amarelo, "em rota") e do terra (marrom, "cancelada"),
+        // que são os vizinhos quentes.
+        brasa: { DEFAULT: '#B3261E', claro: '#FBE4E2', escuro: '#7A1912' },
       },
       boxShadow: {
         carta:
