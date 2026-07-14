@@ -7,6 +7,12 @@ export default {
         sans: ['"Hanken Grotesk"', 'system-ui', '-apple-system', 'sans-serif'],
         display: ['"Fraunces"', 'Georgia', 'serif'],
       },
+      // Paleta da marca Rede do Campo / Pasto Bom, amostrada do logo oficial:
+      //   verde da faixa #1B6D2D · verde vivo #119A36 · limão #BDCB3B
+      //   sol #F2D216 · madeira #523B22
+      // Os tokens carregam SEMÂNTICA de status (ver components/status.ts):
+      //   folha=agendada · trigo=em rota · mata=entregue · terra=cancelada.
+      // Por isso cada um precisa continuar distinguível dos outros.
       colors: {
         // Papel / creme (fundo editorial)
         creme: { DEFAULT: '#F6F1E7', 50: '#FBF8F1', 100: '#F1E8D6' },
@@ -15,12 +21,15 @@ export default {
         tinta: { DEFAULT: '#23271F', suave: '#6F6C5E' },
         linha: '#E7DECB',
         pedra: '#A8A293',
-        // Verdes do agro
-        mata: { DEFAULT: '#1C4E37', escuro: '#143A29', claro: '#DCE9DF' },
-        folha: { DEFAULT: '#3C7D52', claro: '#E4EFE2' },
-        // Acentos quentes
-        trigo: { DEFAULT: '#C08A2D', claro: '#F6ECD0', escuro: '#876213' },
-        terra: { DEFAULT: '#B25A33', claro: '#F5E2D5', escuro: '#8C4322' },
+        // Verdes da marca (mata = verde da faixa "PASTO BOM"; folha = verde vivo)
+        mata: { DEFAULT: '#176D2E', escuro: '#0F5222', claro: '#DCEBDD' },
+        folha: { DEFAULT: '#199A3C', claro: '#E2F2E4' },
+        // Limão da folha clara do logo — acento (ocupação de carga, destaques)
+        limao: { DEFAULT: '#BDCB3B', claro: '#F0F3D8', escuro: '#7C8720' },
+        // Sol do logo, rebaixado ao ponto de contraste legível
+        trigo: { DEFAULT: '#D9AE07', claro: '#FBF1C9', escuro: '#7A5E00' },
+        // Madeira do "Rede do Campo"
+        terra: { DEFAULT: '#8C5A2B', claro: '#EFE4D7', escuro: '#523B22' },
       },
       boxShadow: {
         carta:

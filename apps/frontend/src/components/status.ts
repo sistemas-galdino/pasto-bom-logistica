@@ -58,10 +58,10 @@ export const COLUNAS_KANBAN: StatusLogistico[] = [
  *  gráficos recharts e outros consumidores fora do Tailwind. */
 export const STATUS_HEX: Record<StatusLogistico, string> = {
   pendente: '#A8A293', // pedra
-  agendada: '#3C7D52', // folha
-  em_rota: '#C08A2D', // trigo
-  entregue: '#1C4E37', // mata
-  cancelada: '#B25A33', // terra
+  agendada: '#199A3C', // folha
+  em_rota: '#D9AE07', // trigo
+  entregue: '#176D2E', // mata
+  cancelada: '#8C5A2B', // terra
 };
 
 /** Todos os status, na ordem do fluxo (reusado por Board e Dashboard). */

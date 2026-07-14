@@ -6,7 +6,7 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, LogOut, X } from 'lucide-react';
 import { useAuth } from '../../auth/AuthProvider';
-import { Marca } from '../Marca';
+import { Marca, MarcaOficial } from '../Marca';
 import { PAPEL_ROTULO, PAPEL_ACESSO } from '../../lib/papeis';
 import { NAV_SECTIONS, type NavSection } from './navConfig';
 import type { Papel } from '../../auth/AuthProvider';
@@ -39,21 +39,21 @@ export function Sidebar({
 
   return (
     <aside className="flex h-full w-full flex-col bg-mata-escuro text-creme-100">
-      {/* Cabeçalho: marca + fechar (mobile) */}
+      {/* Cabeçalho: marca + fechar (mobile). Aberta, mostra o logo oficial num
+          bloco claro — a tipografia dele é marrom e sumiria sobre o verde. */}
       <div className="flex items-center justify-between gap-2 px-4 py-4">
-        <div className="flex items-center gap-3 overflow-hidden">
+        {collapsed ? (
           <Marca className="h-9 w-9 shrink-0 drop-shadow-sm" />
-          {!collapsed && (
-            <div className="leading-tight">
-              <p className="font-display text-base font-semibold text-creme-50">
-                Pasto Bom
-              </p>
-              <p className="text-[10px] uppercase tracking-[0.2em] text-creme-100/60">
-                Logística Inteligente
-              </p>
+        ) : (
+          <div className="min-w-0 flex-1">
+            <div className="rounded-xl2 bg-creme-50 px-3 py-2 shadow-sm">
+              <MarcaOficial className="mx-auto h-12 w-auto" />
             </div>
-          )}
-        </div>
+            <p className="mt-2 text-center text-[10px] uppercase tracking-[0.2em] text-creme-100/60">
+              Logística Inteligente
+            </p>
+          </div>
+        )}
         <button
           type="button"
           onClick={onClose}

@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
-import { Marca } from '../components/Marca';
+import { MarcaOficial } from '../components/Marca';
 
 interface LocationState {
   from?: { pathname?: string };
@@ -42,11 +42,8 @@ export function Login(): React.ReactElement {
     <div className="relative flex min-h-screen items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm animate-sobe">
         <div className="mb-7 flex flex-col items-center text-center">
-          <Marca className="h-14 w-14 drop-shadow" />
-          <h1 className="mt-4 font-display text-3xl font-semibold text-mata-escuro">
-            Pasto Bom
-          </h1>
-          <p className="mt-1 text-sm text-tinta-suave">
+          <MarcaOficial className="h-24 w-auto drop-shadow-sm" />
+          <p className="mt-3 text-sm text-tinta-suave">
             Sistema de Logística Inteligente
           </p>
         </div>

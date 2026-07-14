@@ -269,10 +269,10 @@ export function Dashboard(): React.ReactElement {
                       x2="0"
                       y2="1"
                     >
-                      <stop offset="0%" stopColor="#3C7D52" stopOpacity={0.35} />
+                      <stop offset="0%" stopColor="#199A3C" stopOpacity={0.35} />
                       <stop
                         offset="100%"
-                        stopColor="#3C7D52"
+                        stopColor="#199A3C"
                         stopOpacity={0}
                       />
                     </linearGradient>
@@ -307,7 +307,7 @@ export function Dashboard(): React.ReactElement {
                     type="monotone"
                     dataKey="entregas"
                     name="Entregas"
-                    stroke="#1C4E37"
+                    stroke="#176D2E"
                     strokeWidth={2}
                     fill="url(#gradEntregas)"
                   />
