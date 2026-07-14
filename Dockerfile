@@ -17,7 +17,16 @@ COPY apps/frontend/package.json apps/frontend/
 
 # Instala TODAS as deps (inclui devDeps: tsx p/ runtime e vite/tsc p/ o build).
 # NÃO definir NODE_ENV=production aqui, senão o npm pularia as devDependencies.
-RUN npm ci
+#
+# O registry cai no meio do download de vez em quando (ECONNRESET) e o padrão do
+# npm são só 2 tentativas com backoff curto — um blip derruba o build inteiro.
+# Daí as tentativas extras e os timeouts folgados.
+RUN npm ci --no-audit --no-fund \
+      --fetch-retries=5 \
+      --fetch-retry-factor=2 \
+      --fetch-retry-mintimeout=15000 \
+      --fetch-retry-maxtimeout=120000 \
+      --fetch-timeout=600000
 
 # 2) Código-fonte.
 COPY . .
