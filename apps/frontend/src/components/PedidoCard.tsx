@@ -6,7 +6,7 @@ import React from 'react';
 import type { Pedido, PrevisaoClima, StatusLogistico } from '@pastobom/shared';
 import { TRANSICOES, REVERSOES } from '@pastobom/shared';
 import { formatarMoeda, formatarData, rotuloItens } from '../lib/format';
-import { STATUS_META } from './status';
+import { STATUS_META, rotuloStatusOrix } from './status';
 import { ClimaResumo } from './ClimaResumo';
 
 interface Props {
@@ -106,8 +106,10 @@ export function PedidoCard({
 
   // Data em que a ordem de venda ENTROU (o pedido nº 1 da lista do Johnny) e o
   // status do Órix — é por ele que a equipe filtra o quadro.
+  // O rótulo é o nome CURTO ("Parcial"); o nome longo do Órix fica no tooltip.
   const statusOrixNome = pedido.statusOrixNome ? pedido.statusOrixNome.trim() : '';
-  const temLinhaOrigem = Boolean(pedido.dataPedido) || statusOrixNome !== '';
+  const statusOrixRotulo = rotuloStatusOrix(pedido.statusOrix, statusOrixNome);
+  const temLinhaOrigem = Boolean(pedido.dataPedido) || statusOrixRotulo !== '';
   const motivo = pedido.motivoNaoEntrega ? pedido.motivoNaoEntrega.trim() : '';
 
   const temBadges =
@@ -142,12 +144,12 @@ export function PedidoCard({
               </span>
             </span>
           )}
-          {statusOrixNome !== '' && (
+          {statusOrixRotulo !== '' && (
             <span
-              title={`Status no Órix: ${statusOrixNome}`}
+              title={`Status no Órix: ${statusOrixNome || statusOrixRotulo}`}
               className="max-w-full truncate rounded-md bg-creme-100 px-1.5 py-0.5 font-semibold text-tinta-suave"
             >
-              {statusOrixNome}
+              {statusOrixRotulo}
             </span>
           )}
         </div>

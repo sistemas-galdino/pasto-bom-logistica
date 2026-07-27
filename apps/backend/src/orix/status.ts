@@ -26,6 +26,27 @@ export interface StatusConfig {
    * '00049' (REMESSA EM GARANTIA — a oficina).
    */
   naturezaPermitida: string[];
+  /**
+   * Códigos de PRODUTO que representam prestação de serviço. Um pedido que
+   * contém qualquer um deles não é entrega — é o fluxo da OFICINA.
+   *
+   * Como a Natália explicou na reunião de 16/07/2026: um mesmo pedido tem peças
+   * e prestação de serviço; faturam-se as peças, o serviço fica para depois (a
+   * nota de serviço vai para a prefeitura) e a OV cai em 00027 (parcial). O
+   * pedido então aparecia na fila do Johnny sem nunca ter havido entrega.
+   *
+   * A checagem é por CÓDIGO, não por nome: nome muda, código não.
+   *   '11930' PRESTAÇÃO DE SERVICO - MAQUINAS E PECAS GERAL  (a oficina)
+   *   '11931' PRESTAÇÃO DE SERVICO - VETERINARIO
+   *
+   * Evidência (sondagem de 27/07/2026 sobre os 337 pedidos do banco):
+   *   00027 parcial ....... 125 COM serviço, 9 sem
+   *   00041 aguardando .....  0 COM serviço, 93 sem
+   *   00045 entrega futura .  0 COM serviço, 42 sem
+   * Linha de serviço nunca aparece num status de entrega de verdade — e os 9
+   * parciais sem serviço são entregas legítimas (ração, semente, adubo).
+   */
+  produtosServico: string[];
 }
 
 // Defaults conforme o contrato (códigos reais do Órix). Usados como fallback
@@ -36,6 +57,7 @@ const PADRAO: StatusConfig = {
   cancelado: ['00031'],
   concluido: ['00030'],
   naturezaPermitida: ['00001', '00012'],
+  produtosServico: ['11930', '11931'],
 };
 
 const TTL_CACHE_MS = 60_000;
@@ -77,11 +99,12 @@ export async function carregarStatusConfig(
     return cache;
   }
 
-  const [gatilho, cancelado, concluido, natureza] = await Promise.all([
+  const [gatilho, cancelado, concluido, natureza, servico] = await Promise.all([
     lerSyncState<unknown>('status_gatilho'),
     lerSyncState<unknown>('status_cancelado'),
     lerSyncState<unknown>('status_concluido'),
     lerSyncState<unknown>('natureza_permitida'),
+    lerSyncState<unknown>('produtos_servico'),
   ]);
 
   cache = {
@@ -89,6 +112,7 @@ export async function carregarStatusConfig(
     cancelado: normalizarLista(cancelado, PADRAO.cancelado),
     concluido: normalizarLista(concluido, PADRAO.concluido),
     naturezaPermitida: normalizarLista(natureza, PADRAO.naturezaPermitida),
+    produtosServico: normalizarLista(servico, PADRAO.produtosServico),
   };
   cacheEmMs = Date.now();
   return cache;
@@ -112,6 +136,28 @@ export async function getStatusConcluido(): Promise<string[]> {
 /** Lê apenas a lista de naturezas de operação que viram entrega. */
 export async function getNaturezaPermitida(): Promise<string[]> {
   return (await carregarStatusConfig()).naturezaPermitida;
+}
+
+/** Lê os códigos de produto que são prestação de serviço (fluxo da oficina). */
+export async function getProdutosServico(): Promise<string[]> {
+  return (await carregarStatusConfig()).produtosServico;
+}
+
+/**
+ * Verdadeiro se o pedido tem ALGUMA linha de prestação de serviço — ou seja,
+ * se ele é do fluxo da oficina e não deve ocupar a fila da logística.
+ *
+ * A comparação tolera zero-padding: o cadastro de produto do Órix devolve
+ * '11930', mas nada garante que continue assim em todo endpoint.
+ */
+export function temProdutoServico(
+  codigosDoPedido: readonly string[],
+  produtosServico: readonly string[],
+): boolean {
+  const alvo = new Set(produtosServico.map((c) => c.replace(/^0+/, '')));
+  return codigosDoPedido.some((c) =>
+    alvo.has(String(c).trim().replace(/^0+/, '')),
+  );
 }
 
 /**

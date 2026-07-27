@@ -75,6 +75,56 @@ export const STATUS_HEX: Record<StatusLogistico, string> = {
   cancelada: '#8C5A2B', // terra
 };
 
+// ---------------------------------------------------------------------------
+// Status do ÓRIX (o status da ordem de venda no ERP, diferente do logístico)
+// ---------------------------------------------------------------------------
+
+/**
+ * Os três status do Órix que chegam ao quadro (a lista-gatilho da ingestão).
+ *
+ * `rotulo` é o nome CURTO pedido na reunião de 16/07/2026: o nome que o Órix
+ * devolve ("Venda aguardando entrega para faturamento") não cabe no cartão e
+ * empurrava o resto da informação para fora. O nome longo continua visível no
+ * `title` (tooltip) e é o que se lê nos filtros, para ninguém ficar na dúvida
+ * sobre qual status do ERP é qual.
+ */
+export interface StatusOrixMeta {
+  codigo: string;
+  /** Nome curto, usado no cartão e no botão de filtro. */
+  rotulo: string;
+  /** Nome do status no Órix — vai no tooltip e na descrição do filtro. */
+  descricao: string;
+}
+
+export const STATUS_ORIX_META: StatusOrixMeta[] = [
+  {
+    codigo: '00041',
+    rotulo: 'Aguardando entrega',
+    descricao: 'Venda aguardando entrega para faturamento',
+  },
+  {
+    codigo: '00045',
+    rotulo: 'Sem reserva de estoque',
+    descricao: 'Venda entrega futura (sem reserva estoque)',
+  },
+  {
+    codigo: '00027',
+    rotulo: 'Parcial',
+    descricao: 'Venda aguardando faturamento (parcial)',
+  },
+];
+
+/**
+ * Nome curto de um status do Órix. Se o código não for um dos conhecidos
+ * (a lista-gatilho é configurável em sync_state e pode crescer sem novo
+ * deploy), devolve o nome que veio do próprio Órix — melhor um rótulo longo do
+ * que um cartão sem informação nenhuma.
+ */
+export function rotuloStatusOrix(codigo: string, nomeOrix: string): string {
+  const meta = STATUS_ORIX_META.find((s) => s.codigo === codigo);
+  return meta ? meta.rotulo : nomeOrix;
+}
+
 /** Todos os status, na ordem do fluxo (reusado por Board e Dashboard). */
 export const TODOS_STATUS: StatusLogistico[] = [
   'pendente',

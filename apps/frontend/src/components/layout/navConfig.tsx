@@ -4,6 +4,7 @@
 
 import {
   CalendarDays,
+  ClipboardList,
   LayoutDashboard,
   Package,
   PackageCheck,
@@ -56,7 +57,10 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     titulo: 'Administração',
     papeis: ['logistica'],
-    itens: [{ rotulo: 'Usuários', to: '/usuarios', icone: UserCog }],
+    itens: [
+      { rotulo: 'Usuários', to: '/usuarios', icone: UserCog },
+      { rotulo: 'Motivos', to: '/motivos', icone: ClipboardList },
+    ],
   },
 ];
 
@@ -77,4 +81,8 @@ export const ROTAS_META: Record<string, RotaMeta> = {
   '/motoristas': { titulo: 'Motoristas', subtitulo: 'Equipe e cargas em rota' },
   '/caminhoes': { titulo: 'Caminhões', subtitulo: 'Frota e capacidade de carga' },
   '/usuarios': { titulo: 'Usuários', subtitulo: 'Acessos e papéis da equipe' },
+  '/motivos': {
+    titulo: 'Motivos',
+    subtitulo: 'Motivos de entrega não realizada',
+  },
 };

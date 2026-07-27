@@ -2,9 +2,15 @@
 // aconteceu. O motivo é obrigatório (o backend recusa com 422 `motivo_obrigatorio`)
 // porque é ele que diz à logística o que precisa ser resolvido antes de remarcar.
 // Como a venda continua de pé, isto NÃO é cancelamento e o cliente NÃO é avisado.
+//
+// O motivo vem de uma LISTA FECHADA, cadastrada pela logística na tela de
+// Motivos (reunião de 16/07/2026). Não há campo de texto livre: com cada pessoa
+// escrevendo o seu, o filtro por motivo deixaria de significar qualquer coisa.
 
 import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import type { Pedido } from '@pastobom/shared';
+import { api } from '../lib/api';
 
 interface Props {
   pedido: Pedido;
@@ -14,17 +20,6 @@ interface Props {
   onCancelar: () => void;
 }
 
-/** Os motivos que mais aparecem na entrega rural (atalhos de digitação). */
-const MOTIVOS_COMUNS = [
-  'Cliente ausente',
-  'Porteira fechada',
-  'Estrada intransitável',
-  'Endereço não encontrado',
-  'Cliente recusou',
-];
-
-const MAX_MOTIVO = 1000;
-
 export function NaoRealizadoModal({
   pedido,
   enviando,
@@ -33,8 +28,19 @@ export function NaoRealizadoModal({
   onCancelar,
 }: Props): React.ReactElement {
   const [motivo, setMotivo] = useState('');
-  const motivoLimpo = motivo.trim();
-  const semMotivo = motivoLimpo === '';
+
+  // A lista muda pouco: cacheia por 5 min para o modal abrir instantâneo.
+  const motivosQuery = useQuery({
+    queryKey: ['motivos'],
+    queryFn: ({ signal }) => api.listarMotivos(false, signal),
+    staleTime: 5 * 60_000,
+  });
+
+  const motivos = motivosQuery.data ?? [];
+  const semMotivo = motivo === '';
+  // Lista vazia trava o registro — e a mensagem tem que dizer o que fazer,
+  // senão o motorista fica olhando um select vazio sem entender.
+  const listaVazia = !motivosQuery.isLoading && motivos.length === 0;
 
   return (
     <div
@@ -69,41 +75,44 @@ export function NaoRealizadoModal({
             Por que a entrega não foi realizada?
           </label>
 
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {MOTIVOS_COMUNS.map((sugestao) => (
-              <button
-                key={sugestao}
-                type="button"
-                onClick={() => setMotivo(sugestao)}
-                disabled={enviando}
-                className={`rounded-md border px-2 py-1 text-[11px] font-semibold transition disabled:opacity-60 ${
-                  motivoLimpo === sugestao
-                    ? 'border-brasa/40 bg-brasa-claro text-brasa-escuro'
-                    : 'border-linha bg-creme-50 text-tinta-suave hover:border-brasa/30 hover:text-brasa-escuro'
-                }`}
-              >
-                {sugestao}
-              </button>
-            ))}
-          </div>
-
-          <textarea
+          <select
             id="motivo-nao-entrega"
             value={motivo}
             onChange={(e) => setMotivo(e.target.value)}
-            maxLength={MAX_MOTIVO}
-            rows={3}
+            disabled={enviando || motivosQuery.isLoading || listaVazia}
             autoFocus
-            disabled={enviando}
-            placeholder="Ex.: cliente ausente, ninguém para receber a carga."
-            className="mt-2 w-full resize-none rounded-lg border border-linha bg-creme-50 px-3 py-2 text-sm text-tinta outline-none transition placeholder:text-pedra focus:border-mata/40 focus:bg-papel disabled:opacity-60"
-          />
-          <p className="mt-1 flex items-center justify-between text-[11px] text-pedra">
-            <span>Obrigatório — sem o motivo a logística não sabe o que remarcar.</span>
-            <span>
-              {motivo.length}/{MAX_MOTIVO}
-            </span>
+            className="mt-2 w-full rounded-lg border border-linha bg-creme-50 px-3 py-2 text-sm text-tinta outline-none transition focus:border-mata/40 focus:bg-papel disabled:opacity-60"
+          >
+            <option value="">
+              {motivosQuery.isLoading
+                ? 'Carregando motivos…'
+                : 'Escolha o motivo…'}
+            </option>
+            {motivos.map((m) => (
+              <option key={m.id} value={m.descricao}>
+                {m.descricao}
+              </option>
+            ))}
+          </select>
+
+          <p className="mt-1 text-[11px] text-pedra">
+            {listaVazia
+              ? 'Nenhum motivo cadastrado. A logística cadastra os motivos na tela Motivos.'
+              : 'Obrigatório — é por ele que a logística sabe o que resolver antes de remarcar.'}
           </p>
+
+          {motivosQuery.isError && (
+            <p className="mt-1 text-[11px] text-terra-escuro">
+              Não foi possível carregar os motivos.{' '}
+              <button
+                type="button"
+                onClick={() => void motivosQuery.refetch()}
+                className="font-semibold underline"
+              >
+                Tentar novamente
+              </button>
+            </p>
+          )}
         </div>
 
         {erro && (
@@ -126,9 +135,9 @@ export function NaoRealizadoModal({
           </button>
           <button
             type="button"
-            onClick={() => onConfirmar(motivoLimpo)}
+            onClick={() => onConfirmar(motivo)}
             disabled={enviando || semMotivo}
-            title={semMotivo ? 'Informe o motivo da não entrega.' : undefined}
+            title={semMotivo ? 'Escolha o motivo da não entrega.' : undefined}
             className="rounded-lg bg-brasa px-4 py-2 text-sm font-bold text-creme-50 transition hover:bg-brasa-escuro disabled:cursor-not-allowed disabled:opacity-60"
           >
             {enviando ? 'Registrando…' : 'Marcar não realizado'}

@@ -22,6 +22,7 @@ import type {
   AtualizarCaminhaoRequest,
   AgendaResposta,
   PesoProduto,
+  MotivoNaoEntrega,
 } from '@pastobom/shared';
 import { supabase } from './supabase';
 
@@ -268,6 +269,40 @@ export const api = {
     body: AtualizarCaminhaoRequest,
   ): Promise<Caminhao> {
     return request<Caminhao>(`/api/caminhoes/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body,
+    });
+  },
+
+  /**
+   * Motivos de não entrega. Por padrão traz só os ATIVOS (é a lista que o
+   * modal oferece); `todos` inclui os desativados, para a tela de cadastro
+   * poder reativá-los.
+   */
+  async listarMotivos(
+    todos = false,
+    signal?: AbortSignal,
+  ): Promise<MotivoNaoEntrega[]> {
+    return request<MotivoNaoEntrega[]>(
+      `/api/motivos${todos ? '?todos=1' : ''}`,
+      { signal },
+    );
+  },
+
+  /** Cadastra um motivo de não entrega (somente logística). */
+  async criarMotivo(descricao: string): Promise<MotivoNaoEntrega> {
+    return request<MotivoNaoEntrega>('/api/motivos', {
+      method: 'POST',
+      body: { descricao },
+    });
+  },
+
+  /** Renomeia, reordena ou (des)ativa um motivo (somente logística). */
+  async atualizarMotivo(
+    id: string,
+    body: { descricao?: string; ativo?: boolean; ordem?: number },
+  ): Promise<MotivoNaoEntrega> {
+    return request<MotivoNaoEntrega>(`/api/motivos/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body,
     });

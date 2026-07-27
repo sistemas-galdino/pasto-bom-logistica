@@ -24,6 +24,7 @@ import { Rotas } from './pages/Rotas';
 import Separacao from './pages/Separacao';
 import { Motoristas } from './pages/Motoristas';
 import { Usuarios } from './pages/Usuarios';
+import Motivos from './pages/Motivos';
 import { RotaDoDia } from './pages/RotaDoDia';
 
 const queryClient = new QueryClient({
@@ -149,6 +150,14 @@ export function App(): React.ReactElement {
                 element={
                   <SomenteLogistica>
                     <Usuarios />
+                  </SomenteLogistica>
+                }
+              />
+              <Route
+                path="/motivos"
+                element={
+                  <SomenteLogistica>
+                    <Motivos />
                   </SomenteLogistica>
                 }
               />

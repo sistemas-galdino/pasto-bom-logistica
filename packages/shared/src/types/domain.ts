@@ -191,6 +191,27 @@ export interface AgendaResposta {
 }
 
 // ---------------------------------------------------------------------------
+// Motivos de não entrega (cadastro da logística)
+// ---------------------------------------------------------------------------
+
+/**
+ * Um motivo pelo qual uma entrega pode não ser realizada.
+ *
+ * A lista é FECHADA e cadastrada pela logística: quem registra a não entrega
+ * escolhe daqui, não digita. É o que mantém o filtro por motivo utilizável
+ * (reunião de 16/07/2026).
+ */
+export interface MotivoNaoEntrega {
+  id: string;
+  descricao: string;
+  /** Desativado sai da lista de escolha, mas não some do histórico. */
+  ativo: boolean;
+  /** Ordem de exibição; empate desempata por descrição. */
+  ordem: number;
+  criadoEm: string;
+}
+
+// ---------------------------------------------------------------------------
 // Administração de usuários (console da logística)
 // ---------------------------------------------------------------------------
 

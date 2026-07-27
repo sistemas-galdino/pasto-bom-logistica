@@ -134,6 +134,39 @@ function tituloDoPeriodo(visao: Visao, intervalo: Intervalo, ancora: Date): stri
   );
 }
 
+/**
+ * Legenda de cores da agenda (pedido da reunião de 16/07/2026): o vendedor bate
+ * o olho e sabe se a entrega já saiu, sem abrir o cartão — "o cliente liga para
+ * o vendedor para saber se tá entregando".
+ *
+ * As cores vêm de STATUS_META, as MESMAS dos cartões: mudar a paleta lá muda a
+ * legenda junto, sem chance de a legenda mentir. Entregue não entra porque some
+ * da agenda (a rota só devolve 'agendada' e 'em_rota').
+ */
+function Legenda(): React.ReactElement {
+  const itens: { status: 'agendada' | 'em_rota' }[] = [
+    { status: 'agendada' },
+    { status: 'em_rota' },
+  ];
+
+  return (
+    <div className="flex items-center gap-3">
+      {itens.map(({ status }) => (
+        <span
+          key={status}
+          className="flex items-center gap-1.5 text-xs text-tinta-suave"
+        >
+          <span
+            className={`h-2.5 w-2.5 rounded-full ${STATUS_META[status].faixa}`}
+            aria-hidden="true"
+          />
+          {STATUS_META[status].rotulo}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export default function Agenda(): React.ReactElement {
   const [visao, setVisao] = useState<Visao>('semana');
   const [ancora, setAncora] = useState<Date>(() => hojeLocal());
@@ -226,7 +259,9 @@ export default function Agenda(): React.ReactElement {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Legenda />
+          <span className="hidden h-4 w-px bg-linha sm:block" />
           <button
             type="button"
             onClick={() => setVisao('mes')}
@@ -671,11 +706,20 @@ function CardEntrega({ entrega, compacto }: CardEntregaProps): React.ReactElemen
     >
       <div className="flex items-start justify-between gap-2">
         <h4
-          className={`font-display font-semibold leading-tight text-tinta ${
+          className={`flex min-w-0 items-center gap-1.5 font-display font-semibold leading-tight text-tinta ${
             compacto ? 'text-xs' : 'text-[15px]'
           }`}
         >
-          {entrega.clienteNome || 'Cliente'}
+          {/* No cartão compacto (mês/semana) não cabe a pílula do status, então
+              a cor vira uma bolinha — é o que a legenda do topo explica. */}
+          {compacto && (
+            <span
+              className={`h-2 w-2 shrink-0 rounded-full ${meta.faixa}`}
+              title={meta.rotulo}
+              aria-label={meta.rotulo}
+            />
+          )}
+          <span className="truncate">{entrega.clienteNome || 'Cliente'}</span>
         </h4>
         {!compacto && (
           <span className="shrink-0 rounded-md bg-creme-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-tinta-suave">

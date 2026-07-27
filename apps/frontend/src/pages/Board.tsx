@@ -22,30 +22,14 @@ import {
 import { SeparacaoModal } from '../components/SeparacaoModal';
 import { ReverterModal } from '../components/ReverterModal';
 import { NaoRealizadoModal } from '../components/NaoRealizadoModal';
-import { COLUNAS_KANBAN, TODOS_STATUS } from '../components/status';
+import {
+  COLUNAS_KANBAN,
+  STATUS_ORIX_META,
+  TODOS_STATUS,
+} from '../components/status';
 
 /** Os três status do Órix que chegam ao quadro (filtro server-side). */
-const STATUS_ORIX_OPCOES: {
-  codigo: string;
-  rotulo: string;
-  descricao: string;
-}[] = [
-  {
-    codigo: '00041',
-    rotulo: 'Aguardando entrega',
-    descricao: 'Venda aguardando entrega para faturamento',
-  },
-  {
-    codigo: '00045',
-    rotulo: 'Entrega futura',
-    descricao: 'Venda entrega futura (sem reserva estoque)',
-  },
-  {
-    codigo: '00027',
-    rotulo: 'Faturamento parcial',
-    descricao: 'Venda aguardando faturamento (parcial)',
-  },
-];
+const STATUS_ORIX_OPCOES = STATUS_ORIX_META;
 
 interface Alvo {
   pedido: Pedido;

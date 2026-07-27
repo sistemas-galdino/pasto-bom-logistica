@@ -7,6 +7,11 @@
 // 'agendada' —, filtrados por um dia e agrupados por PERÍODO (o domínio do
 // sistema é slot = data × período; ver pages/Agenda.tsx).
 //
+// Duas escolhas vieram da reunião de 16/07/2026:
+//   - FILTRO POR CAMINHÃO: quem carrega o 1620 quer ver só a carga do 1620.
+//   - ATRASADOS: pedido agendado para um dia que já passou não some da fila.
+//     Antes ele só aparecia se alguém adivinhasse a data no seletor.
+//
 // Dá para marcar item a item (igual ao SeparacaoModal) ou "dar OK" no pedido
 // inteiro de uma vez, que é o caminho rápido do dia a dia.
 //
@@ -28,22 +33,34 @@ import type { Pedido, PeriodoEntrega } from '@pastobom/shared';
 import { api } from '../lib/api';
 import { useAuth } from '../auth/AuthProvider';
 
-/** Grupos exibidos no dia. 'sem' cobre o pedido agendado sem turno definido. */
-type ChaveGrupo = PeriodoEntrega | 'sem';
+/**
+ * Grupos exibidos. 'sem' cobre o pedido agendado sem turno definido; 'atrasado'
+ * é o grupo único da visão de atrasados — ali o turno não ajuda (são vários
+ * dias), o que importa é a data de cada pedido, que vai no próprio cartão.
+ */
+type ChaveGrupo = PeriodoEntrega | 'sem' | 'atrasado';
 
-const GRUPOS: ChaveGrupo[] = ['manha', 'tarde', 'sem'];
+const GRUPOS: ChaveGrupo[] = ['atrasado', 'manha', 'tarde', 'sem'];
 
 const GRUPO_ROTULO: Record<ChaveGrupo, string> = {
   manha: 'Manhã',
   tarde: 'Tarde',
   sem: 'Sem período definido',
+  atrasado: 'Atrasados',
 };
 
 const GRUPO_BADGE: Record<ChaveGrupo, string> = {
   manha: 'bg-folha-claro text-mata',
   tarde: 'bg-trigo-claro text-trigo-escuro',
   sem: 'bg-creme-100 text-tinta-suave',
+  atrasado: 'bg-brasa-claro text-brasa-escuro',
 };
+
+/** O que a tela está mostrando: um dia específico ou a fila de atrasados. */
+type Selecao = { tipo: 'dia'; iso: string } | { tipo: 'atrasados' };
+
+/** Chave de agrupamento por caminhão (o pedido pode ainda não ter um). */
+const SEM_CAMINHAO = 'Sem caminhão';
 
 // --- datas (sempre locais; nunca `new Date('YYYY-MM-DD')`) -----------------
 
@@ -83,6 +100,12 @@ function rotuloDoDia(iso: string): string {
   );
 }
 
+/** 'YYYY-MM-DD' → "13/07" (só o essencial: o cartão é apertado). */
+function formatarDataCurta(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  return m ? `${m[3]}/${m[2]}` : iso;
+}
+
 function formatarQtd(qtd: number): string {
   return qtd.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 }
@@ -102,7 +125,12 @@ export default function Separacao(): React.ReactElement {
   const { podeSeparar } = useAuth();
   const queryClient = useQueryClient();
 
-  const [dia, setDia] = useState<string>(() => isoDeData(hojeLocal()));
+  const [selecao, setSelecao] = useState<Selecao>(() => ({
+    tipo: 'dia',
+    iso: isoDeData(hojeLocal()),
+  }));
+  // null = "Todos os caminhões". Guarda o NOME do caminhão (ou SEM_CAMINHAO).
+  const [caminhao, setCaminhao] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
   const isoHoje = isoDeData(hojeLocal());
@@ -138,28 +166,78 @@ export default function Separacao(): React.ReactElement {
     onError: aoFalhar,
   });
 
+  // O que a seleção atual traz, ANTES do filtro de caminhão (é desta lista que
+  // saem as pílulas de caminhão — senão o filtro esconderia as próprias opções).
+  const daSelecao = useMemo(() => {
+    const todos = pedidosQuery.data ?? [];
+    if (selecao.tipo === 'atrasados') {
+      // Comparação de string funciona: 'YYYY-MM-DD' ordena igual à data.
+      return todos.filter(
+        (p) => p.dataAgendada !== null && p.dataAgendada < isoHoje,
+      );
+    }
+    return todos.filter((p) => p.dataAgendada === selecao.iso);
+  }, [pedidosQuery.data, selecao, isoHoje]);
+
+  /** Caminhões presentes na seleção, com quantos pedidos cada um tem. */
+  const caminhoes = useMemo(() => {
+    const mapa = new Map<string, number>();
+    for (const p of daSelecao) {
+      const chave = p.caminhaoNome || SEM_CAMINHAO;
+      mapa.set(chave, (mapa.get(chave) ?? 0) + 1);
+    }
+    return [...mapa].sort(([a], [b]) => {
+      if (a === SEM_CAMINHAO) return 1;
+      if (b === SEM_CAMINHAO) return -1;
+      return a.localeCompare(b, 'pt-BR');
+    });
+  }, [daSelecao]);
+
+  // Filtro EFETIVO: se o caminhão escolhido não está mais na seleção (mudou de
+  // dia, a carga saiu), cai para "Todos" em vez de mostrar uma tela vazia.
+  const caminhaoAtivo =
+    caminhao !== null && caminhoes.some(([nome]) => nome === caminhao)
+      ? caminhao
+      : null;
+
   const doDia = useMemo(
-    () => (pedidosQuery.data ?? []).filter((p) => p.dataAgendada === dia),
-    [pedidosQuery.data, dia],
+    () =>
+      caminhaoAtivo === null
+        ? daSelecao
+        : daSelecao.filter((p) => (p.caminhaoNome || SEM_CAMINHAO) === caminhaoAtivo),
+    [daSelecao, caminhaoAtivo],
   );
 
   const grupos = useMemo(() => {
     const mapa = new Map<ChaveGrupo, Pedido[]>();
     for (const p of doDia) {
-      const chave: ChaveGrupo = p.periodo ?? 'sem';
+      // Em atrasados, turno não organiza nada (são dias diferentes): tudo cai
+      // num grupo só e cada cartão mostra a sua data.
+      const chave: ChaveGrupo =
+        selecao.tipo === 'atrasados' ? 'atrasado' : (p.periodo ?? 'sem');
       const lista = mapa.get(chave);
       if (lista) lista.push(p);
       else mapa.set(chave, [p]);
     }
-    // Cliente primeiro: é assim que o almoxarifado procura na prateleira.
     for (const lista of mapa.values()) {
-      lista.sort((a, b) => a.clienteNome.localeCompare(b.clienteNome, 'pt-BR'));
+      lista.sort((a, b) => {
+        // Atrasados: o mais antigo primeiro — é o que está esperando há mais tempo.
+        if (selecao.tipo === 'atrasados') {
+          const porData = (a.dataAgendada ?? '').localeCompare(
+            b.dataAgendada ?? '',
+          );
+          if (porData !== 0) return porData;
+        }
+        // Cliente: é assim que o almoxarifado procura na prateleira.
+        return a.clienteNome.localeCompare(b.clienteNome, 'pt-BR');
+      });
     }
     return mapa;
-  }, [doDia]);
+  }, [doDia, selecao.tipo]);
 
   const total = doDia.length;
   const prontos = doDia.filter(estaSeparado).length;
+  const totalSelecao = daSelecao.length;
 
   /** Este pedido tem uma escrita em voo? (trava os botões do cartão) */
   function ocupado(pedidoId: string): boolean {
@@ -174,6 +252,13 @@ export default function Separacao(): React.ReactElement {
       ativo
         ? 'bg-mata text-creme-50 shadow-sm'
         : 'border border-linha bg-papel text-tinta-suave hover:border-mata/30 hover:text-mata'
+    }`;
+
+  const pilulaCaminhao = (ativo: boolean) =>
+    `rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+      ativo
+        ? 'border-mata bg-mata text-creme-50 shadow-carta'
+        : 'border-linha bg-papel text-tinta-suave hover:border-mata/30 hover:text-mata'
     }`;
 
   if (!podeSeparar) {
@@ -204,30 +289,45 @@ export default function Separacao(): React.ReactElement {
           <div className="flex items-center gap-1.5">
             <input
               type="date"
-              value={dia}
-              onChange={(e) => setDia(e.target.value)}
+              value={selecao.tipo === 'dia' ? selecao.iso : ''}
+              onChange={(e) =>
+                setSelecao({ tipo: 'dia', iso: e.target.value || isoHoje })
+              }
               aria-label="Dia da separação"
               className="rounded-lg border border-linha bg-papel px-2.5 py-1.5 text-xs font-semibold text-tinta outline-none transition focus:border-mata/40"
             />
             <button
               type="button"
-              onClick={() => setDia(isoHoje)}
-              className={botaoDia(dia === isoHoje)}
+              onClick={() => setSelecao({ tipo: 'dia', iso: isoHoje })}
+              className={botaoDia(selecao.tipo === 'dia' && selecao.iso === isoHoje)}
             >
               Hoje
             </button>
             <button
               type="button"
-              onClick={() => setDia(isoAmanha)}
-              className={botaoDia(dia === isoAmanha)}
+              onClick={() => setSelecao({ tipo: 'dia', iso: isoAmanha })}
+              className={botaoDia(
+                selecao.tipo === 'dia' && selecao.iso === isoAmanha,
+              )}
             >
               Amanhã
+            </button>
+            {/* Agendado para trás não some da fila: continua para separar. */}
+            <button
+              type="button"
+              onClick={() => setSelecao({ tipo: 'atrasados' })}
+              title="Pedidos agendados para dias que já passaram e ainda não saíram"
+              className={botaoDia(selecao.tipo === 'atrasados')}
+            >
+              Atrasados
             </button>
           </div>
 
           <div className="flex items-baseline gap-2 text-sm">
             <h2 className="font-display text-base font-semibold text-mata-escuro">
-              {rotuloDoDia(dia)}
+              {selecao.tipo === 'atrasados'
+                ? 'Atrasados'
+                : rotuloDoDia(selecao.iso)}
             </h2>
             {pedidosQuery.isFetching && (
               <span className="text-xs text-pedra">atualizando…</span>
@@ -282,6 +382,36 @@ export default function Separacao(): React.ReactElement {
               </div>
             )}
 
+            {/* Filtro por caminhão: quem carrega o 1620 quer ver só o 1620.
+                Só aparece quando há mais de um caminhão para escolher. */}
+            {caminhoes.length > 1 && (
+              <div
+                role="group"
+                aria-label="Filtrar por caminhão"
+                className="flex flex-wrap items-center gap-2"
+              >
+                <button
+                  type="button"
+                  onClick={() => setCaminhao(null)}
+                  aria-pressed={caminhaoAtivo === null}
+                  className={pilulaCaminhao(caminhaoAtivo === null)}
+                >
+                  Todos os caminhões ({totalSelecao})
+                </button>
+                {caminhoes.map(([nome, qtde]) => (
+                  <button
+                    key={nome}
+                    type="button"
+                    onClick={() => setCaminhao(nome)}
+                    aria-pressed={caminhaoAtivo === nome}
+                    className={pilulaCaminhao(caminhaoAtivo === nome)}
+                  >
+                    {nome} ({qtde})
+                  </button>
+                ))}
+              </div>
+            )}
+
             {total === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 rounded-xl2 border border-dashed border-linha bg-papel/60 py-14 text-center">
                 <CalendarDays
@@ -289,11 +419,16 @@ export default function Separacao(): React.ReactElement {
                   aria-hidden="true"
                 />
                 <p className="font-display text-base font-semibold text-mata-escuro">
-                  Nada para separar neste dia
+                  {selecao.tipo === 'atrasados'
+                    ? 'Nenhum pedido atrasado'
+                    : 'Nada para separar neste dia'}
                 </p>
                 <p className="max-w-sm text-sm text-tinta-suave">
-                  Assim que a logística agendar uma entrega para{' '}
-                  {rotuloDoDia(dia).toLowerCase()}, o pedido aparece aqui.
+                  {selecao.tipo === 'atrasados'
+                    ? 'Tudo que foi agendado para trás já saiu para rota.'
+                    : `Assim que a logística agendar uma entrega para ${rotuloDoDia(
+                        selecao.iso,
+                      ).toLowerCase()}, o pedido aparece aqui.`}
                 </p>
               </div>
             ) : (
@@ -321,6 +456,7 @@ export default function Separacao(): React.ReactElement {
                         <CartaoSeparacao
                           key={pedido.id}
                           pedido={pedido}
+                          mostrarData={selecao.tipo === 'atrasados'}
                           ocupado={ocupado(pedido.id)}
                           onToggleItem={(itemId, separado) => {
                             setErro(null);
@@ -352,6 +488,8 @@ export default function Separacao(): React.ReactElement {
 
 interface CartaoProps {
   pedido: Pedido;
+  /** Na fila de atrasados os cartões são de dias diferentes: a data importa. */
+  mostrarData?: boolean;
   ocupado: boolean;
   onToggleItem: (itemId: string, separado: boolean) => void;
   onDefinirPedido: (separado: boolean) => void;
@@ -359,6 +497,7 @@ interface CartaoProps {
 
 function CartaoSeparacao({
   pedido,
+  mostrarData = false,
   ocupado,
   onToggleItem,
   onDefinirPedido,
@@ -393,6 +532,14 @@ function CartaoSeparacao({
           <span className="rounded-md bg-creme-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-tinta-suave">
             nº {pedido.orixNumero || '—'}
           </span>
+          {mostrarData && pedido.dataAgendada && (
+            <span
+              title="Data para a qual esta entrega foi agendada"
+              className="rounded-md bg-brasa-claro px-1.5 py-0.5 text-[10px] font-semibold text-brasa-escuro"
+            >
+              {formatarDataCurta(pedido.dataAgendada)}
+            </span>
+          )}
           <span
             className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
               completa

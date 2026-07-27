@@ -13,14 +13,19 @@
 
 import cron from 'node-cron';
 import { pollOnce, registrarSincronizacao } from './poll.js';
+import { reconciliarOnce } from './reconciliar.js';
 import { env } from '../config/env.js';
 import { log } from '../log.js';
 
 // Reexport para uso manual.
 export { pollOnce } from './poll.js';
+export { reconciliarOnce } from './reconciliar.js';
 
 let tarefa: cron.ScheduledTask | null = null;
 let executando = false;
+
+let tarefaReconciliacao: cron.ScheduledTask | null = null;
+let reconciliando = false;
 
 /** Executa um tick protegido (sem nunca lançar / derrubar o processo). */
 async function tickProtegido(): Promise<void> {
@@ -48,6 +53,29 @@ async function tickProtegido(): Promise<void> {
 }
 
 /**
+ * Ciclo de reconciliação protegido. Tem o próprio lock: um ciclo longo não pode
+ * empilhar com o seguinte, e ele NÃO compartilha o lock do poll — são rotinas
+ * independentes e podem se sobrepor sem problema (uma lê, a outra escreve em
+ * pedidos distintos; ambas são idempotentes).
+ */
+async function tickReconciliacao(): Promise<void> {
+  if (reconciliando) {
+    log.warn(
+      '[scheduler] Reconciliação anterior ainda em execução; pulando este ciclo.',
+    );
+    return;
+  }
+  reconciliando = true;
+  try {
+    await reconciliarOnce();
+  } catch (err) {
+    log.error('[scheduler] Erro inesperado na reconciliação (contido):', err);
+  } finally {
+    reconciliando = false;
+  }
+}
+
+/**
  * Inicia o agendador. Idempotente: se já houver tarefa registrada, não duplica.
  */
 export function start(): void {
@@ -70,6 +98,24 @@ export function start(): void {
   });
 
   log.info(`[scheduler] Agendador de polling ativo (cron="${expressao}").`);
+
+  // --- Reconciliação (independente do poll) ---
+  const cronReconciliar = env.RECONCILIAR_CRON;
+  if (!cron.validate(cronReconciliar)) {
+    log.error(
+      `[scheduler] RECONCILIAR_CRON inválido ("${cronReconciliar}"); ` +
+        'reconciliação NÃO iniciada. Pedidos cancelados no Órix continuarão no painel.',
+    );
+    return;
+  }
+
+  tarefaReconciliacao = cron.schedule(cronReconciliar, () => {
+    void tickReconciliacao();
+  });
+
+  log.info(
+    `[scheduler] Reconciliação com o Órix ativa (cron="${cronReconciliar}").`,
+  );
 }
 
 /** Para o agendador (útil para testes / shutdown gracioso). */
@@ -78,5 +124,10 @@ export function stop(): void {
     tarefa.stop();
     tarefa = null;
     log.info('[scheduler] Agendador de polling parado.');
+  }
+  if (tarefaReconciliacao) {
+    tarefaReconciliacao.stop();
+    tarefaReconciliacao = null;
+    log.info('[scheduler] Reconciliação parada.');
   }
 }

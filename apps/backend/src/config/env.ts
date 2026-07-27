@@ -25,6 +25,10 @@ const envSchema = z.object({
 
   // Worker / API
   POLL_CRON: z.string().min(1).default('*/5 * * * *'),
+  // Reconciliação com o Órix (pedido cancelado sai do painel). Roda mais espaçada
+  // que o poll de propósito: a varredura cobre TODOS os pedidos em aberto, não
+  // só a janela do dia.
+  RECONCILIAR_CRON: z.string().min(1).default('*/30 * * * *'),
   API_PORT: z.coerce.number().int().positive().default(3333),
   // URL do frontend — usada no link de convite por e-mail (definir senha).
   APP_URL: z.string().url().default('http://localhost:5173'),

@@ -22,7 +22,12 @@ import type { OrixPedidoItem } from '@pastobom/shared';
 import { escolherNumeroWhatsApp, transportarSeparacao } from '@pastobom/shared';
 import { supabase } from '../db/supabase.js';
 import { log } from '../log.js';
-import { getNaturezaPermitida, normalizarNatureza } from '../orix/status.js';
+import {
+  getNaturezaPermitida,
+  getProdutosServico,
+  normalizarNatureza,
+  temProdutoServico,
+} from '../orix/status.js';
 import { semearPesosAuto } from '../services/carga.js';
 
 /** Converte uma data dd/mm/yyyy (formato da Órix) para ISO yyyy-mm-dd.
@@ -76,6 +81,8 @@ interface ResultadoIngestao {
   erros: number;
   /** Pedidos ignorados por natureza de operação (não viram entrega). */
   descartadosNatureza: number;
+  /** Pedidos ignorados por conterem prestação de serviço (oficina). */
+  descartadosServico: number;
 }
 
 /**
@@ -94,6 +101,7 @@ export async function ingest(
     itensGravados: 0,
     erros: 0,
     descartadosNatureza: 0,
+    descartadosServico: 0,
   };
 
   if (!itens || itens.length === 0) {
@@ -128,6 +136,27 @@ export async function ingest(
       const rotulo = `${natureza} ${texto(cab.nome_natureza)}`.trim();
       descartadas.set(rotulo, (descartadas.get(rotulo) ?? 0) + 1);
     }
+  }
+
+  // 1c) Filtrar a OFICINA. Um pedido que tem linha de PRESTAÇÃO DE SERVIÇO não é
+  // entrega: o cliente leva a máquina até a loja e busca de volta. Esses pedidos
+  // caem em 00027 (parcial) quando as peças são faturadas e o serviço fica para
+  // a nota da prefeitura — e entupiam a fila do Johnny (eram 125 dos 134
+  // parciais). Era o "tira tudo que é do usuário Vendas Oficina" da Natália: o
+  // usuário não vem na API, mas o produto de serviço vem, e separa igual.
+  const produtosServico = await getProdutosServico();
+  for (const [idPedido, linhas] of grupos) {
+    const codigos = linhas.map((l) => texto(l.produto));
+    if (temProdutoServico(codigos, produtosServico)) {
+      grupos.delete(idPedido);
+      resultado.descartadosServico += 1;
+    }
+  }
+  if (resultado.descartadosServico > 0) {
+    log.info(
+      `[ingest] ${resultado.descartadosServico} pedido(s) descartado(s) por ` +
+        `conter prestação de serviço (oficina): produtos [${produtosServico.join(', ')}].`,
+    );
   }
   if (descartadas.size > 0) {
     const resumo = [...descartadas]

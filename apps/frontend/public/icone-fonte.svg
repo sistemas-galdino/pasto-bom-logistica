@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Pasto Bom Logística">
+  <!--
+    FONTE dos ícones do app (PWA). Diferente de marca.svg, que é a marca solta
+    usada dentro da interface, este é um ÍCONE: quadrado, fundo opaco e com a
+    marca recuada.
+
+    O recuo (~63% do lado) não é estética: Android recorta o ícone em círculo,
+    squircle ou gota conforme o aparelho (ícone "maskable"), e o iOS arredonda os
+    cantos. Sem margem, a borda da marca seria cortada em alguns celulares.
+
+    Os PNGs (icone-192/512, apple-touch-icon) são gerados a partir daqui.
+  -->
+  <rect width="512" height="512" fill="#0F5222"/>
+  <g transform="translate(94,94) scale(9)">
+    <circle cx="18" cy="18" r="18" fill="#0F5222"/>
+    <circle cx="18" cy="18" r="17" fill="none" stroke="#BDCB3B" stroke-opacity="0.35"/>
+    <circle cx="18" cy="17.5" r="6.2" fill="#F2D216"/>
+    <path d="M4 22.5 C10 17.5 16 17.8 21.5 21 C15.5 20.2 9.8 21.2 4 24 Z" fill="#BDCB3B"/>
+    <path d="M32 19.5 C25.5 21.2 19.5 24 14 28.5 C21 26.8 27 26.6 32 27.6 Z" fill="#176D2E"/>
+    <path d="M32 19.5 C25.5 21.2 19.5 24 14 28.5 C20.5 25.2 26.5 22.6 32 21.6 Z" fill="#199A3C"/>
+  </g>
+</svg>

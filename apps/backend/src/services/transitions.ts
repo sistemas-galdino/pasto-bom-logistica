@@ -284,6 +284,47 @@ export async function carregarPedido(pedidoId: string): Promise<Pedido> {
   });
 }
 
+/**
+ * Recusa (422) um motivo de não entrega que não esteja na lista cadastrada.
+ *
+ * A comparação é case-insensitive porque é assim que o índice único da tabela
+ * trata a descrição — "Cliente ausente" e "cliente ausente" são o mesmo motivo.
+ *
+ * Se a leitura da tabela falhar, DEIXA PASSAR: a lista é uma regra de
+ * padronização, e derrubar o registro de uma entrega que não aconteceu por
+ * causa de um erro de banco seria pior do que aceitar um motivo fora do padrão
+ * (o motorista está no campo, e a entrega já falhou uma vez).
+ */
+async function exigirMotivoCadastrado(motivo: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('motivos_nao_entrega')
+    .select('descricao')
+    .eq('ativo', true);
+
+  if (error) {
+    log.warn(
+      `[transitions] Não foi possível validar o motivo "${motivo}" ` +
+        `(${error.message}); aceitando assim mesmo.`,
+    );
+    return;
+  }
+
+  const alvo = motivo.toLocaleLowerCase('pt-BR');
+  const existe = (data ?? []).some(
+    (m: { descricao: string | null }) =>
+      (m.descricao ?? '').trim().toLocaleLowerCase('pt-BR') === alvo,
+  );
+
+  if (!existe) {
+    throw new TransicaoError(
+      422,
+      'motivo_invalido',
+      'Escolha um motivo da lista cadastrada. ' +
+        'Para criar um motivo novo, use a tela de Motivos (logística).',
+    );
+  }
+}
+
 /** Conta quantas propriedades o cliente possui. */
 async function contarPropriedades(clienteCodigo: string): Promise<number> {
   const { count, error } = await supabase
@@ -728,15 +769,20 @@ export async function aplicarTransicao(
     propriedadeParaGravar = propriedadeCodigo;
   }
 
-  // 3.9) Não realizado exige MOTIVO. Sem ele a logística fica sem saber o que
-  //      remarcar (e o motorista não tem como explicar a porteira fechada).
+  // 3.9) Não realizado exige MOTIVO, e o motivo tem que ser um dos CADASTRADOS.
+  //      Sem ele a logística fica sem saber o que remarcar; e sem a lista
+  //      fechada, cada um escreve o seu e o filtro por motivo não serve para
+  //      nada (decisão da reunião de 16/07/2026).
   const motivoLimpo = motivo?.trim() ?? '';
-  if (para === 'nao_realizado' && motivoLimpo === '') {
-    throw new TransicaoError(
-      422,
-      'motivo_obrigatorio',
-      'Informe por que a entrega não foi realizada.',
-    );
+  if (para === 'nao_realizado') {
+    if (motivoLimpo === '') {
+      throw new TransicaoError(
+        422,
+        'motivo_obrigatorio',
+        'Informe por que a entrega não foi realizada.',
+      );
+    }
+    await exigirMotivoCadastrado(motivoLimpo);
   }
 
   // 4) Atualiza o pedido.
