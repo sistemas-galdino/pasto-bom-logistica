@@ -1,25 +1,39 @@
-// Máquina de estados das transições logísticas.
-// Fonte única da verdade: backend (services/transitions.ts) e frontend
-// (Board.tsx) consultam APENAS este módulo.
+// Máquina de estados do PEDIDO (a ordem de venda).
+//
+// ATENÇÃO — mudou de escopo na Onda 2. O ciclo da VIAGEM (agendar, despachar,
+// entregar, não realizar) migrou para a ENTREGA e vive em
+// entrega-state-machine.ts. Aqui ficou só a situação da ORDEM DE VENDA:
+//
+//   pendente  = em aberto (o quadro decide se mostra pelo SALDO, não por aqui)
+//   entregue  = saldo zerado e nenhuma viagem em aberto
+//   cancelada = cancelada no Órix, ou descartada pela logística
+//
+// Os valores 'agendada', 'em_rota' e 'nao_realizado' continuam no enum do banco
+// (o Postgres não remove valor de enum sem recriar o tipo) e no tipo, mas NÃO
+// são mais usados no pedido — são estados de viagem. Por isso aparecem abaixo
+// com transições vazias: nenhum pedido deveria estar neles depois da migração
+// 0014, e se algum estiver, ele fica parado em vez de andar por um caminho que
+// não existe mais.
 
 import type { StatusLogistico } from './types/domain.js';
 
 /**
- * Transições permitidas a partir de cada status.
- * Estados finais (`entregue`, `cancelada`) não admitem transições.
+ * Transições permitidas a partir de cada status do PEDIDO.
  *
- * `nao_realizado` é o desfecho ruim de uma saída: o caminhão foi e a entrega não
- * aconteceu (cliente ausente, porteira fechada, estrada intransitável). Não é
- * cancelamento — a venda continua de pé e a entrega precisa ser remarcada. Sai
- * de lá pela REVERSÃO para `pendente` (ver REVERSOES).
+ * Sobrou uma só: descartar um pedido que não é entrega ("Descartar (não é
+ * entrega)" no quadro). O caminho de volta está em REVERSOES.
+ *
+ * `entregue` não é destino de transição manual: quem coloca o pedido lá é o
+ * serviço de entregas, quando o saldo zera e não há viagem em aberto.
  */
 export const TRANSICOES: Record<StatusLogistico, StatusLogistico[]> = {
-  pendente: ['agendada', 'cancelada'],
-  agendada: ['em_rota', 'cancelada'],
-  em_rota: ['entregue', 'nao_realizado', 'cancelada'],
+  pendente: ['cancelada'],
   entregue: [],
-  nao_realizado: ['cancelada'],
   cancelada: [],
+  // Legado da Onda 1 — estados de viagem, hoje em entregas.status.
+  agendada: [],
+  em_rota: [],
+  nao_realizado: [],
 };
 
 /**
@@ -33,29 +47,24 @@ export function podeTransicionar(
 }
 
 /**
- * Reversões permitidas (voltar UMA etapa) — exclusivas da logística e SEM
- * disparo de WhatsApp. Mapa separado de TRANSICOES para não interferir na
- * lógica do botão de avançar.
- *   agendada      -> pendente  (desfaz o agendamento; ex.: choveu, caminhão quebrou)
- *   em_rota       -> agendada  (desfaz o despacho)
- *   cancelada     -> pendente  (restaura um cancelamento — "é só por causa de
- *                               clicar errado", Johnny na reunião de 25/06)
- *   nao_realizado -> pendente  (remarca a entrega que não deu certo)
+ * Reversões permitidas — exclusivas da logística e SEM disparo de WhatsApp.
  *
- * A volta de `nao_realizado` é para PENDENTE, e não para `agendada`, de propósito:
- * `reverterStatus` limpa data/período/motorista/caminhão, o que LIBERA a vaga de
- * peso daquele caminhão no slot. Se voltasse para `agendada`, uma carga que não
- * saiu continuaria ocupando a capacidade de um dia que já passou.
+ *   cancelada -> pendente  (restaura um descarte — "é só por causa de clicar
+ *                           errado", Johnny na reunião de 25/06)
  *
- * `entregue` é o único estado realmente final.
+ * As reversões de viagem (desfazer despacho, remarcar o que não deu certo)
+ * migraram para REVERSOES_ENTREGA. Em especial: "remarcar" deixou de ser uma
+ * reversão. Uma entrega que falhou fica no histórico e o saldo volta sozinho
+ * para o pedido — remarcar é agendar uma entrega NOVA.
  */
 export const REVERSOES: Record<StatusLogistico, StatusLogistico[]> = {
   pendente: [],
-  agendada: ['pendente'],
-  em_rota: ['agendada'],
   entregue: [],
-  nao_realizado: ['pendente'],
   cancelada: ['pendente'],
+  // Legado — ver comentário no topo.
+  agendada: [],
+  em_rota: [],
+  nao_realizado: [],
 };
 
 /**
@@ -74,16 +83,16 @@ export function podeReverter(
 export type TemplateWhatsapp = 'agendamento' | 'em_rota' | 'entregue' | null;
 
 /**
- * Retorna o template associado a uma transição válida:
- *   pendente -> agendada      : 'agendamento'
- *   agendada -> em_rota       : 'em_rota'
- *   em_rota  -> entregue      : 'entregue'
- *   * -> cancelada            : null
- *   em_rota -> nao_realizado  : null  <- DE PROPÓSITO. O cliente NÃO é avisado de
- *                                        que a entrega falhou; quem fala com ele é
- *                                        a equipe, ao remarcar. Não adicione
- *                                        template aqui.
- * Qualquer transição inválida também retorna null.
+ * Template de WhatsApp de uma transição do PEDIDO.
+ *
+ * Hoje é SEMPRE null, e isso é o correto: a única transição que sobrou no
+ * pedido é o descarte (-> cancelada), que nunca avisou ninguém. Todas as
+ * mensagens ao cliente nascem de uma VIAGEM e vivem em
+ * templateDaTransicaoEntrega.
+ *
+ * A função continua existindo porque `aplicarTransicao` a consulta antes de
+ * disparar qualquer coisa — é a garantia, no código, de que descartar um pedido
+ * não manda mensagem para o cliente.
  */
 export function templateDaTransicao(
   de: StatusLogistico,
@@ -91,15 +100,6 @@ export function templateDaTransicao(
 ): TemplateWhatsapp {
   if (!podeTransicionar(de, para)) {
     return null;
-  }
-  if (de === 'pendente' && para === 'agendada') {
-    return 'agendamento';
-  }
-  if (de === 'agendada' && para === 'em_rota') {
-    return 'em_rota';
-  }
-  if (de === 'em_rota' && para === 'entregue') {
-    return 'entregue';
   }
   return null;
 }
