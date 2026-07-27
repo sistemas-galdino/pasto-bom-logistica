@@ -28,7 +28,7 @@ import type {
   PeriodoEntrega,
 } from '@pastobom/shared';
 import { api } from '../lib/api';
-import { STATUS_META } from '../components/status';
+import { STATUS_ENTREGA_META, STATUS_META } from '../components/status';
 
 type Visao = 'mes' | 'semana' | 'dia';
 
@@ -693,7 +693,7 @@ interface CardEntregaProps {
 
 // Ordem de destaque pedida na reunião: CLIENTE, MOTORISTA, BAIRRO (+ cidade).
 function CardEntrega({ entrega, compacto }: CardEntregaProps): React.ReactElement {
-  const meta = STATUS_META[entrega.statusLogistico];
+  const meta = STATUS_ENTREGA_META[entrega.status];
   const local = [entrega.bairro, entrega.cidade]
     .filter((p) => p && p.trim().length > 0)
     .join(' · ');

@@ -241,8 +241,9 @@ export interface PesoProduto {
 // Agenda (calendário de entregas — mês/semana/dia)
 // ---------------------------------------------------------------------------
 
-/** Entrega como aparece no card da agenda. */
+/** Uma VIAGEM como aparece no card da agenda (Onda 2: entrega, não pedido). */
 export interface AgendaEntrega {
+  entregaId: string;
   pedidoId: string;
   orixNumero: string;
   clienteNome: string;
@@ -254,7 +255,7 @@ export interface AgendaEntrega {
   caminhaoId: string | null;
   caminhaoNome: string | null;
   pesoTotalKg: number | null;
-  statusLogistico: StatusLogistico;
+  status: StatusEntrega;
 }
 
 /** Ocupação de um caminhão dentro de um slot (data + período). */
