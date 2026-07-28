@@ -28,9 +28,6 @@ import { lerPesosProdutos } from '../../services/carga.js';
 import {
   aplicarTransicao,
   carregarPedido,
-  definirMotorista,
-  definirSeparacaoItem,
-  definirSeparacaoPedido,
   mapearPedido,
   reenviarWhatsapp,
   reverterStatus,
@@ -475,12 +472,6 @@ export async function pedidosRoutes(app: FastifyInstance): Promise<void> {
         pedidoId: id,
         para: parsed.data.para,
         propriedadeCodigo: parsed.data.propriedadeCodigo,
-        dataAgendada: parsed.data.dataAgendada,
-        observacao: parsed.data.observacao,
-        motivo: parsed.data.motivo,
-        motoristaId: parsed.data.motoristaId,
-        periodo: parsed.data.periodo,
-        caminhaoId: parsed.data.caminhaoId,
         atorUserId: req.usuario?.id ?? undefined,
         atorPapel: req.usuario?.papel,
       });
@@ -513,82 +504,6 @@ export async function pedidosRoutes(app: FastifyInstance): Promise<void> {
       return reply.send(pedido);
     } catch (err) {
       return responderErro(reply, err, `[POST /pedidos/${id}/reverter]`);
-    }
-  });
-
-  // PATCH /pedidos/:id/separacao  ("dar OK": marca TODOS os itens de uma vez)
-  // Escrita já restrita a logística + almoxarifado pelo write-gate global (auth.ts).
-  app.patch('/pedidos/:id/separacao', async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const parsed = separacaoBodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        error: 'body_invalido',
-        message: 'Informe separado: boolean.',
-        detalhes: parsed.error.issues,
-      });
-    }
-
-    try {
-      const pedido = await definirSeparacaoPedido({
-        pedidoId: id,
-        separado: parsed.data.separado,
-      });
-      return reply.send(pedido);
-    } catch (err) {
-      return responderErro(reply, err, `[PATCH /pedidos/${id}/separacao]`);
-    }
-  });
-
-  // PATCH /pedidos/:id/itens/:itemId/separacao  (RF-2.2)
-  app.patch('/pedidos/:id/itens/:itemId/separacao', async (req, reply) => {
-    const { id, itemId } = req.params as { id: string; itemId: string };
-    const parsed = separacaoBodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        error: 'body_invalido',
-        message: 'Informe separado: boolean.',
-        detalhes: parsed.error.issues,
-      });
-    }
-
-    try {
-      const pedido = await definirSeparacaoItem({
-        pedidoId: id,
-        itemId,
-        separado: parsed.data.separado,
-      });
-      return reply.send(pedido);
-    } catch (err) {
-      return responderErro(
-        reply,
-        err,
-        `[PATCH /pedidos/${id}/itens/${itemId}/separacao]`,
-      );
-    }
-  });
-
-  // PATCH /pedidos/:id/motorista  (Fase 3 — atribuição pela logística)
-  app.patch('/pedidos/:id/motorista', async (req, reply) => {
-    const { id } = req.params as { id: string };
-    if (!exigirLogistica(req, reply)) return reply;
-    const parsed = motoristaBodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        error: 'body_invalido',
-        message: 'Informe motoristaId: uuid | null.',
-        detalhes: parsed.error.issues,
-      });
-    }
-
-    try {
-      const pedido = await definirMotorista({
-        pedidoId: id,
-        motoristaId: parsed.data.motoristaId,
-      });
-      return reply.send(pedido);
-    } catch (err) {
-      return responderErro(reply, err, `[PATCH /pedidos/${id}/motorista]`);
     }
   });
 

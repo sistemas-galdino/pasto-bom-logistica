@@ -1,122 +1,67 @@
-// Cartão de pedido no kanban: cliente, bairro/cidade, valor, itens e propriedade.
-// Mostra o progresso da separação (RF-2.2) nos estados pré-rota e, conforme o
-// papel, as ações de transição (logística) e de separar (logística/almoxarifado).
+// Cartão de PEDIDO (a ordem de venda) — Onda 2.
+//
+// Depois que o ciclo da viagem migrou para a ENTREGA, este cartão tem um papel
+// só: mostrar o que AINDA FALTA entregar de um pedido e abrir o agendamento.
+// Ele vive na coluna Pendente (e na aba de descartados).
+//
+// O saldo é o dado principal. "Restam 80 de 180" é a informação que faz a
+// logística decidir; a quantidade total do pedido, sozinha, mente quando parte
+// já saiu.
 
 import React from 'react';
-import type { Pedido, PrevisaoClima, StatusLogistico } from '@pastobom/shared';
-import { TRANSICOES, REVERSOES } from '@pastobom/shared';
-import { formatarMoeda, formatarData, rotuloItens } from '../lib/format';
-import { STATUS_META, rotuloStatusOrix } from './status';
-import { ClimaResumo } from './ClimaResumo';
+import type { Pedido, SaldoItem } from '@pastobom/shared';
+import { formatarData, formatarMoeda } from '../lib/format';
+import { rotuloStatusOrix } from './status';
 
 interface Props {
   pedido: Pedido;
+  /** Saldo calculado; ausente na aba de descartados, onde não faz sentido. */
+  saldo?: SaldoItem[];
   podeEscrever: boolean;
-  podeSeparar: boolean;
-  onTransicionar: (pedido: Pedido, para: StatusLogistico) => void;
-  onSeparar: (pedido: Pedido) => void;
-  /** Reverte o status uma etapa (voltar/restaurar) — só logística. */
-  onReverter?: (pedido: Pedido, para: StatusLogistico) => void;
-  /**
-   * Abre o registro de "entrega não realizada" (em_rota -> nao_realizado).
-   * Opcional: só o quadro oferece essa ação; Rotas e Separação não passam nada
-   * e o botão simplesmente não aparece.
-   */
-  onNaoRealizado?: (pedido: Pedido) => void;
-  /** Previsão do clima para a data agendada (badge ao lado da data). */
-  clima?: PrevisaoClima | null;
+  onAgendar?: (pedido: Pedido) => void;
+  onDescartar?: (pedido: Pedido) => void;
+  onRestaurar?: (pedido: Pedido) => void;
 }
 
-const PERIODO_ROTULO: Record<'manha' | 'tarde', string> = {
-  manha: 'Manhã',
-  tarde: 'Tarde',
-};
-
-/** Peso compacto para a pílula do cartão: kg abaixo de 1 t, toneladas acima. */
-function pesoCurto(kg: number): string {
-  if (kg < 1000) {
-    return `${kg.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} kg`;
-  }
-  return `${(kg / 1000).toLocaleString('pt-BR', {
-    maximumFractionDigits: 2,
-  })} t`;
+function formatarQtd(qtd: number): string {
+  return qtd.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 }
 
 function IconePin(): React.ReactElement {
   return (
-    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0 text-pedra" aria-hidden="true">
+    <svg
+      viewBox="0 0 16 16"
+      className="h-3.5 w-3.5 shrink-0 text-pedra"
+      aria-hidden="true"
+    >
       <path
         fill="currentColor"
-        d="M8 1.5a4 4 0 0 0-4 4c0 2.8 4 8 4 8s4-5.2 4-8a4 4 0 0 0-4-4Zm0 5.6a1.6 1.6 0 1 1 0-3.2 1.6 1.6 0 0 1 0 3.2Z"
+        d="M8 1.5a4.5 4.5 0 0 0-4.5 4.5c0 3.2 4.5 8.5 4.5 8.5s4.5-5.3 4.5-8.5A4.5 4.5 0 0 0 8 1.5Zm0 6.2a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4Z"
       />
     </svg>
   );
 }
 
-const pilulaCls =
-  'rounded-md px-1.5 py-0.5 text-[10px] font-semibold tracking-wide';
-
 export function PedidoCard({
   pedido,
+  saldo,
   podeEscrever,
-  podeSeparar,
-  onTransicionar,
-  onSeparar,
-  onReverter,
-  onNaoRealizado,
-  clima,
+  onAgendar,
+  onDescartar,
+  onRestaurar,
 }: Props): React.ReactElement {
-  const acaoNaoRealizado = onNaoRealizado;
-
-  const transicoes = TRANSICOES[pedido.statusLogistico];
-  // 'nao_realizado' é desfecho de rota, não avanço do fluxo: nunca vira o botão
-  // primário (em_rota tem o seu botão próprio, mais abaixo).
-  const avanco =
-    transicoes.find((t) => t !== 'cancelada' && t !== 'nao_realizado') ?? null;
-  const podeCancelar = transicoes.includes('cancelada');
-  // Reversão de uma etapa (voltar): agendada->pendente, em_rota->agendada,
-  // cancelada->pendente (restaurar quem foi cancelado por engano) e
-  // nao_realizado->pendente (remarcar a entrega que não deu certo).
-  const reverso = REVERSOES[pedido.statusLogistico][0] ?? null;
-  const ehCancelada = pedido.statusLogistico === 'cancelada';
-  const ehNaoRealizado = pedido.statusLogistico === 'nao_realizado';
-  // Só quem está na rua pode "não dar certo": o botão vive no cartão em_rota.
-  const mostrarNaoRealizado =
-    pedido.statusLogistico === 'em_rota' &&
-    podeEscrever &&
-    acaoNaoRealizado !== null;
-  // Pedido pendente é "lixo" do Órix que ainda não virou compromisso: descartar
-  // não avisa ninguém. Nos demais status a palavra certa é cancelar.
-  const ehDescarte = pedido.statusLogistico === 'pendente';
-
-  // RF-2.2: progresso da separação (apenas estados pré-rota).
-  const tot = pedido.itens.length;
-  const sep = pedido.itens.filter((i) => i.separado).length;
-  const completa = tot > 0 && sep === tot;
-  const preRota =
-    pedido.statusLogistico === 'pendente' ||
-    pedido.statusLogistico === 'agendada';
-  const mostrarSeparacao = preRota && tot > 0;
-  const pct = tot > 0 ? Math.round((sep / tot) * 100) : 0;
-
-  // Entrega rural: o motorista se guia por bairro + cidade (não há rua/número).
   const local = [pedido.bairro, pedido.cidadeCliente]
-    .filter((parte) => parte && parte.trim() !== '')
+    .filter((p) => p && p.trim() !== '')
     .join(' · ');
 
-  // Data em que a ordem de venda ENTROU (o pedido nº 1 da lista do Johnny) e o
-  // status do Órix — é por ele que a equipe filtra o quadro.
-  // O rótulo é o nome CURTO ("Parcial"); o nome longo do Órix fica no tooltip.
-  const statusOrixNome = pedido.statusOrixNome ? pedido.statusOrixNome.trim() : '';
+  const statusOrixNome = pedido.statusOrixNome?.trim() ?? '';
   const statusOrixRotulo = rotuloStatusOrix(pedido.statusOrix, statusOrixNome);
-  const temLinhaOrigem = Boolean(pedido.dataPedido) || statusOrixRotulo !== '';
-  const motivo = pedido.motivoNaoEntrega ? pedido.motivoNaoEntrega.trim() : '';
 
-  const temBadges =
-    pedido.periodo !== null ||
-    pedido.caminhaoNome !== null ||
-    preRota ||
-    pedido.pesoTotalKg !== null;
+  const comSaldo = (saldo ?? []).filter((s) => s.qtdSaldo > 0);
+  // "Parcial" quando alguma coisa já foi para uma viagem: é o aviso de que este
+  // cartão é o RESTO de um pedido, não o pedido inteiro.
+  const parcial = (saldo ?? []).some((s) => s.qtdComprometida > 0);
+  const descartado = pedido.statusLogistico === 'cancelada';
 
   return (
     <article className="animate-sobe rounded-xl border border-linha bg-papel p-3.5 shadow-carta transition duration-200 hover:-translate-y-0.5 hover:shadow-flutua">
@@ -134,248 +79,95 @@ export function PedidoCard({
         {local || '—'}
       </p>
 
-      {temLinhaOrigem && (
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-pedra">
-          {pedido.dataPedido && (
-            <span>
-              Entrada:{' '}
-              <span className="font-semibold text-tinta-suave">
-                {formatarData(pedido.dataPedido)}
-              </span>
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-pedra">
+        {pedido.dataPedido && (
+          <span>
+            Entrada:{' '}
+            <span className="font-semibold text-tinta-suave">
+              {formatarData(pedido.dataPedido)}
             </span>
-          )}
-          {statusOrixRotulo !== '' && (
-            <span
-              title={`Status no Órix: ${statusOrixNome || statusOrixRotulo}`}
-              className="max-w-full truncate rounded-md bg-creme-100 px-1.5 py-0.5 font-semibold text-tinta-suave"
-            >
-              {statusOrixRotulo}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* O motivo é O dado deste cartão: é ele que diz o que resolver antes de
-          remarcar. Registros antigos podem não ter motivo — melhor dizer isso
-          do que deixar o espaço vazio. */}
-      {ehNaoRealizado && (
-        <div className="mt-2.5 rounded-lg border border-brasa/30 bg-brasa-claro px-2.5 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-brasa">
-            Motivo da não entrega
-          </p>
-          {motivo !== '' ? (
-            <p className="mt-0.5 text-xs font-medium leading-snug text-brasa-escuro">
-              {motivo}
-            </p>
-          ) : (
-            <p className="mt-0.5 text-xs italic leading-snug text-brasa-escuro/70">
-              Motivo não informado.
-            </p>
-          )}
-        </div>
-      )}
-
-      {temBadges && (
-        <div className="mt-2 flex flex-wrap items-center gap-1">
-          {pedido.periodo && (
-            <span className={`${pilulaCls} bg-folha-claro text-mata`}>
-              {PERIODO_ROTULO[pedido.periodo]}
-            </span>
-          )}
-          {pedido.caminhaoNome && (
-            <span className={`${pilulaCls} bg-creme-100 text-tinta-suave`}>
-              🚚 {pedido.caminhaoNome}
-            </span>
-          )}
-          {pedido.pesoTotalKg !== null ? (
-            <span className={`${pilulaCls} bg-creme-100 text-tinta-suave`}>
-              {pesoCurto(pedido.pesoTotalKg)}
-            </span>
-          ) : (
-            preRota && (
-              <span
-                className={`${pilulaCls} bg-trigo-claro text-trigo-escuro`}
-                title="Algum item do pedido está sem peso cadastrado. Informe o peso no agendamento."
-              >
-                peso pendente
-              </span>
-            )
-          )}
-        </div>
-      )}
-
-      <div className="mt-2.5 flex items-end justify-between">
-        <span className="font-display text-xl font-semibold text-mata-escuro">
-          {formatarMoeda(pedido.valorTotal)}
-        </span>
-        <span className="text-xs text-tinta-suave">
-          {rotuloItens(pedido.itens.length)}
-        </span>
+          </span>
+        )}
+        {statusOrixRotulo !== '' && (
+          <span
+            title={`Status no Órix: ${statusOrixNome || statusOrixRotulo}`}
+            className="max-w-full truncate rounded-md bg-creme-100 px-1.5 py-0.5 font-semibold text-tinta-suave"
+          >
+            {statusOrixRotulo}
+          </span>
+        )}
+        {parcial && (
+          <span
+            title="Parte deste pedido já está em uma entrega."
+            className="rounded-md bg-trigo-claro px-1.5 py-0.5 font-semibold text-trigo-escuro"
+          >
+            Parcial
+          </span>
+        )}
       </div>
 
-      {mostrarSeparacao && (
-        <div className="mt-3">
-          <div className="flex items-center justify-between text-[11px] font-medium">
-            <span className="text-tinta-suave">Separação</span>
-            <span className={completa ? 'text-mata' : 'text-trigo-escuro'}>
-              {sep}/{tot}
-              {completa ? ' · pronta ✓' : ''}
-            </span>
-          </div>
-          <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-creme-100">
-            <div
-              className={`h-full rounded-full transition-all ${
-                completa ? 'bg-folha' : 'bg-trigo'
-              }`}
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-        </div>
+      {/* O SALDO: o que ainda falta entregar. */}
+      {saldo !== undefined && (
+        <ul className="mt-2.5 space-y-0.5 border-t border-linha/70 pt-2 text-xs text-tinta-suave">
+          {comSaldo.slice(0, 4).map((item) => (
+            <li key={item.produtoCodigo} className="flex items-baseline gap-1.5">
+              <span className="font-bold text-tinta">
+                {formatarQtd(item.qtdSaldo)}×
+              </span>
+              <span className="truncate">
+                {item.nomeProduto || item.produtoCodigo}
+              </span>
+              {item.qtdComprometida > 0 && (
+                <span className="shrink-0 text-[10px] text-pedra">
+                  de {formatarQtd(item.qtdPedido)}
+                </span>
+              )}
+            </li>
+          ))}
+          {comSaldo.length > 4 && (
+            <li className="text-[11px] text-pedra">
+              + {comSaldo.length - 4} outro{comSaldo.length - 4 > 1 ? 's' : ''}
+            </li>
+          )}
+        </ul>
       )}
 
-      <dl className="mt-3 space-y-1 text-xs text-tinta-suave">
-        <div className="flex justify-between gap-2">
-          <dt>Propriedade</dt>
-          <dd className="truncate text-right text-tinta">
-            {pedido.propriedadeCodigo ?? '—'}
-          </dd>
-        </div>
-        {pedido.motoristaId && (
-          <div className="flex justify-between gap-2">
-            <dt>Motorista</dt>
-            <dd className="truncate text-right text-tinta">
-              {pedido.motoristaNome || '—'}
-            </dd>
-          </div>
-        )}
-        {pedido.dataAgendada && (
-          <div className="flex justify-between gap-2">
-            <dt>Agendada</dt>
-            <dd className="flex items-center justify-end gap-2 text-right text-tinta">
-              <ClimaResumo variant="badge" previsao={clima} />
-              <span>
-                {formatarData(pedido.dataAgendada)}
-                {pedido.periodo ? ` · ${PERIODO_ROTULO[pedido.periodo]}` : ''}
-              </span>
-            </dd>
-          </div>
-        )}
-        {pedido.statusLogistico === 'entregue' && pedido.dataEntregue && (
-          <div className="flex justify-between gap-2">
-            <dt>Entregue</dt>
-            <dd className="text-right text-tinta">
-              {formatarData(pedido.dataEntregue)}
-            </dd>
-          </div>
-        )}
-      </dl>
+      <p className="mt-2 text-right font-display text-sm font-semibold text-mata-escuro">
+        {formatarMoeda(pedido.valorTotal)}
+      </p>
 
-      {(podeSeparar && mostrarSeparacao) ||
-      mostrarNaoRealizado ||
-      (podeEscrever && (avanco || podeCancelar || reverso)) ? (
-        <div className="mt-3 flex flex-col gap-2 border-t border-linha/70 pt-3">
-          {podeSeparar && mostrarSeparacao && (
+      {podeEscrever && (
+        <div className="mt-3 flex flex-wrap gap-1.5 border-t border-linha/70 pt-3">
+          {!descartado && onAgendar && (
             <button
               type="button"
-              onClick={() => onSeparar(pedido)}
-              className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
-                completa
-                  ? 'border-folha/40 bg-folha-claro text-mata hover:bg-folha-claro/70'
-                  : 'border-trigo/40 bg-trigo-claro text-trigo-escuro hover:bg-trigo-claro/70'
-              }`}
+              onClick={() => onAgendar(pedido)}
+              className="rounded-lg bg-mata px-2.5 py-1.5 text-xs font-bold text-creme-50 transition hover:bg-mata-escuro"
             >
-              {completa ? 'Separação concluída' : `Separar mercadorias (${sep}/${tot})`}
+              Agendar entrega
             </button>
           )}
-
-          {/* Não realizado: a saída daqui é remarcar. Reagendar (reversão para
-              pendente) é a ação principal; cancelar continua disponível. */}
-          {podeEscrever && ehNaoRealizado && reverso && (
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => onReverter?.(pedido, reverso)}
-                title="Devolve o pedido para Pendente para remarcar a entrega. O cliente NÃO é notificado."
-                className="flex-1 rounded-lg bg-mata px-2.5 py-1.5 text-xs font-bold text-creme-50 transition hover:bg-mata-escuro"
-              >
-                Reagendar
-              </button>
-              {podeCancelar && (
-                <button
-                  type="button"
-                  onClick={() => onTransicionar(pedido, 'cancelada')}
-                  title="Cancela o pedido. O cliente NÃO é notificado."
-                  className="rounded-lg border border-linha px-2.5 py-1.5 text-xs font-semibold text-tinta-suave transition hover:border-terra/40 hover:bg-terra-claro hover:text-terra-escuro"
-                >
-                  Cancelar
-                </button>
-              )}
-            </div>
-          )}
-
-          {podeEscrever && !ehNaoRealizado && (avanco || podeCancelar) && (
-            <div className="flex gap-2">
-              {avanco && (
-                <button
-                  type="button"
-                  onClick={() => onTransicionar(pedido, avanco)}
-                  className="flex-1 rounded-lg bg-mata px-2.5 py-1.5 text-xs font-bold text-creme-50 transition hover:bg-mata-escuro"
-                >
-                  {STATUS_META[pedido.statusLogistico].acao}
-                </button>
-              )}
-              {podeCancelar && (
-                <button
-                  type="button"
-                  onClick={() => onTransicionar(pedido, 'cancelada')}
-                  title={
-                    ehDescarte
-                      ? 'Tira o pedido do quadro (vai para Cancelados, de onde pode ser restaurado). O cliente NÃO é notificado.'
-                      : 'Cancela o pedido. O cliente NÃO é notificado.'
-                  }
-                  className="rounded-lg border border-linha px-2.5 py-1.5 text-xs font-semibold text-tinta-suave transition hover:border-terra/40 hover:bg-terra-claro hover:text-terra-escuro"
-                >
-                  {ehDescarte ? 'Descartar' : 'Cancelar'}
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* O caminhão foi e a entrega não aconteceu — não é cancelamento. */}
-          {mostrarNaoRealizado && acaoNaoRealizado && (
+          {!descartado && onDescartar && (
             <button
               type="button"
-              onClick={() => acaoNaoRealizado(pedido)}
-              title="A entrega não aconteceu (cliente ausente, porteira fechada…). A venda continua de pé e o cliente NÃO é notificado."
-              className="rounded-lg border border-brasa/30 bg-brasa-claro px-2.5 py-1.5 text-xs font-semibold text-brasa-escuro transition hover:border-brasa/50 hover:bg-brasa-claro/70"
+              onClick={() => onDescartar(pedido)}
+              title="Some do quadro por não ser uma entrega. Reversível."
+              className="rounded-lg border border-linha px-2.5 py-1.5 text-xs font-semibold text-tinta-suave transition hover:border-terra/40 hover:text-terra-escuro"
             >
-              Não realizado
+              Descartar
             </button>
           )}
-
-          {podeEscrever &&
-            !ehNaoRealizado &&
-            reverso &&
-            (ehCancelada ? (
-              <button
-                type="button"
-                onClick={() => onReverter?.(pedido, reverso)}
-                title="Devolve o pedido para Pendente. O cliente NÃO é notificado."
-                className="rounded-lg border border-folha/40 bg-folha-claro px-2.5 py-1.5 text-xs font-bold text-mata transition hover:bg-folha-claro/70"
-              >
-                Restaurar
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => onReverter?.(pedido, reverso)}
-                className="self-start rounded-lg px-2.5 py-1.5 text-xs font-semibold text-tinta-suave transition hover:bg-creme-100 hover:text-tinta"
-              >
-                ← Voltar para {STATUS_META[reverso].rotulo}
-              </button>
-            ))}
+          {descartado && onRestaurar && (
+            <button
+              type="button"
+              onClick={() => onRestaurar(pedido)}
+              className="rounded-lg border border-linha px-2.5 py-1.5 text-xs font-semibold text-tinta-suave transition hover:border-mata/30 hover:text-mata"
+            >
+              Restaurar
+            </button>
+          )}
         </div>
-      ) : null}
+      )}
     </article>
   );
 }

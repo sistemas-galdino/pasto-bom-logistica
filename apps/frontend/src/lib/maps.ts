@@ -3,7 +3,7 @@
 // endereço em texto. Muitos cadastros vêm sem coords (ou com "-"), por isso a
 // validação numérica + fallback. Sem API key e sem mapa embutido.
 
-import type { Pedido } from '@pastobom/shared';
+import type { Entrega, Pedido } from '@pastobom/shared';
 
 const BASE = 'https://www.google.com/maps/dir/?api=1&destination=';
 
@@ -16,7 +16,12 @@ function coord(v?: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export function linkGoogleMaps(pedido: Pedido): string {
+/**
+ * Aceita pedido OU entrega: os dois carregam o destino resolvido e os campos de
+ * fallback. Depois da Onda 2 quem chama é a rota do motorista, que lista
+ * viagens — mas a assinatura larga evita duplicar a regra de coordenada.
+ */
+export function linkGoogleMaps(pedido: Pedido | Entrega): string {
   const d = pedido.destino;
   const lat = coord(d?.latitude);
   const lng = coord(d?.longitude);

@@ -1,39 +1,61 @@
-// Página principal: KANBAN de pedidos.
+// Página principal: QUADRO — Onda 2.
 //
-// Cinco colunas do fluxo (pendente, agendada, em_rota, entregue, nao_realizado)
-// + aba de cancelados. Logística aplica transições; logística/almoxarifado fazem
-// a separação (RF-2.2); vendedor vê tudo em modo leitura.
+// O quadro mistura DOIS objetos, e essa é a mudança central do modelo:
 //
-// O quadro é a lista de trabalho do dia: filtra por PERÍODO DE ENTRADA e por
-// status do Órix no servidor, e busca (cliente, nº, cidade, bairro, produto)
-// dentro do que já veio — por isso a busca só enxerga o período filtrado.
+//   Pendente ................ PEDIDOS com saldo ("restam 80 de 180")
+//   Agendada / Em rota /
+//   Entregue / Não realizado  ENTREGAS (cada viagem é um cartão)
+//
+// Assim um pedido grande pode ter três caminhões saindo no mesmo dia — três
+// cartões em rota — e ainda mostrar o que sobrou na coluna Pendente. No modelo
+// antigo, um pedido era um cartão só e nada disso cabia.
+//
+// SALDO CALCULADO NO CLIENTE. Usamos a MESMA função do backend
+// (calcularSaldo, de @pastobom/shared) sobre os pedidos e as entregas já
+// carregados. Isso evita uma chamada por pedido e, mais importante, garante que
+// tela e servidor não possam discordar sobre quanto falta entregar.
+//
+// JANELAS DE EXIBIÇÃO. As colunas de desfecho são listas de trabalho, não
+// arquivo: 'não realizado' mostra os últimos 7 dias e 'entregue' os últimos 30.
+// O corte é só VISUAL — o saldo é calculado sobre TODAS as entregas, senão uma
+// viagem antiga sumiria da conta e o pedido reapareceria com saldo que não tem.
 
 import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { Pedido, StatusLogistico } from '@pastobom/shared';
-import { api, ApiError, type FiltrosPedidos } from '../lib/api';
-import { useAuth } from '../auth/AuthProvider';
-import { KanbanColumn } from '../components/KanbanColumn';
-import { PedidoCard } from '../components/PedidoCard';
+import type { Entrega, Pedido, StatusEntrega } from '@pastobom/shared';
+import { api, ApiError } from '../lib/api';
 import {
-  TransicaoModal,
-  type TransicaoSubmit,
-} from '../components/TransicaoModal';
+  agruparEntregasPorPedido,
+  isoMenosDias,
+  pedidosComSaldo,
+  type PedidoComSaldo,
+} from '../lib/saldo-pedidos';
+import { useAuth } from '../auth/AuthProvider';
+import { EntregaCard } from '../components/EntregaCard';
+import { PedidoCard } from '../components/PedidoCard';
+import { AgendarEntregaModal } from '../components/AgendarEntregaModal';
+import { ConfirmacaoModal } from '../components/ConfirmacaoModal';
 import { SeparacaoModal } from '../components/SeparacaoModal';
-import { ReverterModal } from '../components/ReverterModal';
 import { NaoRealizadoModal } from '../components/NaoRealizadoModal';
 import {
-  COLUNAS_KANBAN,
+  COLUNAS_ENTREGA,
+  STATUS_ENTREGA_META,
+  STATUS_META,
   STATUS_ORIX_META,
-  TODOS_STATUS,
 } from '../components/status';
 
-/** Os três status do Órix que chegam ao quadro (filtro server-side). */
 const STATUS_ORIX_OPCOES = STATUS_ORIX_META;
 
-interface Alvo {
-  pedido: Pedido;
-  para: StatusLogistico;
+/** Dias mostrados nas colunas de desfecho (só exibição; ver topo do arquivo). */
+const DIAS_NAO_REALIZADO = 7;
+const DIAS_ENTREGUE = 30;
+
+/** Transição de entrega aguardando confirmação. */
+interface AlvoEntrega {
+  entrega: Entrega;
+  para: StatusEntrega;
+  /** true quando é uma reversão (volta uma etapa), não um avanço. */
+  reversao?: boolean;
 }
 
 function mensagemDeErro(err: unknown, fallback: string): string {
@@ -46,21 +68,35 @@ function mensagemDeErro(err: unknown, fallback: string): string {
 function normalizar(texto: string): string {
   return texto
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .toLowerCase();
 }
 
 export function Board(): React.ReactElement {
   const { podeEscrever, podeSeparar } = useAuth();
   const queryClient = useQueryClient();
+
   const [verCancelados, setVerCancelados] = useState(false);
-  const [alvo, setAlvo] = useState<Alvo | null>(null);
-  const [erroModal, setErroModal] = useState<string | null>(null);
+
+  // Agendamento (pedido -> nova entrega)
+  const [agendando, setAgendando] = useState<PedidoComSaldo | null>(null);
+  const [erroAgendar, setErroAgendar] = useState<string | null>(null);
+
+  // Transições de entrega (confirmação simples)
+  const [alvoEntrega, setAlvoEntrega] = useState<AlvoEntrega | null>(null);
+  const [erroEntrega, setErroEntrega] = useState<string | null>(null);
+
+  // Descarte/restauração do pedido
+  const [alvoPedido, setAlvoPedido] = useState<{
+    pedido: Pedido;
+    descartar: boolean;
+  } | null>(null);
+  const [erroPedido, setErroPedido] = useState<string | null>(null);
+
   const [separandoId, setSeparandoId] = useState<string | null>(null);
   const [erroSeparacao, setErroSeparacao] = useState<string | null>(null);
-  const [alvoReverter, setAlvoReverter] = useState<Alvo | null>(null);
-  const [erroReverter, setErroReverter] = useState<string | null>(null);
-  const [alvoNaoRealizado, setAlvoNaoRealizado] = useState<Pedido | null>(null);
+
+  const [alvoNaoRealizado, setAlvoNaoRealizado] = useState<Entrega | null>(null);
   const [erroNaoRealizado, setErroNaoRealizado] = useState<string | null>(null);
 
   // Filtros server-side (período de ENTRADA + status do Órix) e busca local.
@@ -69,193 +105,231 @@ export function Board(): React.ReactElement {
   const [statusOrix, setStatusOrix] = useState<string[]>([]);
   const [busca, setBusca] = useState('');
 
-  const filtros = useMemo<FiltrosPedidos>(() => {
-    const f: FiltrosPedidos = {};
+  const filtros = useMemo(() => {
+    const f: { de?: string; ate?: string; statusOrix?: string[] } = {};
     if (de) f.de = de;
     if (ate) f.ate = ate;
     if (statusOrix.length > 0) f.statusOrix = statusOrix;
     return f;
   }, [de, ate, statusOrix]);
 
-  // A key carrega os filtros (sem isso o react-query devolveria a lista velha).
-  // As invalidações continuam usando o PREFIXO ['pedidos'], que cobre esta key
-  // e as das outras telas (Dashboard, Rotas, Motoristas).
   const pedidosQuery = useQuery({
     queryKey: ['pedidos', filtros],
-    queryFn: ({ signal }) => api.listarPedidos(TODOS_STATUS, signal, filtros),
+    queryFn: ({ signal }) =>
+      api.listarPedidos(['pendente', 'entregue', 'cancelada'], signal, filtros),
     refetchInterval: 60_000,
   });
 
-  const invalidarPedidos = () =>
-    queryClient.invalidateQueries({ queryKey: ['pedidos'] });
+  // TODAS as entregas: o saldo depende de todas elas (ver topo do arquivo).
+  const entregasQuery = useQuery({
+    queryKey: ['entregas'],
+    queryFn: ({ signal }) => api.listarEntregas({}, signal),
+    refetchInterval: 60_000,
+  });
 
-  const mutacao = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: TransicaoSubmit }) =>
-      api.transicionar(id, body),
+  function invalidarTudo(): void {
+    void queryClient.invalidateQueries({ queryKey: ['pedidos'] });
+    void queryClient.invalidateQueries({ queryKey: ['entregas'] });
+    void queryClient.invalidateQueries({ queryKey: ['agenda'] });
+  }
+
+  // --- mutações -------------------------------------------------------------
+
+  const agendarMutacao = useMutation({
+    mutationFn: (body: Parameters<typeof api.criarEntrega>[0]) =>
+      api.criarEntrega(body),
     onSuccess: () => {
-      void invalidarPedidos();
-      setAlvo(null);
-      setErroModal(null);
+      invalidarTudo();
+      setAgendando(null);
+      setErroAgendar(null);
     },
-    onError: (err) => {
-      setErroModal(mensagemDeErro(err, 'Falha ao aplicar a transição.'));
+    onError: (err) =>
+      setErroAgendar(mensagemDeErro(err, 'Falha ao agendar a entrega.')),
+  });
+
+  const entregaMutacao = useMutation({
+    mutationFn: ({ id, para, reversao }: { id: string; para: StatusEntrega; reversao?: boolean }) =>
+      reversao
+        ? api.reverterEntrega(id, para)
+        : api.transicionarEntrega(id, { para }),
+    onSuccess: () => {
+      invalidarTudo();
+      setAlvoEntrega(null);
+      setErroEntrega(null);
     },
+    onError: (err) =>
+      setErroEntrega(mensagemDeErro(err, 'Falha ao atualizar a entrega.')),
+  });
+
+  const pedidoMutacao = useMutation({
+    mutationFn: ({ id, descartar }: { id: string; descartar: boolean }) =>
+      descartar
+        ? api.transicionar(id, { para: 'cancelada' })
+        : api.reverter(id, 'pendente'),
+    onSuccess: () => {
+      invalidarTudo();
+      setAlvoPedido(null);
+      setErroPedido(null);
+    },
+    onError: (err) =>
+      setErroPedido(mensagemDeErro(err, 'Falha ao atualizar o pedido.')),
   });
 
   const separacaoMutacao = useMutation({
     mutationFn: ({
-      pedidoId,
+      entregaId,
       itemId,
       separado,
     }: {
-      pedidoId: string;
+      entregaId: string;
       itemId: string;
       separado: boolean;
-    }) => api.definirSeparacao(pedidoId, itemId, separado),
+    }) => api.definirSeparacaoItemEntrega(entregaId, itemId, separado),
     onSuccess: () => {
-      void invalidarPedidos();
+      invalidarTudo();
       setErroSeparacao(null);
     },
-    onError: (err) => {
-      setErroSeparacao(mensagemDeErro(err, 'Falha ao atualizar a separação.'));
-    },
+    onError: (err) =>
+      setErroSeparacao(mensagemDeErro(err, 'Falha ao atualizar a separação.')),
   });
 
-  const reverterMutacao = useMutation({
-    mutationFn: ({ id, para }: { id: string; para: StatusLogistico }) =>
-      api.reverter(id, para),
-    onSuccess: () => {
-      void invalidarPedidos();
-      setAlvoReverter(null);
-      setErroReverter(null);
-    },
-    onError: (err) => {
-      setErroReverter(mensagemDeErro(err, 'Falha ao voltar o pedido.'));
-    },
-  });
-
-  // em_rota -> nao_realizado. O motivo é obrigatório: se vier vazio o backend
-  // devolve 422 `motivo_obrigatorio` e a mensagem aparece dentro do modal.
   const naoRealizadoMutacao = useMutation({
     mutationFn: ({ id, motivo }: { id: string; motivo: string }) =>
-      api.transicionar(id, { para: 'nao_realizado', motivo }),
+      api.transicionarEntrega(id, { para: 'nao_realizado', motivo }),
     onSuccess: () => {
-      void invalidarPedidos();
+      invalidarTudo();
       setAlvoNaoRealizado(null);
       setErroNaoRealizado(null);
     },
-    onError: (err) => {
-      if (err instanceof ApiError && err.status === 422) {
-        setErroNaoRealizado(
-          mensagemDeErro(err, 'Informe por que a entrega não foi realizada.'),
-        );
-        return;
-      }
+    onError: (err) =>
       setErroNaoRealizado(
         mensagemDeErro(err, 'Falha ao marcar a entrega como não realizada.'),
-      );
-    },
+      ),
   });
+
+  // --- dados derivados ------------------------------------------------------
 
   const pedidos = useMemo(() => pedidosQuery.data ?? [], [pedidosQuery.data]);
+  const entregas = useMemo(() => entregasQuery.data ?? [], [entregasQuery.data]);
 
-  // Busca client-side sobre o que já está carregado: cliente, nº do pedido,
-  // cidade, bairro e produto (código ou nome de qualquer item).
-  const pedidosVisiveis = useMemo(() => {
-    const termo = normalizar(busca.trim());
-    if (termo === '') return pedidos;
-    return pedidos.filter((p) => {
-      const campos = [
-        p.clienteNome,
-        p.orixNumero,
-        p.cidadeCliente,
-        p.bairro ?? '',
-      ];
-      if (campos.some((campo) => normalizar(campo ?? '').includes(termo))) {
-        return true;
-      }
-      return p.itens.some(
-        (item) =>
-          normalizar(item.produtoCodigo).includes(termo) ||
-          normalizar(item.nomeProduto).includes(termo),
-      );
-    });
-  }, [pedidos, busca]);
+  /** Entregas agrupadas por pedido — insumo do cálculo de saldo. */
+  const entregasPorPedido = useMemo(
+    () => agruparEntregasPorPedido(entregas),
+    [entregas],
+  );
 
-  // Clima das entregas futuras (agendada/em_rota com data) — busca em lote.
-  const idsClima = useMemo(
+  /** Pedidos que ainda têm o que entregar, com o saldo já calculado. */
+  const pendentesComSaldo = useMemo<PedidoComSaldo[]>(
+    () => pedidosComSaldo(pedidos, entregasPorPedido),
+    [pedidos, entregasPorPedido],
+  );
+
+  // --- busca ----------------------------------------------------------------
+
+  const termo = normalizar(busca.trim());
+
+  const casaPedido = useMemo(
     () =>
-      pedidosVisiveis
-        .filter(
-          (p) =>
-            p.dataAgendada &&
-            (p.statusLogistico === 'agendada' ||
-              p.statusLogistico === 'em_rota'),
-        )
-        .map((p) => p.id),
-    [pedidosVisiveis],
+      (p: Pedido): boolean => {
+        if (termo === '') return true;
+        const campos = [p.clienteNome, p.orixNumero, p.cidadeCliente, p.bairro ?? ''];
+        if (campos.some((c) => normalizar(c ?? '').includes(termo))) return true;
+        return p.itens.some(
+          (i) =>
+            normalizar(i.produtoCodigo).includes(termo) ||
+            normalizar(i.nomeProduto).includes(termo),
+        );
+      },
+    [termo],
   );
-  const idsClimaKey = useMemo(
-    () => idsClima.slice().sort().join(','),
-    [idsClima],
-  );
-  const climaQuery = useQuery({
-    queryKey: ['clima-lote', idsClimaKey],
-    queryFn: ({ signal }) => api.climaLote(idsClima, signal),
-    enabled: idsClima.length > 0,
-    staleTime: 30 * 60 * 1000,
-    refetchInterval: 30 * 60 * 1000,
-  });
-  const climaPorPedido = climaQuery.data ?? {};
 
-  const porStatus = useMemo(() => {
-    const mapa: Record<StatusLogistico, Pedido[]> = {
-      pendente: [],
+  const casaEntrega = useMemo(
+    () =>
+      (e: Entrega): boolean => {
+        if (termo === '') return true;
+        const campos = [e.clienteNome, e.orixNumero, e.cidadeCliente, e.bairro ?? ''];
+        if (campos.some((c) => normalizar(c ?? '').includes(termo))) return true;
+        return e.itens.some(
+          (i) =>
+            normalizar(i.produtoCodigo).includes(termo) ||
+            normalizar(i.nomeProduto).includes(termo),
+        );
+      },
+    [termo],
+  );
+
+  const pendentesVisiveis = useMemo(
+    () => pendentesComSaldo.filter((x) => casaPedido(x.pedido)),
+    [pendentesComSaldo, casaPedido],
+  );
+
+  /** Entregas por coluna, já com a janela de exibição das colunas de desfecho. */
+  const entregasPorStatus = useMemo(() => {
+    const corteNaoRealizado = isoMenosDias(DIAS_NAO_REALIZADO);
+    const corteEntregue = isoMenosDias(DIAS_ENTREGUE);
+
+    const mapa: Record<StatusEntrega, Entrega[]> = {
       agendada: [],
       em_rota: [],
       entregue: [],
       nao_realizado: [],
       cancelada: [],
     };
-    for (const p of pedidosVisiveis) {
-      mapa[p.statusLogistico].push(p);
+
+    for (const e of entregas) {
+      if (!casaEntrega(e)) continue;
+      if (e.status === 'nao_realizado' && e.dataAgendada < corteNaoRealizado) {
+        continue;
+      }
+      if (e.status === 'entregue' && e.dataAgendada < corteEntregue) continue;
+      mapa[e.status].push(e);
+    }
+
+    // Mais antigo primeiro: é a ordem de trabalho pedida na reunião.
+    for (const lista of Object.values(mapa)) {
+      lista.sort((a, b) => a.dataAgendada.localeCompare(b.dataAgendada));
     }
     return mapa;
-  }, [pedidosVisiveis]);
+  }, [entregas, casaEntrega]);
 
-  const pedidoSeparacao = useMemo(
-    () => pedidos.find((p) => p.id === separandoId) ?? null,
-    [pedidos, separandoId],
+  const cancelados = useMemo(
+    () =>
+      pedidos.filter((p) => p.statusLogistico === 'cancelada' && casaPedido(p)),
+    [pedidos, casaPedido],
   );
 
-  function abrirTransicao(pedido: Pedido, para: StatusLogistico) {
-    setErroModal(null);
-    setAlvo({ pedido, para });
-  }
+  const entregaSeparacao = useMemo(
+    () => entregas.find((e) => e.id === separandoId) ?? null,
+    [entregas, separandoId],
+  );
 
-  function abrirSeparacao(pedido: Pedido) {
-    setErroSeparacao(null);
-    setSeparandoId(pedido.id);
-  }
+  const totalNoFluxo =
+    pendentesVisiveis.length +
+    COLUNAS_ENTREGA.reduce((s, st) => s + entregasPorStatus[st].length, 0);
 
-  function abrirReverter(pedido: Pedido, para: StatusLogistico) {
-    setErroReverter(null);
-    setAlvoReverter({ pedido, para });
-  }
+  const carregando = pedidosQuery.isLoading || entregasQuery.isLoading;
+  const erroCarregar = pedidosQuery.error ?? entregasQuery.error;
 
-  function abrirNaoRealizado(pedido: Pedido) {
-    setErroNaoRealizado(null);
-    setAlvoNaoRealizado(pedido);
-  }
+  // --- ações ----------------------------------------------------------------
 
-  function confirmar(args: TransicaoSubmit) {
+  function abrirAgendamento(pedido: Pedido): void {
+    const alvo = pendentesComSaldo.find((x) => x.pedido.id === pedido.id);
     if (!alvo) return;
-    mutacao.mutate({ id: alvo.pedido.id, body: args });
+    setErroAgendar(null);
+    setAgendando(alvo);
   }
 
-  /** Liga/desliga um status do Órix mantendo a ordem canônica das opções
-   *  (a queryKey não muda por causa da ordem dos cliques). */
-  function alternarStatusOrix(codigo: string) {
+  function abrirTransicaoEntrega(entrega: Entrega, para: StatusEntrega): void {
+    setErroEntrega(null);
+    setAlvoEntrega({ entrega, para });
+  }
+
+  function abrirReversaoEntrega(entrega: Entrega, para: StatusEntrega): void {
+    setErroEntrega(null);
+    setAlvoEntrega({ entrega, para, reversao: true });
+  }
+
+  function alternarStatusOrix(codigo: string): void {
     setStatusOrix((atual) =>
       STATUS_ORIX_OPCOES.map((o) => o.codigo).filter((c) =>
         c === codigo ? !atual.includes(c) : atual.includes(c),
@@ -263,7 +337,7 @@ export function Board(): React.ReactElement {
     );
   }
 
-  function limparFiltros() {
+  function limparFiltros(): void {
     setDe('');
     setAte('');
     setStatusOrix([]);
@@ -272,13 +346,6 @@ export function Board(): React.ReactElement {
 
   const temFiltros =
     de !== '' || ate !== '' || statusOrix.length > 0 || busca.trim() !== '';
-
-  const totalAtivos =
-    porStatus.pendente.length +
-    porStatus.agendada.length +
-    porStatus.em_rota.length +
-    porStatus.entregue.length +
-    porStatus.nao_realizado.length;
 
   const abaCls = (ativo: boolean) =>
     `rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
@@ -290,20 +357,63 @@ export function Board(): React.ReactElement {
   const campoCls =
     'rounded-lg border border-linha bg-papel px-2 py-1 text-xs text-tinta outline-none transition focus:border-mata/40';
 
+  /** Texto do modal de confirmação conforme a transição escolhida. */
+  function textoConfirmacao(alvo: AlvoEntrega): {
+    titulo: string;
+    descricao: string;
+    rotulo: string;
+    perigo: boolean;
+  } {
+    if (alvo.reversao) {
+      return {
+        titulo: 'Voltar a entrega para agendada',
+        descricao:
+          'Desfaz o despacho. A carga continua reservada para este caminhão e a viagem volta para a fila de saída.',
+        rotulo: 'Voltar',
+        perigo: false,
+      };
+    }
+    if (alvo.para === 'cancelada') {
+      return {
+        titulo: 'Desfazer o agendamento',
+        descricao:
+          'A carga volta para a fila do pedido e a vaga de peso deste caminhão é liberada. O cliente não é avisado.',
+        rotulo: 'Desfazer',
+        perigo: true,
+      };
+    }
+    if (alvo.para === 'em_rota') {
+      return {
+        titulo: 'Pôr em rota',
+        descricao:
+          'O cliente recebe a mensagem de que o pedido saiu para entrega.',
+        rotulo: 'Pôr em rota',
+        perigo: false,
+      };
+    }
+    return {
+      titulo: 'Marcar como entregue',
+      descricao:
+        'Se ainda sobrar mercadoria no pedido, o restante volta para a coluna Pendente para ser agendado depois.',
+      rotulo: 'Marcar entregue',
+      perigo: false,
+    };
+  }
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between gap-3 border-b border-linha bg-creme-50/70 px-4 py-2.5 backdrop-blur sm:px-6">
         <div className="flex items-baseline gap-2 text-sm">
           <h2 className="font-display text-base font-semibold text-mata-escuro">
-            Quadro de pedidos
+            Quadro de entregas
           </h2>
           <span className="text-pedra">·</span>
           <span className="text-tinta-suave">
             {verCancelados
-              ? `${porStatus.cancelada.length} cancelados`
-              : `${totalAtivos} no fluxo`}
+              ? `${cancelados.length} descartados`
+              : `${totalNoFluxo} no fluxo`}
           </span>
-          {pedidosQuery.isFetching && (
+          {(pedidosQuery.isFetching || entregasQuery.isFetching) && (
             <span className="text-xs text-pedra">atualizando…</span>
           )}
         </div>
@@ -321,17 +431,16 @@ export function Board(): React.ReactElement {
             onClick={() => setVerCancelados(true)}
             className={abaCls(verCancelados)}
           >
-            Cancelados ({porStatus.cancelada.length})
+            Descartados ({cancelados.length})
           </button>
         </div>
       </div>
 
-      {/* Barra de filtros: período de entrada + status do Órix (servidor) e a
-          busca (local, sobre o que já veio). */}
+      {/* Filtros: período de entrada + status do Órix (servidor) e busca (local). */}
       <div className="flex flex-wrap items-start gap-x-5 gap-y-3 border-b border-linha bg-papel/70 px-4 py-3 sm:px-6">
         <div className="flex min-w-[240px] flex-1 flex-col">
           <label htmlFor="busca-pedidos" className="sr-only">
-            Buscar pedidos
+            Buscar
           </label>
           <input
             id="busca-pedidos"
@@ -416,20 +525,23 @@ export function Board(): React.ReactElement {
       </div>
 
       <main className="flex-1 overflow-hidden">
-        {pedidosQuery.isLoading ? (
+        {carregando ? (
           <div className="flex h-full items-center justify-center text-sm text-tinta-suave">
-            Carregando pedidos…
+            Carregando…
           </div>
-        ) : pedidosQuery.isError ? (
+        ) : erroCarregar ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-tinta-suave">
             <p>
-              {pedidosQuery.error instanceof Error
-                ? pedidosQuery.error.message
-                : 'Não foi possível carregar os pedidos.'}
+              {erroCarregar instanceof Error
+                ? erroCarregar.message
+                : 'Não foi possível carregar o quadro.'}
             </p>
             <button
               type="button"
-              onClick={() => void pedidosQuery.refetch()}
+              onClick={() => {
+                void pedidosQuery.refetch();
+                void entregasQuery.refetch();
+              }}
               className="rounded-lg border border-linha bg-papel px-3 py-1.5 text-xs font-semibold text-tinta-suave hover:border-mata/30 hover:text-mata"
             >
               Tentar novamente
@@ -437,74 +549,184 @@ export function Board(): React.ReactElement {
           </div>
         ) : verCancelados ? (
           <div className="scroll-suave h-full overflow-y-auto p-4 sm:p-6">
-            {porStatus.cancelada.length === 0 ? (
+            {cancelados.length === 0 ? (
               <p className="text-center text-sm text-pedra">
                 {temFiltros
-                  ? 'Nenhum pedido cancelado com esses filtros.'
-                  : 'Nenhum pedido cancelado.'}
+                  ? 'Nenhum pedido descartado com esses filtros.'
+                  : 'Nenhum pedido descartado.'}
               </p>
             ) : (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {porStatus.cancelada.map((p) => (
+                {cancelados.map((p) => (
                   <PedidoCard
                     key={p.id}
                     pedido={p}
                     podeEscrever={podeEscrever}
-                    podeSeparar={false}
-                    onTransicionar={abrirTransicao}
-                    onSeparar={abrirSeparacao}
-                    onReverter={abrirReverter}
+                    onAgendar={abrirAgendamento}
+                    onDescartar={(pedido) => {
+                      setErroPedido(null);
+                      setAlvoPedido({ pedido, descartar: true });
+                    }}
+                    onRestaurar={(pedido) => {
+                      setErroPedido(null);
+                      setAlvoPedido({ pedido, descartar: false });
+                    }}
                   />
                 ))}
               </div>
             )}
           </div>
         ) : (
-          // Cinco colunas não cabem lado a lado em tela pequena: a faixa rola na
-          // horizontal e cada coluna guarda sua largura mínima (KanbanColumn).
           <div className="scroll-suave flex h-full gap-3 overflow-x-auto p-4 sm:p-6">
-            {COLUNAS_KANBAN.map((status) => (
-              <KanbanColumn
+            {/* Coluna PENDENTE: pedidos com saldo. */}
+            <Coluna
+              rotulo="Pendente"
+              faixa={STATUS_META.pendente.faixa}
+              quantidade={pendentesVisiveis.length}
+            >
+              {pendentesVisiveis.map(({ pedido, saldo }) => (
+                <PedidoCard
+                  key={pedido.id}
+                  pedido={pedido}
+                  saldo={saldo}
+                  podeEscrever={podeEscrever}
+                  onAgendar={abrirAgendamento}
+                  onDescartar={(p) => {
+                    setErroPedido(null);
+                    setAlvoPedido({ pedido: p, descartar: true });
+                  }}
+                />
+              ))}
+            </Coluna>
+
+            {/* Colunas de VIAGEM. */}
+            {COLUNAS_ENTREGA.map((status) => (
+              <Coluna
                 key={status}
-                status={status}
-                pedidos={porStatus[status]}
-                podeEscrever={podeEscrever}
-                podeSeparar={podeSeparar}
-                onTransicionar={abrirTransicao}
-                onSeparar={abrirSeparacao}
-                onReverter={abrirReverter}
-                onNaoRealizado={abrirNaoRealizado}
-                climaPorPedido={climaPorPedido}
-              />
+                rotulo={STATUS_ENTREGA_META[status].rotulo}
+                faixa={STATUS_ENTREGA_META[status].faixa}
+                quantidade={entregasPorStatus[status].length}
+                nota={
+                  status === 'nao_realizado'
+                    ? `últimos ${DIAS_NAO_REALIZADO} dias`
+                    : status === 'entregue'
+                      ? `últimos ${DIAS_ENTREGUE} dias`
+                      : undefined
+                }
+              >
+                {entregasPorStatus[status].map((e) => (
+                  <EntregaCard
+                    key={e.id}
+                    entrega={e}
+                    podeEscrever={podeEscrever}
+                    podeSeparar={podeSeparar}
+                    onTransicionar={abrirTransicaoEntrega}
+                    onSeparar={(entrega) => {
+                      setErroSeparacao(null);
+                      setSeparandoId(entrega.id);
+                    }}
+                    onReverter={abrirReversaoEntrega}
+                    onNaoRealizado={(entrega) => {
+                      setErroNaoRealizado(null);
+                      setAlvoNaoRealizado(entrega);
+                    }}
+                  />
+                ))}
+              </Coluna>
             ))}
           </div>
         )}
       </main>
 
-      {alvo && (
-        <TransicaoModal
-          pedido={alvo.pedido}
-          para={alvo.para}
-          enviando={mutacao.isPending}
-          erro={erroModal}
+      {agendando && (
+        <AgendarEntregaModal
+          pedido={agendando.pedido}
+          saldo={agendando.saldo}
+          enviando={agendarMutacao.isPending}
+          erro={erroAgendar}
           onCancelar={() => {
-            if (!mutacao.isPending) {
-              setAlvo(null);
-              setErroModal(null);
+            if (!agendarMutacao.isPending) {
+              setAgendando(null);
+              setErroAgendar(null);
             }
           }}
-          onConfirmar={confirmar}
+          onConfirmar={(dados) =>
+            agendarMutacao.mutate({ pedidoId: agendando.pedido.id, ...dados })
+          }
         />
       )}
 
-      {pedidoSeparacao && (
+      {alvoEntrega &&
+        (() => {
+          const t = textoConfirmacao(alvoEntrega);
+          return (
+            <ConfirmacaoModal
+              titulo={t.titulo}
+              subtitulo={`Pedido nº ${alvoEntrega.entrega.orixNumero || '—'} — ${
+                alvoEntrega.entrega.clienteNome
+              }`}
+              descricao={t.descricao}
+              rotuloConfirmar={t.rotulo}
+              perigo={t.perigo}
+              enviando={entregaMutacao.isPending}
+              erro={erroEntrega}
+              onCancelar={() => {
+                if (!entregaMutacao.isPending) {
+                  setAlvoEntrega(null);
+                  setErroEntrega(null);
+                }
+              }}
+              onConfirmar={() =>
+                entregaMutacao.mutate({
+                  id: alvoEntrega.entrega.id,
+                  para: alvoEntrega.para,
+                  reversao: alvoEntrega.reversao,
+                })
+              }
+            />
+          );
+        })()}
+
+      {alvoPedido && (
+        <ConfirmacaoModal
+          titulo={
+            alvoPedido.descartar ? 'Descartar pedido' : 'Restaurar pedido'
+          }
+          subtitulo={`nº ${alvoPedido.pedido.orixNumero || '—'} — ${
+            alvoPedido.pedido.clienteNome
+          }`}
+          descricao={
+            alvoPedido.descartar
+              ? 'Some do quadro por não ser uma entrega. Não avisa o cliente e dá para restaurar depois.'
+              : 'O pedido volta para a fila e pode ser agendado de novo.'
+          }
+          rotuloConfirmar={alvoPedido.descartar ? 'Descartar' : 'Restaurar'}
+          perigo={alvoPedido.descartar}
+          enviando={pedidoMutacao.isPending}
+          erro={erroPedido}
+          onCancelar={() => {
+            if (!pedidoMutacao.isPending) {
+              setAlvoPedido(null);
+              setErroPedido(null);
+            }
+          }}
+          onConfirmar={() =>
+            pedidoMutacao.mutate({
+              id: alvoPedido.pedido.id,
+              descartar: alvoPedido.descartar,
+            })
+          }
+        />
+      )}
+
+      {entregaSeparacao && (
         <SeparacaoModal
-          pedido={pedidoSeparacao}
+          entrega={entregaSeparacao}
           enviando={separacaoMutacao.isPending}
           erro={erroSeparacao}
           onToggle={(itemId, separado) =>
             separacaoMutacao.mutate({
-              pedidoId: pedidoSeparacao.id,
+              entregaId: entregaSeparacao.id,
               itemId,
               separado,
             })
@@ -518,43 +740,73 @@ export function Board(): React.ReactElement {
         />
       )}
 
-      {alvoReverter && (
-        <ReverterModal
-          pedido={alvoReverter.pedido}
-          para={alvoReverter.para}
-          enviando={reverterMutacao.isPending}
-          erro={erroReverter}
-          onConfirmar={() =>
-            reverterMutacao.mutate({
-              id: alvoReverter.pedido.id,
-              para: alvoReverter.para,
-            })
-          }
-          onCancelar={() => {
-            if (!reverterMutacao.isPending) {
-              setAlvoReverter(null);
-              setErroReverter(null);
-            }
-          }}
-        />
-      )}
-
       {alvoNaoRealizado && (
         <NaoRealizadoModal
-          pedido={alvoNaoRealizado}
+          entrega={alvoNaoRealizado}
           enviando={naoRealizadoMutacao.isPending}
           erro={erroNaoRealizado}
-          onConfirmar={(motivo) =>
-            naoRealizadoMutacao.mutate({ id: alvoNaoRealizado.id, motivo })
-          }
           onCancelar={() => {
             if (!naoRealizadoMutacao.isPending) {
               setAlvoNaoRealizado(null);
               setErroNaoRealizado(null);
             }
           }}
+          onConfirmar={(motivo) =>
+            naoRealizadoMutacao.mutate({ id: alvoNaoRealizado.id, motivo })
+          }
         />
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Coluna do quadro
+// ---------------------------------------------------------------------------
+
+interface ColunaProps {
+  rotulo: string;
+  faixa: string;
+  quantidade: number;
+  /** Nota do cabeçalho (ex.: a janela de dias das colunas de desfecho). */
+  nota?: string;
+  children: React.ReactNode;
+}
+
+function Coluna({
+  rotulo,
+  faixa,
+  quantidade,
+  nota,
+  children,
+}: ColunaProps): React.ReactElement {
+  return (
+    <section className="flex min-w-[280px] max-w-[360px] flex-1 flex-col rounded-xl2 border border-linha/70 bg-creme-50/50">
+      <header className="sticky top-0 z-10 rounded-t-xl2 bg-creme-50/95 px-4 pt-3.5 backdrop-blur">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className={`h-2.5 w-2.5 rounded-full ${faixa}`} />
+            <h2 className="font-display text-[15px] font-semibold text-mata-escuro">
+              {rotulo}
+            </h2>
+          </div>
+          <span className="rounded-full bg-papel px-2 py-0.5 text-xs font-semibold text-tinta-suave shadow-sm">
+            {quantidade}
+          </span>
+        </div>
+        {nota && <p className="mt-0.5 text-[10px] text-pedra">{nota}</p>}
+        <div className={`mt-2.5 h-[3px] w-full rounded-full ${faixa} opacity-70`} />
+      </header>
+
+      <div className="scroll-suave flex flex-1 flex-col gap-3 overflow-y-auto p-3">
+        {quantidade === 0 ? (
+          <p className="px-1 py-10 text-center text-xs text-pedra">
+            Nada aqui.
+          </p>
+        ) : (
+          children
+        )}
+      </div>
+    </section>
   );
 }

@@ -26,6 +26,7 @@ import {
   type PeriodoEntrega,
   type StatusLogistico,
   type TemplateWhatsapp,
+  type TemplateEntrega,
 } from '@pastobom/shared';
 
 import { env } from '../config/env.js';
@@ -295,7 +296,7 @@ export async function carregarPedido(pedidoId: string): Promise<Pedido> {
  * causa de um erro de banco seria pior do que aceitar um motivo fora do padrão
  * (o motorista está no campo, e a entrega já falhou uma vez).
  */
-async function exigirMotivoCadastrado(motivo: string): Promise<void> {
+export async function exigirMotivoCadastrado(motivo: string): Promise<void> {
   const { data, error } = await supabase
     .from('motivos_nao_entrega')
     .select('descricao')
@@ -506,84 +507,86 @@ function variaveisTemplate(
     propriedade: pedido.propriedadeCodigo ?? '',
   };
 }
-
-/**
- * Cria a linha em mensagens_whatsapp ('pendente'), envia via Evolution e
- * atualiza para 'enviada'/'falha'. EXACTLY-ONCE: chamada UMA vez por transição.
- * Falha de envio NÃO reverte a transição (já persistida); apenas registra erro.
- */
-async function dispararWhatsapp(
-  pedido: Pedido,
-  template: Exclude<TemplateWhatsapp, null>,
+export async function dispararWhatsappEntrega(
+  entrega: {
+    id: string;
+    pedidoId: string;
+    orixNumero: string;
+    clienteCodigo: string;
+    clienteNome: string;
+    dataAgendada: string;
+    propriedadeCodigo: string | null;
+  },
+  template: Exclude<TemplateEntrega, null>,
 ): Promise<void> {
-  const templates = await lerTemplates();
-  const tpl = templates[template];
-  if (!tpl) {
-    log.warn(
-      `[transitions] Template '${template}' ausente em sync_state; pulando envio.`,
-    );
-    return;
-  }
+  try {
+    const templates = await lerTemplates();
+    const tpl = templates[template];
+    if (!tpl) {
+      log.warn(
+        `[entregas] Template '${template}' ausente em sync_state; nada enviado ` +
+          `(entrega ${entrega.id}).`,
+      );
+      return;
+    }
 
-  const contato = await lerContatoCliente(pedido.clienteCodigo);
-  const corpo = renderTemplate(
-    tpl,
-    variaveisTemplate(pedido, nomeParaSaudacao(pedido.clienteNome, contato?.cpfCnpj)),
-  );
+    const contato = await lerContatoCliente(entrega.clienteCodigo);
+    const corpo = renderTemplate(tpl, {
+      nome_cliente: nomeParaSaudacao(entrega.clienteNome, contato?.cpfCnpj),
+      numero: entrega.orixNumero,
+      data_agendada: formatarDataBR(entrega.dataAgendada),
+      propriedade: entrega.propriedadeCodigo ?? '',
+    });
 
-  const { numero, numeroBruto } = resolverNumeroWhatsapp(contato);
+    const { numero, numeroBruto } = resolverNumeroWhatsapp(contato);
 
-  // Cria a linha SEMPRE (auditoria), mesmo quando o número é inválido.
-  const { data: msgRow, error: errInsert } = await supabase
-    .from('mensagens_whatsapp')
-    .insert({
-      pedido_id: pedido.id,
-      cliente_codigo: pedido.clienteCodigo,
-      numero: numero ?? numeroBruto,
-      template,
-      corpo,
-      status_envio: 'pendente',
-    })
-    .select('id')
-    .single<{ id: string }>();
+    const { data: msgRow, error: errInsert } = await supabase
+      .from('mensagens_whatsapp')
+      .insert({
+        pedido_id: entrega.pedidoId,
+        cliente_codigo: entrega.clienteCodigo,
+        numero: numero ?? numeroBruto,
+        template,
+        corpo,
+        status_envio: 'pendente',
+      })
+      .select('id')
+      .single<{ id: string }>();
 
-  if (errInsert || !msgRow) {
-    log.error(
-      `[transitions] Falha ao criar mensagem_whatsapp do pedido ${pedido.id}:`,
-      errInsert?.message,
-    );
-    return;
-  }
+    if (errInsert || !msgRow) {
+      log.error(
+        `[entregas] Falha ao criar mensagem da entrega ${entrega.id}:`,
+        errInsert?.message,
+      );
+      return;
+    }
 
-  if (!numero) {
+    if (!numero) {
+      await supabase
+        .from('mensagens_whatsapp')
+        .update({
+          status_envio: 'falha',
+          erro: 'Número de WhatsApp inválido ou ausente no cadastro do cliente.',
+        })
+        .eq('id', msgRow.id);
+      return;
+    }
+
+    const resultado = await enviarTexto({ numero, texto: corpo });
     await supabase
       .from('mensagens_whatsapp')
       .update({
-        status_envio: 'falha',
-        erro: 'Número de WhatsApp inválido ou ausente no cadastro do cliente.',
+        status_envio: resultado.ok ? 'enviada' : 'falha',
+        provider_response: resultado.resposta as never,
+        enviado_em: resultado.ok ? new Date().toISOString() : null,
+        erro: resultado.ok ? null : `Envio retornou status ${resultado.status}.`,
       })
       .eq('id', msgRow.id);
-    log.warn(
-      `[transitions] Pedido ${pedido.id}: cliente sem número válido; mensagem marcada como falha.`,
-    );
-    return;
-  }
-
-  const resultado = await enviarTexto({ numero, texto: corpo });
-
-  await supabase
-    .from('mensagens_whatsapp')
-    .update({
-      status_envio: resultado.ok ? 'enviada' : 'falha',
-      provider_response: resultado.resposta as never,
-      enviado_em: resultado.ok ? new Date().toISOString() : null,
-      erro: resultado.ok ? null : `Envio retornou status ${resultado.status}.`,
-    })
-    .eq('id', msgRow.id);
-
-  if (!resultado.ok) {
-    log.warn(
-      `[transitions] Pedido ${pedido.id}: envio de WhatsApp falhou (status ${resultado.status}).`,
+  } catch (err) {
+    // Efeito colateral nunca invalida a transição já persistida.
+    log.error(
+      `[entregas] Erro ao disparar WhatsApp da entrega ${entrega.id}:`,
+      err,
     );
   }
 }
@@ -598,214 +601,81 @@ type AtorPapel = 'logistica' | 'vendedor' | 'motorista' | 'almoxarifado';
 export interface AplicarTransicaoArgs {
   pedidoId: string;
   para: StatusLogistico;
+  /** Para qual propriedade do cliente vai (RF-1.8). */
   propriedadeCodigo?: string;
-  dataAgendada?: string;
-  /** Observação livre (gravada em pedidos.observacoes). */
-  observacao?: string;
-  /** Por que a entrega não foi feita — OBRIGATÓRIO em para==='nao_realizado'. */
-  motivo?: string;
-  /** Motorista da entrega — obrigatório no agendamento (para==='agendada'). */
-  motoristaId?: string | null;
-  /** Turno da entrega — obrigatório no agendamento. */
-  periodo?: PeriodoEntrega;
-  /** Caminhão da carga — obrigatório no agendamento, separado do motorista. */
-  caminhaoId?: string | null;
   atorUserId?: string;
   atorPapel?: AtorPapel;
 }
 
 /**
- * Aplica uma transição de status a um pedido, validando a máquina de estados,
- * a regra RF-1.8 e disparando (exactly-once) o WhatsApp da transição.
+ * Aplica uma transição de status ao PEDIDO.
+ *
+ * ESCOPO ESTREITO (Onda 2): sobrou o descarte — "não é entrega, tira daqui".
+ * Agendar, despachar, entregar e não realizar são coisas da VIAGEM e moram em
+ * services/entregas.ts.
+ *
+ * Nenhuma transição de pedido manda WhatsApp; a consulta a templateDaTransicao
+ * fica como trava explícita disso (ver state-machine.ts).
  */
 export async function aplicarTransicao(
   args: AplicarTransicaoArgs,
 ): Promise<Pedido> {
-  const {
-    pedidoId,
-    para,
-    propriedadeCodigo,
-    dataAgendada,
-    observacao,
-    motivo,
-    motoristaId,
-    periodo,
-    caminhaoId,
-    atorUserId,
-    atorPapel,
-  } = args;
+  const { pedidoId, para, propriedadeCodigo, atorUserId, atorPapel } = args;
 
-  // 1) Carrega o pedido atual.
   const pedidoAtual = await carregarPedido(pedidoId);
   const de = pedidoAtual.statusLogistico;
 
-  // 1.1) Fase 3: o motorista só encerra a entrega dos PRÓPRIOS pedidos — para
-  //      BEM ('entregue') ou para MAL ('nao_realizado'). Nada além disso.
-  if (atorPapel === 'motorista') {
-    if (para !== 'entregue' && para !== 'nao_realizado') {
-      throw new TransicaoError(
-        403,
-        'sem_permissao',
-        'Motorista só pode confirmar a entrega ou marcá-la como não realizada.',
-      );
-    }
-    if (!atorUserId || pedidoAtual.motoristaId !== atorUserId) {
-      throw new TransicaoError(
-        403,
-        'sem_permissao',
-        'Você não é o motorista deste pedido.',
-      );
-    }
+  // Só a logística mexe na situação da ordem de venda.
+  if (atorPapel && atorPapel !== 'logistica') {
+    throw new TransicaoError(
+      403,
+      'sem_permissao',
+      'Apenas a logística pode alterar a situação de um pedido.',
+    );
   }
 
-  // 2) Valida a máquina de estados.
   if (!podeTransicionar(de, para)) {
     throw new TransicaoError(
       409,
       'transicao_invalida',
-      `Transição inválida: ${de} -> ${para}.`,
+      `Transição inválida: ${de} -> ${para}. ` +
+        'Para agendar uma entrega, use a tela de entregas.',
     );
   }
 
-  // 2.1) Despacho: motorista e caminhão vêm do AGENDAMENTO — aqui só conferimos.
-  if (para === 'em_rota') {
-    if (!pedidoAtual.motoristaId || !pedidoAtual.caminhaoId) {
+  // Descartar um pedido que ainda tem viagem viva deixaria a entrega órfã no
+  // quadro, sem pedido que a explique.
+  if (para === 'cancelada') {
+    const { data: abertas, error: errAbertas } = await supabase
+      .from('entregas')
+      .select('id')
+      .eq('pedido_id', pedidoId)
+      .in('status', ['agendada', 'em_rota']);
+    if (errAbertas) {
       throw new TransicaoError(
-        422,
-        'dados_incompletos',
-        'Pedido sem motorista ou caminhão definidos. Volte-o para pendente e agende de novo, escolhendo motorista e caminhão.',
+        500,
+        'erro_banco',
+        `Falha ao verificar as entregas do pedido: ${errAbertas.message}`,
       );
     }
-
-    // RF-2.2: só libera para rota com a separação completa.
-    const naoSeparados = pedidoAtual.itens.filter((i) => !i.separado);
-    if (pedidoAtual.itens.length > 0 && naoSeparados.length > 0) {
+    if ((abertas ?? []).length > 0) {
       throw new TransicaoError(
-        422,
-        'separacao_incompleta',
-        `Separação incompleta: ${naoSeparados.length} de ${pedidoAtual.itens.length} ` +
-          `item(ns) ainda não separado(s).`,
+        409,
+        'entregas_em_aberto',
+        `Este pedido tem ${(abertas ?? []).length} entrega(s) agendada(s) ou em rota. ` +
+          'Cancele as entregas antes de descartar o pedido.',
       );
     }
   }
 
-  // 3) Agendamento (data + período + motorista + caminhão + peso completo),
-  //    RF-1.8 e as travas de carga.
-  let propriedadeParaGravar = pedidoAtual.propriedadeCodigo;
-  let patchAgendamento: Record<string, unknown> | null = null;
-
-  if (para === 'agendada') {
-    if (!dataAgendada) {
-      throw new TransicaoError(
-        422,
-        'data_obrigatoria',
-        'Informe a data da entrega.',
-      );
-    }
-    if (!periodo) {
-      throw new TransicaoError(
-        422,
-        'periodo_obrigatorio',
-        'Escolha o período da entrega: manhã ou tarde.',
-      );
-    }
-    if (!motoristaId) {
-      throw new TransicaoError(
-        422,
-        'motorista_obrigatorio',
-        'Escolha o motorista da entrega.',
-      );
-    }
-    if (!caminhaoId) {
-      throw new TransicaoError(
-        422,
-        'caminhao_obrigatorio',
-        'Escolha o caminhão da entrega.',
-      );
-    }
-
-    // Sem o peso de TODOS os itens não dá para saber se a carga cabe no caminhão.
-    const semPeso = itensSemPeso(pedidoAtual.itens);
-    if (semPeso.length > 0) {
-      const nomes = semPeso
-        .map((i) => i.nomeProduto || i.produtoCodigo)
-        .join(', ');
-      throw new TransicaoError(
-        422,
-        'peso_pendente',
-        `Falta o peso de: ${nomes}. Cadastre o peso desses produtos para agendar.`,
-      );
-    }
-
-    const totalProps = await contarPropriedades(pedidoAtual.clienteCodigo);
-    if (totalProps > 1 && !propriedadeCodigo) {
-      throw new TransicaoError(
-        422,
-        'propriedade_exigida',
-        'Cliente possui mais de uma propriedade; informe propriedadeCodigo.',
-      );
-    }
-    if (propriedadeCodigo) {
-      propriedadeParaGravar = propriedadeCodigo;
-    }
-
-    await validarCargaDoAgendamento({
-      pedidoId,
-      data: dataAgendada,
-      periodo,
-      motoristaId,
-      caminhaoId,
-      pesoDoPedidoKg: pedidoAtual.pesoTotalKg ?? 0,
-    });
-
-    patchAgendamento = {
-      data_agendada: dataAgendada,
-      periodo,
-      motorista_id: motoristaId,
-      caminhao_id: caminhaoId,
-    };
-  } else if (propriedadeCodigo) {
-    // Permite ajustar a propriedade em outras transições, se enviada.
-    propriedadeParaGravar = propriedadeCodigo;
-  }
-
-  // 3.9) Não realizado exige MOTIVO, e o motivo tem que ser um dos CADASTRADOS.
-  //      Sem ele a logística fica sem saber o que remarcar; e sem a lista
-  //      fechada, cada um escreve o seu e o filtro por motivo não serve para
-  //      nada (decisão da reunião de 16/07/2026).
-  const motivoLimpo = motivo?.trim() ?? '';
-  if (para === 'nao_realizado') {
-    if (motivoLimpo === '') {
-      throw new TransicaoError(
-        422,
-        'motivo_obrigatorio',
-        'Informe por que a entrega não foi realizada.',
-      );
-    }
-    await exigirMotivoCadastrado(motivoLimpo);
-  }
-
-  // 4) Atualiza o pedido.
   const agora = new Date().toISOString();
-  const patch: Record<string, unknown> = {
-    status_logistico: para,
-    atualizado_em: agora,
-    propriedade_codigo: propriedadeParaGravar,
-    ...(patchAgendamento ?? {}),
-  };
-  if (para === 'entregue') {
-    patch.data_entregue = agora;
-    if (observacao) {
-      patch.observacoes = observacao;
-    }
-  }
-  if (para === 'nao_realizado') {
-    patch.motivo_nao_entrega = motivoLimpo;
-  }
-
   const { error: errUpdate } = await supabase
     .from('pedidos')
-    .update(patch)
+    .update({
+      status_logistico: para,
+      atualizado_em: agora,
+      propriedade_codigo: propriedadeCodigo ?? pedidoAtual.propriedadeCodigo,
+    })
     .eq('id', pedidoId);
 
   if (errUpdate) {
@@ -816,7 +686,6 @@ export async function aplicarTransicao(
     );
   }
 
-  // 5) Registra o evento de status.
   const { error: errEvento } = await supabase.from('eventos_status').insert({
     pedido_id: pedidoId,
     de_status: de,
@@ -824,40 +693,31 @@ export async function aplicarTransicao(
     ator: atorUserId ? 'usuario' : 'sistema',
     ator_user_id: atorUserId ?? null,
   });
-
   if (errEvento) {
-    // Não reverte a transição; apenas loga (auditoria perdida não invalida estado).
     log.error(
       `[transitions] Falha ao registrar evento_status do pedido ${pedidoId}:`,
       errEvento.message,
     );
   }
 
-  // 6) Recarrega o pedido já atualizado (fonte de verdade para o WhatsApp).
   const pedidoAtualizado = await carregarPedido(pedidoId);
 
-  // EXACTLY-ONCE: dispara o WhatsApp da transição, se houver template.
+  // Trava explícita: se um dia alguém acrescentar um template a uma transição
+  // de pedido, isto avisa em vez de mandar mensagem em silêncio.
   const template = templateDaTransicao(de, para);
   if (template) {
-    try {
-      await dispararWhatsapp(pedidoAtualizado, template);
-    } catch (err) {
-      // Falha no efeito colateral não invalida a transição já persistida.
-      log.error(
-        `[transitions] Erro ao disparar WhatsApp do pedido ${pedidoId}:`,
-        err,
-      );
-    }
+    log.warn(
+      `[transitions] Transição de PEDIDO ${de} -> ${para} pediu o template ` +
+        `'${template}', mas mensagens ao cliente nascem de uma entrega. Nada enviado.`,
+    );
   }
 
   return pedidoAtualizado;
 }
 
 /**
- * Reverte o status de um pedido UMA etapa para trás (apenas logística).
- * Diferente de aplicarTransicao: NÃO dispara WhatsApp (nem no cancelada->pendente,
- * que restaura um cancelamento) e limpa o agendamento — data, período, motorista e
- * caminhão — ao voltar para pendente. Registra o evento para auditoria.
+ * Reverte o pedido (hoje: só restaurar um descarte, cancelada -> pendente).
+ * Apenas logística. NUNCA dispara WhatsApp.
  */
 export async function reverterStatus(args: {
   pedidoId: string;
@@ -867,7 +727,6 @@ export async function reverterStatus(args: {
 }): Promise<Pedido> {
   const { pedidoId, para, atorUserId, atorPapel } = args;
 
-  // Só a logística reverte (a rota também protege com exigirLogistica).
   if (atorPapel && atorPapel !== 'logistica') {
     throw new TransicaoError(
       403,
@@ -887,26 +746,9 @@ export async function reverterStatus(args: {
     );
   }
 
-  const agora = new Date().toISOString();
-  const patch: Record<string, unknown> = {
-    status_logistico: para,
-    atualizado_em: agora,
-  };
-  // Voltar para pendente desfaz o AGENDAMENTO inteiro: data, período, motorista e
-  // caminhão foram escolhidos juntos e juntos deixam de valer. (Sair da rota para
-  // 'agendada' NÃO limpa nada: o par motorista/caminhão pertence ao agendamento.)
-  if (para === 'pendente') {
-    patch.data_agendada = null;
-    patch.periodo = null;
-    patch.motorista_id = null;
-    patch.caminhao_id = null;
-    // Remarcar zera o motivo da falha anterior: o pedido volta limpo para a fila.
-    patch.motivo_nao_entrega = null;
-  }
-
   const { error: errUpdate } = await supabase
     .from('pedidos')
-    .update(patch)
+    .update({ status_logistico: para, atualizado_em: new Date().toISOString() })
     .eq('id', pedidoId);
   if (errUpdate) {
     throw new TransicaoError(
@@ -916,7 +758,6 @@ export async function reverterStatus(args: {
     );
   }
 
-  // Registra o evento (auditoria); falha aqui não invalida o estado já gravado.
   const { error: errEvento } = await supabase.from('eventos_status').insert({
     pedido_id: pedidoId,
     de_status: de,
@@ -931,164 +772,9 @@ export async function reverterStatus(args: {
     );
   }
 
-  // Sem disparo de WhatsApp na reversão.
   return carregarPedido(pedidoId);
 }
 
-/**
- * RF-2.2: marca/desmarca um item como separado. Só é permitido enquanto o
- * pedido está 'pendente' ou 'agendada' (antes de liberar para rota). Devolve
- * o pedido atualizado para a UI refletir o progresso na hora.
- */
-export async function definirSeparacaoItem(args: {
-  pedidoId: string;
-  itemId: string;
-  separado: boolean;
-}): Promise<Pedido> {
-  const { pedidoId, itemId, separado } = args;
-  const pedido = await carregarPedido(pedidoId);
-
-  if (
-    pedido.statusLogistico !== 'pendente' &&
-    pedido.statusLogistico !== 'agendada'
-  ) {
-    throw new TransicaoError(
-      409,
-      'separacao_estado_invalido',
-      'A separação só pode ser ajustada em pedidos pendentes ou agendados.',
-    );
-  }
-
-  const item = pedido.itens.find((i) => i.id === itemId);
-  if (!item) {
-    throw new TransicaoError(
-      404,
-      'item_nao_encontrado',
-      'Item não encontrado neste pedido.',
-    );
-  }
-
-  const { error } = await supabase
-    .from('itens_pedido')
-    .update({
-      separado,
-      separado_em: separado ? new Date().toISOString() : null,
-    })
-    .eq('id', itemId)
-    .eq('pedido_id', pedidoId);
-
-  if (error) {
-    throw new TransicaoError(
-      500,
-      'erro_banco',
-      `Falha ao atualizar separação do item: ${error.message}`,
-    );
-  }
-
-  return carregarPedido(pedidoId);
-}
-
-/**
- * "Dar OK na separação": marca (ou desmarca) TODOS os itens do pedido de uma vez.
- * É o botão da tela de Separação — o almoxarifado confere a carga inteira e dá um
- * clique só, em vez de tiquetar item a item.
- *
- * Mesma trava de estado do `definirSeparacaoItem`: só em pedido pendente/agendado.
- */
-export async function definirSeparacaoPedido(args: {
-  pedidoId: string;
-  separado: boolean;
-}): Promise<Pedido> {
-  const { pedidoId, separado } = args;
-  const pedido = await carregarPedido(pedidoId);
-
-  if (
-    pedido.statusLogistico !== 'pendente' &&
-    pedido.statusLogistico !== 'agendada'
-  ) {
-    throw new TransicaoError(
-      409,
-      'separacao_estado_invalido',
-      'A separação só pode ser ajustada em pedidos pendentes ou agendados.',
-    );
-  }
-
-  const { error } = await supabase
-    .from('itens_pedido')
-    .update({
-      separado,
-      separado_em: separado ? new Date().toISOString() : null,
-    })
-    .eq('pedido_id', pedidoId);
-
-  if (error) {
-    throw new TransicaoError(
-      500,
-      'erro_banco',
-      `Falha ao atualizar a separação do pedido: ${error.message}`,
-    );
-  }
-
-  return carregarPedido(pedidoId);
-}
-
-/**
- * Fase 3: atribui (ou remove, com null) o motorista de um pedido. Apenas a
- * logística chama isto (guard na rota). Valida que o id é um profile com
- * papel 'motorista'. Devolve o pedido atualizado.
- */
-export async function definirMotorista(args: {
-  pedidoId: string;
-  motoristaId: string | null;
-}): Promise<Pedido> {
-  const { pedidoId, motoristaId } = args;
-
-  // 404 se o pedido não existe.
-  await carregarPedido(pedidoId);
-
-  // Valida que o destino é mesmo um motorista cadastrado.
-  if (motoristaId) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('papel')
-      .eq('id', motoristaId)
-      .maybeSingle<{ papel: string }>();
-    if (error) {
-      throw new TransicaoError(
-        500,
-        'erro_banco',
-        `Falha ao validar motorista: ${error.message}`,
-      );
-    }
-    if (!data || data.papel !== 'motorista') {
-      throw new TransicaoError(
-        422,
-        'motorista_invalido',
-        'Usuário informado não é um motorista.',
-      );
-    }
-  }
-
-  const { error } = await supabase
-    .from('pedidos')
-    .update({ motorista_id: motoristaId, atualizado_em: new Date().toISOString() })
-    .eq('id', pedidoId);
-  if (error) {
-    throw new TransicaoError(
-      500,
-      'erro_banco',
-      `Falha ao atribuir motorista: ${error.message}`,
-    );
-  }
-
-  return carregarPedido(pedidoId);
-}
-
-/**
- * Reenvio MANUAL e explícito de uma mensagem de WhatsApp para um pedido.
- * Diferente de aplicarTransicao, não muda status nem registra evento.
- * Cria uma nova linha em mensagens_whatsapp e tenta o envio.
- */
 export async function reenviarWhatsapp(args: {
   pedidoId: string;
   template: string;

@@ -7,7 +7,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { Pedido } from '@pastobom/shared';
+import type { Entrega } from '@pastobom/shared';
 import { api, ApiError } from '../lib/api';
 import { Header } from '../components/Header';
 import { ClimaResumo } from '../components/ClimaResumo';
@@ -21,7 +21,7 @@ function mensagemDeErro(err: unknown, fallback: string): string {
 }
 
 /** Linha de endereço a partir do destino resolvido (ou do cliente). */
-function enderecoDoPedido(p: Pedido): string {
+function enderecoDaEntrega(p: Entrega): string {
   const d = p.destino;
   const partes = [d?.endereco, d?.cidade, d?.uf].filter(Boolean);
   if (partes.length > 0) return partes.join(', ');
@@ -70,21 +70,26 @@ function IconeMapa(): React.ReactElement {
 
 export function RotaDoDia(): React.ReactElement {
   const queryClient = useQueryClient();
-  const [confirmando, setConfirmando] = useState<Pedido | null>(null);
+  const [confirmando, setConfirmando] = useState<Entrega | null>(null);
   const [observacao, setObservacao] = useState('');
   const [erroModal, setErroModal] = useState<string | null>(null);
 
+  // A rota do motorista lista VIAGENS (Onda 2): se o mesmo pedido sair em dois
+  // caminhões, cada motorista vê só a sua carga, com a quantidade dele.
   const rotaQuery = useQuery({
-    queryKey: ['minha-rota'],
-    queryFn: ({ signal }) => api.listarMinhaRota(signal),
+    queryKey: ['minhas-entregas'],
+    queryFn: ({ signal }) => api.listarMinhasEntregas(signal),
     refetchInterval: 60_000,
   });
 
   const entregaMutacao = useMutation({
     mutationFn: ({ id, obs }: { id: string; obs: string }) =>
-      api.transicionar(id, { para: 'entregue', observacao: obs || undefined }),
+      api.transicionarEntrega(id, {
+        para: 'entregue',
+        observacao: obs || undefined,
+      }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['minha-rota'] });
+      void queryClient.invalidateQueries({ queryKey: ['minhas-entregas'] });
       setConfirmando(null);
       setObservacao('');
       setErroModal(null);
@@ -94,12 +99,12 @@ export function RotaDoDia(): React.ReactElement {
     },
   });
 
-  const pedidos = rotaQuery.data ?? [];
+  const entregas = rotaQuery.data ?? [];
 
   // Clima por parada da rota (entregas em rota têm data agendada).
   const idsClima = useMemo(
-    () => pedidos.filter((p) => p.dataAgendada).map((p) => p.id),
-    [pedidos],
+    () => entregas.map((e) => e.pedidoId),
+    [entregas],
   );
   const idsClimaKey = useMemo(
     () => idsClima.slice().sort().join(','),
@@ -113,7 +118,7 @@ export function RotaDoDia(): React.ReactElement {
   });
   const climaPorPedido = climaQuery.data ?? {};
 
-  function abrirConfirmacao(p: Pedido) {
+  function abrirConfirmacao(p: Entrega) {
     setObservacao('');
     setErroModal(null);
     setConfirmando(p);
@@ -130,9 +135,9 @@ export function RotaDoDia(): React.ReactElement {
           </h2>
           <span className="text-pedra">·</span>
           <span className="text-tinta-suave">
-            {pedidos.length === 1
+            {entregas.length === 1
               ? '1 entrega'
-              : `${pedidos.length} entregas`}
+              : `${entregas.length} entregas`}
           </span>
           {rotaQuery.isFetching && (
             <span className="text-xs text-pedra">atualizando…</span>
@@ -161,7 +166,7 @@ export function RotaDoDia(): React.ReactElement {
                 Tentar novamente
               </button>
             </div>
-          ) : pedidos.length === 0 ? (
+          ) : entregas.length === 0 ? (
             <div className="py-20 text-center">
               <p className="font-display text-lg text-mata-escuro">
                 Nenhuma entrega para hoje.
@@ -172,7 +177,7 @@ export function RotaDoDia(): React.ReactElement {
             </div>
           ) : (
             <ul className="space-y-3">
-              {pedidos.map((p) => (
+              {entregas.map((p) => (
                 <li
                   key={p.id}
                   className="animate-sobe rounded-xl border border-linha bg-papel p-4 shadow-carta"
@@ -188,20 +193,26 @@ export function RotaDoDia(): React.ReactElement {
 
                   <p className="mt-2 flex items-start gap-1.5 text-sm text-tinta-suave">
                     <IconePin />
-                    <span>{enderecoDoPedido(p)}</span>
+                    <span>{enderecoDaEntrega(p)}</span>
                   </p>
 
-                  {climaPorPedido[p.id]?.disponivel && (
+                  {climaPorPedido[p.pedidoId]?.disponivel && (
                     <div className="mt-1.5 pl-5">
-                      <ClimaResumo variant="badge" previsao={climaPorPedido[p.id]} />
+                      <ClimaResumo variant="badge" previsao={climaPorPedido[p.pedidoId]} />
                     </div>
                   )}
 
                   <div className="mt-2 flex items-center justify-between text-xs text-tinta-suave">
                     <span>{rotuloItens(p.itens.length)}</span>
-                    <span className="font-display text-sm font-semibold text-mata-escuro">
-                      {formatarMoeda(p.valorTotal)}
-                    </span>
+                    {p.pesoTotalKg !== null && (
+                      <span className="font-display text-sm font-semibold text-mata-escuro">
+                        {(p.pesoTotalKg / 1000).toLocaleString('pt-BR', {
+                          minimumFractionDigits: 1,
+                          maximumFractionDigits: 1,
+                        })}{' '}
+                        t
+                      </span>
+                    )}
                   </div>
 
                   <div className="mt-3 flex flex-col gap-2 border-t border-linha/70 pt-3 sm:flex-row">
@@ -253,7 +264,7 @@ export function RotaDoDia(): React.ReactElement {
 }
 
 interface ModalProps {
-  pedido: Pedido;
+  pedido: Entrega;
   observacao: string;
   enviando: boolean;
   erro: string | null;

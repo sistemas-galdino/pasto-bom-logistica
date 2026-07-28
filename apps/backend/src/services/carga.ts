@@ -146,24 +146,31 @@ interface LinhaSlot {
 }
 
 /**
- * Lê o que já está agendado num slot e soma o peso por caminhão.
- * `ignorarPedidoId` exclui o próprio pedido do cálculo (reagendamento não pode
+ * Lê o que já está marcado num slot e soma o peso por caminhão.
+ *
+ * A partir da Onda 2 quem ocupa o caminhão é a ENTREGA, não o pedido — e o peso
+ * é o das quantidades DAQUELA VIAGEM, não o do pedido inteiro. É essa mudança
+ * que destrava a preocupação do Guto na reunião de 16/07: um pedido de 100
+ * toneladas deixa de ser impossível de agendar, porque cada viagem pesa só o
+ * que leva.
+ *
+ * `ignorarEntregaId` exclui a própria entrega do cálculo (reagendar não pode
  * competir consigo mesmo pela capacidade).
  *
- * Só contam pedidos vivos: 'agendada' e 'em_rota'. Entregue já saiu do caminhão;
- * cancelada não ocupa nada.
+ * Só contam viagens vivas: 'agendada' e 'em_rota'. Entregue já saiu do caminhão;
+ * nao_realizado voltou; cancelada nunca ocupou.
  */
 export async function ocupacaoDoSlot(
   data: string,
   periodo: PeriodoEntrega,
-  ignorarPedidoId?: string,
+  ignorarEntregaId?: string,
 ): Promise<Map<string, UsoCaminhao>> {
   const { data: linhas, error } = await supabase
-    .from('pedidos')
+    .from('entregas')
     .select('id, motorista_id, caminhao_id')
     .eq('data_agendada', data)
     .eq('periodo', periodo)
-    .in('status_logistico', ['agendada', 'em_rota']);
+    .in('status', ['agendada', 'em_rota']);
 
   if (error) {
     throw new TransicaoError(
@@ -174,16 +181,16 @@ export async function ocupacaoDoSlot(
   }
 
   const relevantes = ((linhas ?? []) as LinhaSlot[]).filter(
-    (l) => l.id !== ignorarPedidoId && l.caminhao_id,
+    (l) => l.id !== ignorarEntregaId && l.caminhao_id,
   );
   if (relevantes.length === 0) return new Map();
 
-  // Peso de cada pedido do slot: soma dos itens × peso unitário do produto.
+  // Peso de cada entrega: soma dos itens DA VIAGEM × peso unitário do produto.
   const ids = relevantes.map((l) => l.id);
   const { data: itens, error: errItens } = await supabase
-    .from('itens_pedido')
-    .select('pedido_id, produto_codigo, qtd')
-    .in('pedido_id', ids);
+    .from('entrega_itens')
+    .select('entrega_id, produto_codigo, qtd')
+    .in('entrega_id', ids);
 
   if (errItens) {
     throw new TransicaoError(
@@ -197,13 +204,16 @@ export async function ocupacaoDoSlot(
     (itens ?? []).map((i) => (i.produto_codigo as string) ?? ''),
   );
 
-  const pesoPorPedido = new Map<string, number>();
+  const pesoPorEntrega = new Map<string, number>();
   for (const item of itens ?? []) {
     const codigo = (item.produto_codigo as string) ?? '';
     const unit = pesos.get(codigo) ?? 0; // peso desconhecido conta como 0
     const qtd = Number(item.qtd) || 0;
-    const pedidoId = item.pedido_id as string;
-    pesoPorPedido.set(pedidoId, (pesoPorPedido.get(pedidoId) ?? 0) + unit * qtd);
+    const entregaId = item.entrega_id as string;
+    pesoPorEntrega.set(
+      entregaId,
+      (pesoPorEntrega.get(entregaId) ?? 0) + unit * qtd,
+    );
   }
 
   const uso = new Map<string, UsoCaminhao>();
@@ -215,7 +225,7 @@ export async function ocupacaoDoSlot(
       motoristaIds: new Set<string>(),
       entregas: 0,
     };
-    atual.usadoKg += pesoPorPedido.get(l.id) ?? 0;
+    atual.usadoKg += pesoPorEntrega.get(l.id) ?? 0;
     atual.entregas += 1;
     if (l.motorista_id) atual.motoristaIds.add(l.motorista_id);
     uso.set(caminhaoId, atual);
@@ -292,22 +302,24 @@ function formatarT(kg: number): string {
  *   3) o motorista não pode levar dois caminhões no mesmo slot.
  */
 export async function validarCargaDoAgendamento(args: {
-  pedidoId: string;
+  /** Entrega que está sendo criada/reagendada (excluída da ocupação). */
+  entregaId?: string;
   data: string;
   periodo: PeriodoEntrega;
   motoristaId: string;
   caminhaoId: string;
-  pesoDoPedidoKg: number;
+  /** Peso das quantidades DESTA viagem, não o do pedido inteiro. */
+  pesoDaCargaKg: number;
 }): Promise<void> {
-  const { pedidoId, data, periodo, motoristaId, caminhaoId, pesoDoPedidoKg } =
+  const { entregaId, data, periodo, motoristaId, caminhaoId, pesoDaCargaKg } =
     args;
 
   const caminhao = await carregarCaminhao(caminhaoId);
-  const uso = await ocupacaoDoSlot(data, periodo, pedidoId);
+  const uso = await ocupacaoDoSlot(data, periodo, entregaId);
 
   // 1) Capacidade.
   const jaUsado = uso.get(caminhaoId)?.usadoKg ?? 0;
-  const totalKg = jaUsado + pesoDoPedidoKg;
+  const totalKg = jaUsado + pesoDaCargaKg;
   if (totalKg > caminhao.capacidadeKg) {
     const excedente = totalKg - caminhao.capacidadeKg;
     throw new TransicaoError(

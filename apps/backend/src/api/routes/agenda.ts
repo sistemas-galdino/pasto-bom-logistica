@@ -18,7 +18,7 @@ import type {
   AgendaSlot,
   Caminhao,
   PeriodoEntrega,
-  StatusLogistico,
+  StatusEntrega,
 } from '@pastobom/shared';
 
 import { supabase } from '../../db/supabase.js';
@@ -70,7 +70,7 @@ function exigirLeituraAgenda(req: FastifyRequest, reply: FastifyReply): boolean 
 // Linhas do banco
 // ---------------------------------------------------------------------------
 
-interface PedidoAgendaRow {
+interface EntregaAgendaRow {
   id: string;
   orix_numero: string | null;
   cliente_codigo: string | null;
@@ -80,10 +80,18 @@ interface PedidoAgendaRow {
   periodo: PeriodoEntrega;
   motorista_id: string | null;
   caminhao_id: string | null;
-  status_logistico: StatusLogistico;
-  itens_pedido?:
+  status: StatusEntrega;
+  pedido_id: string;
+  entrega_itens?:
     | { produto_codigo: string | null; qtd: number | string | null }[]
     | null;
+  /** O pedido vem embutido: a agenda mostra cliente, não viagem anônima. */
+  pedidos?: {
+    orix_numero: string | null;
+    cliente_codigo: string | null;
+    cliente_nome: string | null;
+    cidade_cliente: string | null;
+  } | null;
 }
 
 interface CaminhaoRow {
@@ -95,11 +103,11 @@ interface CaminhaoRow {
 }
 
 const SELECT_AGENDA =
-  'id, orix_numero, cliente_codigo, cliente_nome, cidade_cliente, data_agendada, ' +
-  'periodo, motorista_id, caminhao_id, status_logistico, ' +
-  'itens_pedido(produto_codigo, qtd)';
+  'id, pedido_id, data_agendada, periodo, motorista_id, caminhao_id, status, ' +
+  'entrega_itens(produto_codigo, qtd), ' +
+  'pedidos(orix_numero, cliente_codigo, cliente_nome, cidade_cliente)';
 
-/** Peso do pedido: total agregado (desconhecido = 0) e o total exibível (null se faltar peso). */
+/** Peso da viagem: total agregado (desconhecido = 0) e o exibível (null se faltar peso). */
 interface PesoDoPedido {
   agregadoKg: number;
   totalKg: number | null;
@@ -132,13 +140,15 @@ export async function agendaRoutes(app: FastifyInstance): Promise<void> {
     }
 
     try {
+      // A agenda mostra VIAGENS (Onda 2), não pedidos: dois caminhões levando o
+      // mesmo pedido aparecem como dois cartões, cada um com sua carga.
       const { data, error } = await supabase
-        .from('pedidos')
+        .from('entregas')
         .select(SELECT_AGENDA)
         .gte('data_agendada', de)
         .lte('data_agendada', ate)
         .not('periodo', 'is', null)
-        .in('status_logistico', ['agendada', 'em_rota'])
+        .in('status', ['agendada', 'em_rota'])
         .order('data_agendada', { ascending: true });
 
       if (error) {
@@ -148,7 +158,7 @@ export async function agendaRoutes(app: FastifyInstance): Promise<void> {
           .send({ error: 'erro_banco', message: error.message });
       }
 
-      const linhas = (data ?? []) as unknown as PedidoAgendaRow[];
+      const linhas = (data ?? []) as unknown as EntregaAgendaRow[];
 
       // Consultas em lote (sem N+1): frota, motoristas, clientes e pesos.
       const [frota, motoristas, clientes, pesos] = await Promise.all([
@@ -157,7 +167,7 @@ export async function agendaRoutes(app: FastifyInstance): Promise<void> {
         resolverClientes(linhas),
         lerPesosProdutos(
           linhas.flatMap((l) =>
-            (l.itens_pedido ?? []).map((i) => i.produto_codigo ?? ''),
+            (l.entrega_itens ?? []).map((i) => i.produto_codigo ?? ''),
           ),
         ),
       ]);
@@ -209,7 +219,7 @@ async function lerFrota(): Promise<Map<string, Caminhao>> {
 
 /** Nomes dos motoristas em lote (não há FK pedidos->profiles). */
 async function resolverNomesMotorista(
-  linhas: PedidoAgendaRow[],
+  linhas: EntregaAgendaRow[],
 ): Promise<Map<string, string>> {
   const ids = [
     ...new Set(
@@ -239,12 +249,12 @@ async function resolverNomesMotorista(
 
 /** Bairro e cidade dos clientes em lote (a entrega rural se orienta por eles). */
 async function resolverClientes(
-  linhas: PedidoAgendaRow[],
+  linhas: EntregaAgendaRow[],
 ): Promise<Map<string, { bairro: string | null; cidade: string | null }>> {
   const codigos = [
     ...new Set(
       linhas
-        .map((l) => l.cliente_codigo)
+        .map((l) => l.pedidos?.cliente_codigo ?? null)
         .filter((v): v is string => typeof v === 'string' && v.length > 0),
     ),
   ];
@@ -281,13 +291,13 @@ async function resolverClientes(
  *   - `totalKg` é null se ALGUM item está sem peso — a tela sinaliza a pendência.
  */
 function pesoDaLinha(
-  linha: PedidoAgendaRow,
+  linha: EntregaAgendaRow,
   pesos: Map<string, number>,
 ): PesoDoPedido {
   let agregadoKg = 0;
   let completo = true;
 
-  for (const item of linha.itens_pedido ?? []) {
+  for (const item of linha.entrega_itens ?? []) {
     const unit = pesos.get(item.produto_codigo ?? '');
     const qtd = Number(item.qtd) || 0;
     if (unit === undefined) {
@@ -305,7 +315,7 @@ function pesoDaLinha(
 }
 
 function montarSlots(
-  linhas: PedidoAgendaRow[],
+  linhas: EntregaAgendaRow[],
   frota: Map<string, Caminhao>,
   motoristas: Map<string, string>,
   clientes: Map<string, { bairro: string | null; cidade: string | null }>,
@@ -330,8 +340,9 @@ function montarSlots(
     };
     porSlot.set(chave, slot);
 
-    const cliente = linha.cliente_codigo
-      ? clientes.get(linha.cliente_codigo)
+    const pedido = linha.pedidos ?? null;
+    const cliente = pedido?.cliente_codigo
+      ? clientes.get(pedido.cliente_codigo)
       : undefined;
     const caminhao = linha.caminhao_id ? frota.get(linha.caminhao_id) : undefined;
     const motoristaNome = linha.motorista_id
@@ -340,17 +351,18 @@ function montarSlots(
     const peso = pesoDaLinha(linha, pesos);
 
     slot.entregas.push({
-      pedidoId: linha.id,
-      orixNumero: linha.orix_numero ?? '',
-      clienteNome: linha.cliente_nome ?? '',
+      entregaId: linha.id,
+      pedidoId: linha.pedido_id,
+      orixNumero: pedido?.orix_numero ?? '',
+      clienteNome: pedido?.cliente_nome ?? '',
       bairro: cliente?.bairro ?? null,
-      cidade: cliente?.cidade ?? linha.cidade_cliente ?? '',
+      cidade: cliente?.cidade ?? pedido?.cidade_cliente ?? '',
       motoristaId: linha.motorista_id,
       motoristaNome,
       caminhaoId: linha.caminhao_id,
       caminhaoNome: caminhao?.nome ?? null,
       pesoTotalKg: peso.totalKg,
-      statusLogistico: linha.status_logistico,
+      status: linha.status,
     });
 
     if (!linha.caminhao_id) continue;

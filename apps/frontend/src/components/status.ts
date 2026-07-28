@@ -1,7 +1,7 @@
 // Metadados de apresentação dos status logísticos (rótulos e cores).
 // Paleta "Campo Claro": creme + verdes do agro + acentos quentes.
 
-import type { StatusLogistico } from '@pastobom/shared';
+import type { StatusEntrega, StatusLogistico } from '@pastobom/shared';
 
 export interface StatusMeta {
   rotulo: string;
@@ -74,6 +74,36 @@ export const STATUS_HEX: Record<StatusLogistico, string> = {
   nao_realizado: '#B3261E', // brasa
   cancelada: '#8C5A2B', // terra
 };
+
+// ---------------------------------------------------------------------------
+// Status da ENTREGA (a viagem) — Onda 2
+// ---------------------------------------------------------------------------
+
+/**
+ * Metadados de apresentação dos status de VIAGEM.
+ *
+ * Os nomes coincidem com os do pedido, mas os tipos são distintos de propósito
+ * (ver StatusEntrega em @pastobom/shared) — este mapa existe para o TypeScript
+ * cobrar a diferença em vez de deixar os dois se misturarem.
+ *
+ * As cores são as MESMAS do quadro: a legenda da agenda, a bolinha do cartão
+ * compacto e a coluna do kanban têm de contar a mesma história.
+ */
+export const STATUS_ENTREGA_META: Record<StatusEntrega, StatusMeta> = {
+  agendada: STATUS_META.agendada,
+  em_rota: STATUS_META.em_rota,
+  entregue: STATUS_META.entregue,
+  nao_realizado: STATUS_META.nao_realizado,
+  cancelada: STATUS_META.cancelada,
+};
+
+/** Colunas de VIAGEM no quadro. A coluna Pendente mostra pedidos com saldo. */
+export const COLUNAS_ENTREGA: StatusEntrega[] = [
+  'agendada',
+  'em_rota',
+  'entregue',
+  'nao_realizado',
+];
 
 // ---------------------------------------------------------------------------
 // Status do ÓRIX (o status da ordem de venda no ERP, diferente do logístico)

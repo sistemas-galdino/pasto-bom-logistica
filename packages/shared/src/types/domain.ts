@@ -9,6 +9,24 @@ export type StatusLogistico =
   | 'nao_realizado'
   | 'cancelada';
 
+/**
+ * Status de uma ENTREGA (uma viagem), diferente do status do PEDIDO.
+ *
+ * O pedido responde "em que situação está a ordem de venda"; a entrega responde
+ * "o que aconteceu com esta viagem". Separados de propósito: compartilhar o
+ * mesmo tipo convidaria a confundir os dois para sempre.
+ *
+ * `nao_realizado` é TERMINAL: a viagem morreu. O saldo volta sozinho para o
+ * pedido (a entrega deixa de consumir saldo) e remarcar é criar uma entrega
+ * nova — o registro da que falhou fica no histórico.
+ */
+export type StatusEntrega =
+  | 'agendada'
+  | 'em_rota'
+  | 'entregue'
+  | 'nao_realizado'
+  | 'cancelada';
+
 /** Período de entrega. A reunião decidiu planejar por turno, não por horário. */
 export type PeriodoEntrega = 'manha' | 'tarde';
 
@@ -81,6 +99,88 @@ export interface Pedido {
   atualizadoEm: string;
 }
 
+// ---------------------------------------------------------------------------
+// Entregas (Onda 2): um pedido → N viagens
+// ---------------------------------------------------------------------------
+
+/** Um produto dentro de uma viagem, com a quantidade QUE VAI nesta viagem. */
+export interface EntregaItem {
+  id: string;
+  produtoCodigo: string;
+  nomeProduto: string;
+  /** Quanto deste produto sai NESTA entrega (não é o total do pedido). */
+  qtd: number;
+  separado: boolean;
+  separadoEm: string | null;
+  /**
+   * Peso unitário do produto em kg, ou null quando ainda não se sabe.
+   * Resolvido fora da tabela (produtos_peso), igual ao ItemPedido.
+   */
+  pesoUnitKg: number | null;
+}
+
+/**
+ * Uma ENTREGA: uma viagem de parte (ou de tudo) de um pedido.
+ *
+ * Carrega os dados do pedido/cliente já resolvidos porque é assim que o cartão
+ * do quadro precisa deles — o front não faz uma segunda chamada só para saber
+ * de quem é a carga.
+ */
+export interface Entrega {
+  id: string;
+  pedidoId: string;
+  status: StatusEntrega;
+
+  dataAgendada: string;
+  periodo: PeriodoEntrega | null;
+  motoristaId: string | null;
+  motoristaNome: string | null;
+  caminhaoId: string | null;
+  caminhaoNome: string | null;
+  propriedadeCodigo: string | null;
+
+  dataEntregue: string | null;
+  motivoNaoEntrega: string | null;
+  observacoes: string | null;
+
+  // --- dados do pedido, resolvidos para o cartão ---
+  orixNumero: string;
+  clienteCodigo: string;
+  clienteNome: string;
+  cidadeCliente: string;
+  bairro: string | null;
+  /** Data de ENTRADA da ordem de venda (o cartão mostra; a fila ordena por ela). */
+  dataPedido: string | null;
+
+  /** Σ(pesoUnitKg × qtd) desta viagem; null se algum item está sem peso. */
+  pesoTotalKg: number | null;
+  /**
+   * Destino resolvido (propriedade preferida; senão o cliente). Só preenchido
+   * na rota do motorista — é o que alimenta o link do Google Maps.
+   */
+  destino?: DestinoEntrega | null;
+  itens: EntregaItem[];
+
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+/**
+ * Saldo de um produto de um pedido: o que ainda não foi para nenhuma viagem.
+ * É o que a coluna "Pendente" do quadro mostra.
+ */
+export interface SaldoItem {
+  produtoCodigo: string;
+  nomeProduto: string;
+  /** Quantidade total do produto no pedido (o que o Órix diz). */
+  qtdPedido: number;
+  /** Quanto já está comprometido com entregas que consomem saldo. */
+  qtdComprometida: number;
+  /** qtdPedido − qtdComprometida (nunca negativo). */
+  qtdSaldo: number;
+  pesoUnitKg: number | null;
+}
+
 /** Destino de entrega resolvido (propriedade ou, na falta, cliente). */
 export interface DestinoEntrega {
   latitude: string;
@@ -146,8 +246,9 @@ export interface PesoProduto {
 // Agenda (calendário de entregas — mês/semana/dia)
 // ---------------------------------------------------------------------------
 
-/** Entrega como aparece no card da agenda. */
+/** Uma VIAGEM como aparece no card da agenda (Onda 2: entrega, não pedido). */
 export interface AgendaEntrega {
+  entregaId: string;
   pedidoId: string;
   orixNumero: string;
   clienteNome: string;
@@ -159,7 +260,7 @@ export interface AgendaEntrega {
   caminhaoId: string | null;
   caminhaoNome: string | null;
   pesoTotalKg: number | null;
-  statusLogistico: StatusLogistico;
+  status: StatusEntrega;
 }
 
 /** Ocupação de um caminhão dentro de um slot (data + período). */

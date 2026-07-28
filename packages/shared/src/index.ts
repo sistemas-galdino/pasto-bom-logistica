@@ -10,3 +10,5 @@ export * from './clima.js';
 export * from './peso.js';
 export * from './separacao.js';
 export * from './reconciliacao.js';
+export * from './saldo.js';
+export * from './entrega-state-machine.js';

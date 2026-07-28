@@ -10,15 +10,14 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { Pedido } from '@pastobom/shared';
+import type { Entrega } from '@pastobom/shared';
 import { api } from '../lib/api';
-import { formatarMoeda } from '../lib/format';
-import { PedidoCard } from '../components/PedidoCard';
+import { EntregaCard } from '../components/EntregaCard';
 import { TODOS_STATUS } from '../components/status';
 
 interface GrupoRota {
   chave: string;
-  pedidos: Pedido[];
+  pedidos: Entrega[];
   total: number;
 }
 
@@ -29,17 +28,17 @@ export function Rotas(): React.ReactElement {
     string | null
   >(null);
 
+  // Rotas lista VIAGENS em rota: o mesmo pedido em dois caminhões aparece nas
+  // duas rotas, cada uma com a sua parte da carga.
   const pedidosQuery = useQuery({
-    queryKey: ['pedidos'],
-    queryFn: ({ signal }) => api.listarPedidos(TODOS_STATUS, signal),
+    queryKey: ['entregas', 'em-rota'],
+    queryFn: ({ signal }) => api.listarEntregas({ status: ['em_rota'] }, signal),
     refetchInterval: 60_000,
   });
 
   const grupos = useMemo<GrupoRota[]>(() => {
-    const emRota = (pedidosQuery.data ?? []).filter(
-      (p) => p.statusLogistico === 'em_rota',
-    );
-    const mapa = new Map<string, Pedido[]>();
+    const emRota = pedidosQuery.data ?? [];
+    const mapa = new Map<string, Entrega[]>();
     for (const p of emRota) {
       const chave = p.motoristaNome || 'Sem motorista';
       const lista = mapa.get(chave);
@@ -49,7 +48,9 @@ export function Rotas(): React.ReactElement {
     return Array.from(mapa, ([chave, pedidos]) => ({
       chave,
       pedidos,
-      total: pedidos.reduce((s, p) => s + p.valorTotal, 0),
+      // Peso, não dinheiro: a viagem carrega parte do pedido, e o que importa
+      // para quem olha a rota é quanto o caminhão está levando.
+      total: pedidos.reduce((s, p) => s + (p.pesoTotalKg ?? 0), 0),
     })).sort((a, b) => {
       if (a.chave === 'Sem motorista') return 1;
       if (b.chave === 'Sem motorista') return -1;
@@ -168,16 +169,21 @@ export function Rotas(): React.ReactElement {
                   </h2>
                   <span className="shrink-0 text-sm text-tinta-suave">
                     {grupo.pedidos.length === 1
-                      ? '1 pedido'
-                      : `${grupo.pedidos.length} pedidos`}{' '}
-                    · {formatarMoeda(grupo.total)}
+                      ? '1 entrega'
+                      : `${grupo.pedidos.length} entregas`}{' '}
+                    ·{' '}
+                    {(grupo.total / 1000).toLocaleString('pt-BR', {
+                      minimumFractionDigits: 1,
+                      maximumFractionDigits: 1,
+                    })}{' '}
+                    t
                   </span>
                 </div>
                 <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {grupo.pedidos.map((p) => (
-                    <PedidoCard
+                    <EntregaCard
                       key={p.id}
-                      pedido={p}
+                      entrega={p}
                       podeEscrever={false}
                       podeSeparar={false}
                       onTransicionar={() => {}}
