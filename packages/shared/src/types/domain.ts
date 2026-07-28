@@ -154,6 +154,11 @@ export interface Entrega {
 
   /** Σ(pesoUnitKg × qtd) desta viagem; null se algum item está sem peso. */
   pesoTotalKg: number | null;
+  /**
+   * Destino resolvido (propriedade preferida; senão o cliente). Só preenchido
+   * na rota do motorista — é o que alimenta o link do Google Maps.
+   */
+  destino?: DestinoEntrega | null;
   itens: EntregaItem[];
 
   criadoEm: string;

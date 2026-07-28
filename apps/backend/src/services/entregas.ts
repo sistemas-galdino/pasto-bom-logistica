@@ -23,6 +23,7 @@ import {
   templateDaTransicaoEntrega,
   validarQuantidades,
   type Entrega,
+  type DestinoEntrega,
   type EntregaItem,
   type PeriodoEntrega,
   type SaldoItem,
@@ -207,6 +208,52 @@ async function nomesDeCaminhao(
   );
 }
 
+/** Propriedade/cliente -> destino de navegação, em lote (sem N+1). */
+async function resolverDestinos(
+  propCodigos: readonly string[],
+  cliCodigos: readonly string[],
+): Promise<{
+  props: Map<string, DestinoEntrega>;
+  clientes: Map<string, DestinoEntrega>;
+}> {
+  const toDestino = (r: Record<string, unknown>): DestinoEntrega => ({
+    latitude: (r.latitude as string) ?? '',
+    longitude: (r.longitude as string) ?? '',
+    endereco: (r.endereco as string) ?? '',
+    cidade: (r.cidade as string) ?? '',
+    uf: (r.uf as string) ?? '',
+  });
+
+  const props = new Map<string, DestinoEntrega>();
+  const clientes = new Map<string, DestinoEntrega>();
+
+  const p = [...new Set(propCodigos.filter((c) => c))];
+  const c = [...new Set(cliCodigos.filter((x) => x))];
+
+  const [rp, rc] = await Promise.all([
+    p.length > 0
+      ? supabase
+          .from('propriedades')
+          .select('codigo, endereco, cidade, uf, latitude, longitude')
+          .in('codigo', p)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    c.length > 0
+      ? supabase
+          .from('clientes')
+          .select('codigo, endereco, cidade, uf, latitude, longitude')
+          .in('codigo', c)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+  ]);
+
+  for (const r of (rp.data ?? []) as Record<string, unknown>[]) {
+    props.set(r.codigo as string, toDestino(r));
+  }
+  for (const r of (rc.data ?? []) as Record<string, unknown>[]) {
+    clientes.set(r.codigo as string, toDestino(r));
+  }
+  return { props, clientes };
+}
+
 /** Bairro por código de cliente (entregas rurais se orientam por bairro). */
 async function bairrosDeCliente(
   codigos: readonly string[],
@@ -230,7 +277,11 @@ async function bairrosDeCliente(
  * Monta os objetos Entrega completos a partir das linhas cruas, resolvendo
  * pedido, cliente, motorista, caminhão e pesos EM LOTE (sem N+1).
  */
-async function montarEntregas(linhas: EntregaRow[]): Promise<Entrega[]> {
+async function montarEntregas(
+  linhas: EntregaRow[],
+  /** Só a rota do motorista precisa do destino (é o link do mapa). */
+  comDestino = false,
+): Promise<Entrega[]> {
   if (linhas.length === 0) return [];
 
   const idsEntrega = linhas.map((l) => l.id);
@@ -269,6 +320,13 @@ async function montarEntregas(linhas: EntregaRow[]): Promise<Entrega[]> {
   const pedidos = new Map(
     ((pedidosRows ?? []) as PedidoDaEntregaRow[]).map((p) => [p.id, p]),
   );
+
+  const destinos = comDestino
+    ? await resolverDestinos(
+        linhas.map((l) => l.propriedade_codigo ?? ''),
+        [...pedidos.values()].map((p) => p.cliente_codigo ?? ''),
+      )
+    : null;
 
   const [motoristas, caminhoes, bairros, pesos] = await Promise.all([
     nomesDeMotorista(linhas.map((l) => l.motorista_id ?? '')),
@@ -320,6 +378,13 @@ async function montarEntregas(linhas: EntregaRow[]): Promise<Entrega[]> {
       bairro: bairros.get(pedido?.cliente_codigo ?? '') ?? null,
       dataPedido: pedido?.data_pedido ?? null,
       pesoTotalKg: pesoDaCarga(itensDaEntrega),
+      destino: destinos
+        ? ((l.propriedade_codigo
+            ? destinos.props.get(l.propriedade_codigo)
+            : undefined) ??
+          destinos.clientes.get(pedido?.cliente_codigo ?? '') ??
+          null)
+        : null,
       itens: itensDaEntrega,
       criadoEm: l.criado_em,
       atualizadoEm: l.atualizado_em,
@@ -367,6 +432,7 @@ export interface FiltrosEntrega {
 /** Lista entregas aplicando os filtros; ordena pela data agendada. */
 export async function listarEntregas(
   filtros: FiltrosEntrega = {},
+  comDestino = false,
 ): Promise<Entrega[]> {
   let consulta = supabase.from('entregas').select(COLUNAS_ENTREGA);
 
@@ -403,7 +469,7 @@ export async function listarEntregas(
     );
   }
 
-  return montarEntregas(linhas);
+  return montarEntregas(linhas, comDestino);
 }
 
 // ---------------------------------------------------------------------------

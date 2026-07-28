@@ -3,9 +3,13 @@
 // Antes desta tela, quem separa precisava caçar card por card no quadro de
 // entregas. Aqui a pergunta é uma só: "o que tem para separar HOJE?".
 //
-// Mostra exatamente o que está na aba Agenda — os pedidos com status
-// 'agendada' —, filtrados por um dia e agrupados por PERÍODO (o domínio do
-// sistema é slot = data × período; ver pages/Agenda.tsx).
+// Mostra exatamente o que está na aba Agenda — as VIAGENS agendadas —,
+// filtradas por um dia e agrupadas por PERÍODO (o domínio do sistema é
+// slot = data × período; ver pages/Agenda.tsx).
+//
+// Onda 2: a conferência é POR VIAGEM. Se o mesmo pedido sai em dois caminhões,
+// são dois cartões e duas conferências independentes — que é como a carga é
+// realmente montada no pátio.
 //
 // Duas escolhas vieram da reunião de 16/07/2026:
 //   - FILTRO POR CAMINHÃO: quem carrega o 1620 quer ver só a carga do 1620.
@@ -29,7 +33,7 @@ import {
   User,
   Undo2,
 } from 'lucide-react';
-import type { Pedido, PeriodoEntrega } from '@pastobom/shared';
+import type { Entrega, PeriodoEntrega } from '@pastobom/shared';
 import { api } from '../lib/api';
 import { useAuth } from '../auth/AuthProvider';
 
@@ -114,9 +118,9 @@ function formatarPeso(kg: number): string {
   return `${kg.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} kg`;
 }
 
-/** Um pedido só está "pronto" quando tem itens e todos estão marcados. */
-function estaSeparado(pedido: Pedido): boolean {
-  return pedido.itens.length > 0 && pedido.itens.every((i) => i.separado);
+/** Uma viagem só está "pronta" quando tem itens e todos estão marcados. */
+function estaSeparado(entrega: Entrega): boolean {
+  return entrega.itens.length > 0 && entrega.itens.every((i) => i.separado);
 }
 
 // --- página -----------------------------------------------------------------
@@ -139,8 +143,9 @@ export default function Separacao(): React.ReactElement {
   // QueryKey própria, mas sob o prefixo ['pedidos'] — as mutações invalidam o
   // prefixo, então o quadro de entregas também se atualiza junto.
   const pedidosQuery = useQuery({
-    queryKey: ['pedidos', 'separacao'],
-    queryFn: ({ signal }) => api.listarPedidos(['agendada'], signal),
+    queryKey: ['entregas', 'separacao'],
+    queryFn: ({ signal }) =>
+      api.listarEntregas({ status: ['agendada'] }, signal),
   });
 
   function aoFalhar(e: unknown): void {
@@ -149,19 +154,22 @@ export default function Separacao(): React.ReactElement {
 
   async function aoConcluir(): Promise<void> {
     setErro(null);
+    // Invalida os dois: a separação muda a viagem e libera o "pôr em rota" no
+    // quadro, que lista entregas e pedidos lado a lado.
+    await queryClient.invalidateQueries({ queryKey: ['entregas'] });
     await queryClient.invalidateQueries({ queryKey: ['pedidos'] });
   }
 
   const itemMut = useMutation({
     mutationFn: (v: { pedidoId: string; itemId: string; separado: boolean }) =>
-      api.definirSeparacao(v.pedidoId, v.itemId, v.separado),
+      api.definirSeparacaoItemEntrega(v.pedidoId, v.itemId, v.separado),
     onSuccess: aoConcluir,
     onError: aoFalhar,
   });
 
   const pedidoMut = useMutation({
     mutationFn: (v: { pedidoId: string; separado: boolean }) =>
-      api.definirSeparacaoPedido(v.pedidoId, v.separado),
+      api.definirSeparacaoEntrega(v.pedidoId, v.separado),
     onSuccess: aoConcluir,
     onError: aoFalhar,
   });
@@ -209,7 +217,7 @@ export default function Separacao(): React.ReactElement {
   );
 
   const grupos = useMemo(() => {
-    const mapa = new Map<ChaveGrupo, Pedido[]>();
+    const mapa = new Map<ChaveGrupo, Entrega[]>();
     for (const p of doDia) {
       // Em atrasados, turno não organiza nada (são dias diferentes): tudo cai
       // num grupo só e cada cartão mostra a sua data.
@@ -487,7 +495,7 @@ export default function Separacao(): React.ReactElement {
 // --- cartão de um pedido ----------------------------------------------------
 
 interface CartaoProps {
-  pedido: Pedido;
+  pedido: Entrega;
   /** Na fila de atrasados os cartões são de dias diferentes: a data importa. */
   mostrarData?: boolean;
   ocupado: boolean;

@@ -9,11 +9,11 @@
 
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { Pedido } from '@pastobom/shared';
+import type { Entrega } from '@pastobom/shared';
 import { api } from '../lib/api';
 
 interface Props {
-  pedido: Pedido;
+  entrega: Entrega;
   enviando: boolean;
   erro: string | null;
   onConfirmar: (motivo: string) => void;
@@ -21,7 +21,7 @@ interface Props {
 }
 
 export function NaoRealizadoModal({
-  pedido,
+  entrega,
   enviando,
   erro,
   onConfirmar,
@@ -57,14 +57,14 @@ export function NaoRealizadoModal({
           Entrega não realizada
         </h2>
         <p className="mt-0.5 text-sm text-tinta-suave">
-          Pedido nº {pedido.orixNumero || '—'} —{' '}
-          {pedido.clienteNome || pedido.clienteCodigo}
+          Pedido nº {entrega.orixNumero || '—'} —{' '}
+          {entrega.clienteNome || entrega.clienteCodigo}
         </p>
 
         <p className="mt-4 rounded-lg bg-brasa-claro px-3 py-2.5 text-sm text-brasa-escuro">
-          O pedido sai da rota e fica em <strong>Não realizado</strong> até ser
-          reagendado. A venda continua de pé — o cliente <strong>não</strong> é
-          notificado.
+          Esta viagem é encerrada e a carga <strong>volta para a fila</strong> do
+          pedido, pronta para ser agendada de novo. A venda continua de pé — o
+          cliente <strong>não</strong> é notificado.
         </p>
 
         <div className="mt-4">

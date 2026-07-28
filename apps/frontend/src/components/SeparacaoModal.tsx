@@ -5,10 +5,10 @@
 // (regra validada no backend). Mostra o progresso e libera quando tudo é marcado.
 
 import React from 'react';
-import type { Pedido } from '@pastobom/shared';
+import type { Entrega } from '@pastobom/shared';
 
 interface Props {
-  pedido: Pedido;
+  entrega: Entrega;
   enviando: boolean;
   erro: string | null;
   onToggle: (itemId: string, separado: boolean) => void;
@@ -31,14 +31,14 @@ function IconeCheck(): React.ReactElement {
 }
 
 export function SeparacaoModal({
-  pedido,
+  entrega,
   enviando,
   erro,
   onToggle,
   onFechar,
 }: Props): React.ReactElement {
-  const tot = pedido.itens.length;
-  const sep = pedido.itens.filter((i) => i.separado).length;
+  const tot = entrega.itens.length;
+  const sep = entrega.itens.filter((i) => i.separado).length;
   const completa = tot > 0 && sep === tot;
   const pct = tot > 0 ? Math.round((sep / tot) * 100) : 0;
 
@@ -59,8 +59,8 @@ export function SeparacaoModal({
               Separação de mercadorias
             </h2>
             <p className="mt-0.5 text-sm text-tinta-suave">
-              Pedido nº {pedido.orixNumero || '—'} —{' '}
-              {pedido.clienteNome || pedido.clienteCodigo}
+              Pedido nº {entrega.orixNumero || '—'} —{' '}
+              {entrega.clienteNome || entrega.clienteCodigo}
             </p>
           </div>
           <span
@@ -86,12 +86,12 @@ export function SeparacaoModal({
 
         {/* Lista de itens */}
         <ul className="scroll-suave max-h-72 space-y-1.5 overflow-y-auto pr-1">
-          {pedido.itens.length === 0 ? (
+          {entrega.itens.length === 0 ? (
             <li className="rounded-lg bg-creme-50 px-3 py-4 text-center text-sm text-tinta-suave">
               Este pedido não tem itens cadastrados.
             </li>
           ) : (
-            pedido.itens.map((item) => (
+            entrega.itens.map((item) => (
               <li key={item.id}>
                 <button
                   type="button"

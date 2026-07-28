@@ -279,10 +279,10 @@ export async function entregasRoutes(app: FastifyInstance): Promise<void> {
     }
 
     try {
-      const entregas = await listarEntregas({
-        motoristaId: usuario.id ?? undefined,
-        status: ['agendada', 'em_rota'],
-      });
+      const entregas = await listarEntregas(
+        { motoristaId: usuario.id ?? undefined, status: ['agendada', 'em_rota'] },
+        true, // com destino: é o link do Maps do motorista
+      );
       return reply.send(entregas);
     } catch (err) {
       return responderErro(reply, err, '[GET /minhas-entregas]');

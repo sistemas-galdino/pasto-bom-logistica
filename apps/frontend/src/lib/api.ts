@@ -23,6 +23,10 @@ import type {
   AgendaResposta,
   PesoProduto,
   MotivoNaoEntrega,
+  Entrega,
+  StatusEntrega,
+  SaldoItem,
+  PeriodoEntrega,
 } from '@pastobom/shared';
 import { supabase } from './supabase';
 
@@ -106,7 +110,35 @@ async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
   return payload as T;
 }
 
-/** Filtros server-side da lista de entregas (todos opcionais). */
+/** Filtros da listagem de VIAGENS (todos opcionais). */
+export interface FiltrosEntregas {
+  status?: StatusEntrega[];
+  /** Janela por data AGENDADA, 'YYYY-MM-DD'. */
+  de?: string;
+  ate?: string;
+  motoristaId?: string;
+  pedidoId?: string;
+  /**
+   * Corta as viagens não realizadas mais antigas que N dias. A coluna do quadro
+   * é lista de trabalho: o saldo já voltou para a fila sozinho, então a falha
+   * de dois meses atrás ali só empurra para fora o que precisa de atenção.
+   */
+  naoRealizadoDias?: number;
+}
+
+/** Corpo do agendamento de uma viagem. */
+export interface CriarEntregaBody {
+  pedidoId: string;
+  dataAgendada: string;
+  periodo: PeriodoEntrega;
+  motoristaId: string;
+  caminhaoId: string;
+  propriedadeCodigo?: string;
+  /** produto_codigo -> quantidade desta viagem. */
+  quantidades: Record<string, number>;
+}
+
+/** Filtros server-side da lista de PEDIDOS (todos opcionais). */
 export interface FiltrosPedidos {
   /** Data de ENTRADA do pedido (data_pedido), 'YYYY-MM-DD'. */
   de?: string;
@@ -154,50 +186,101 @@ export const api = {
     });
   },
 
-  /** RF-2.2: marca/desmarca um item como separado; devolve o pedido atualizado. */
-  async definirSeparacao(
+  // -------------------------------------------------------------------------
+  // ENTREGAS (a viagem) — Onda 2
+  // -------------------------------------------------------------------------
+
+  /** Lista viagens. Sem filtro de status, traz todas. */
+  async listarEntregas(
+    filtros: FiltrosEntregas = {},
+    signal?: AbortSignal,
+  ): Promise<Entrega[]> {
+    const params = new URLSearchParams();
+    if (filtros.status && filtros.status.length > 0) {
+      params.set('status', filtros.status.join(','));
+    }
+    if (filtros.de) params.set('de', filtros.de);
+    if (filtros.ate) params.set('ate', filtros.ate);
+    if (filtros.motoristaId) params.set('motoristaId', filtros.motoristaId);
+    if (filtros.pedidoId) params.set('pedidoId', filtros.pedidoId);
+    if (filtros.naoRealizadoDias !== undefined) {
+      params.set('naoRealizadoDias', String(filtros.naoRealizadoDias));
+    }
+    const qs = params.toString();
+    return request<Entrega[]>(`/api/entregas${qs ? `?${qs}` : ''}`, { signal });
+  },
+
+  /** O que ainda falta entregar de um pedido (o que a coluna Pendente mostra). */
+  async saldoDoPedido(
     pedidoId: string,
+    signal?: AbortSignal,
+  ): Promise<SaldoItem[]> {
+    return request<SaldoItem[]>(
+      `/api/pedidos/${encodeURIComponent(pedidoId)}/saldo`,
+      { signal },
+    );
+  },
+
+  /** Agenda uma viagem: data, período, motorista, caminhão e as quantidades. */
+  async criarEntrega(body: CriarEntregaBody): Promise<Entrega> {
+    return request<Entrega>('/api/entregas', { method: 'POST', body });
+  },
+
+  /** Avança a viagem (em rota, entregue, não realizado, cancelada). */
+  async transicionarEntrega(
+    entregaId: string,
+    body: { para: StatusEntrega; observacao?: string; motivo?: string },
+  ): Promise<Entrega> {
+    return request<Entrega>(
+      `/api/entregas/${encodeURIComponent(entregaId)}/transicao`,
+      { method: 'POST', body },
+    );
+  },
+
+  /** Volta a viagem uma etapa (hoje: só em rota -> agendada). */
+  async reverterEntrega(
+    entregaId: string,
+    para: StatusEntrega,
+  ): Promise<Entrega> {
+    return request<Entrega>(
+      `/api/entregas/${encodeURIComponent(entregaId)}/reverter`,
+      { method: 'POST', body: { para } },
+    );
+  },
+
+  /** Marca/desmarca UM item da viagem como separado. */
+  async definirSeparacaoItemEntrega(
+    entregaId: string,
     itemId: string,
     separado: boolean,
-  ): Promise<Pedido> {
-    return request<Pedido>(
-      `/api/pedidos/${encodeURIComponent(pedidoId)}/itens/${encodeURIComponent(
+  ): Promise<Entrega> {
+    return request<Entrega>(
+      `/api/entregas/${encodeURIComponent(entregaId)}/itens/${encodeURIComponent(
         itemId,
       )}/separacao`,
       { method: 'PATCH', body: { separado } },
     );
   },
 
-  /** "Dar OK na separação": marca/desmarca TODOS os itens do pedido de uma vez. */
-  async definirSeparacaoPedido(
-    pedidoId: string,
+  /** "Dar OK na separação": marca todos os itens da viagem de uma vez. */
+  async definirSeparacaoEntrega(
+    entregaId: string,
     separado: boolean,
-  ): Promise<Pedido> {
-    return request<Pedido>(
-      `/api/pedidos/${encodeURIComponent(pedidoId)}/separacao`,
+  ): Promise<Entrega> {
+    return request<Entrega>(
+      `/api/entregas/${encodeURIComponent(entregaId)}/separacao`,
       { method: 'PATCH', body: { separado } },
     );
   },
 
-  /** Fase 3: "rota do dia" do motorista (pedidos em_rota atribuídos a ele). */
-  async listarMinhaRota(signal?: AbortSignal): Promise<Pedido[]> {
-    return request<Pedido[]>('/api/pedidos?meus=1', { signal });
+  /** App do motorista: as viagens dele (agendadas e em rota). */
+  async listarMinhasEntregas(signal?: AbortSignal): Promise<Entrega[]> {
+    return request<Entrega[]>('/api/minhas-entregas', { signal });
   },
 
   /** Fase 3: lista de motoristas (logística atribui). */
   async listarMotoristas(signal?: AbortSignal): Promise<MotoristaResumo[]> {
     return request<MotoristaResumo[]>('/api/motoristas', { signal });
-  },
-
-  /** Fase 3: atribui (ou remove, com null) o motorista de um pedido. */
-  async atribuirMotorista(
-    pedidoId: string,
-    motoristaId: string | null,
-  ): Promise<Pedido> {
-    return request<Pedido>(
-      `/api/pedidos/${encodeURIComponent(pedidoId)}/motorista`,
-      { method: 'PATCH', body: { motoristaId } },
-    );
   },
 
   /** Propriedades de um cliente (para escolha na transição de agendamento). */
