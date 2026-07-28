@@ -22,14 +22,14 @@
 
 import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type {
-  Entrega,
-  Pedido,
-  SaldoItem,
-  StatusEntrega,
-} from '@pastobom/shared';
-import { calcularSaldo } from '@pastobom/shared';
+import type { Entrega, Pedido, StatusEntrega } from '@pastobom/shared';
 import { api, ApiError } from '../lib/api';
+import {
+  agruparEntregasPorPedido,
+  isoMenosDias,
+  pedidosComSaldo,
+  type PedidoComSaldo,
+} from '../lib/saldo-pedidos';
 import { useAuth } from '../auth/AuthProvider';
 import { EntregaCard } from '../components/EntregaCard';
 import { PedidoCard } from '../components/PedidoCard';
@@ -49,12 +49,6 @@ const STATUS_ORIX_OPCOES = STATUS_ORIX_META;
 /** Dias mostrados nas colunas de desfecho (só exibição; ver topo do arquivo). */
 const DIAS_NAO_REALIZADO = 7;
 const DIAS_ENTREGUE = 30;
-
-/** Um pedido da coluna Pendente, já com o saldo calculado. */
-interface PedidoComSaldo {
-  pedido: Pedido;
-  saldo: SaldoItem[];
-}
 
 /** Transição de entrega aguardando confirmação. */
 interface AlvoEntrega {
@@ -76,15 +70,6 @@ function normalizar(texto: string): string {
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase();
-}
-
-/** 'YYYY-MM-DD' de hoje menos N dias. */
-function isoMenosDias(dias: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - dias);
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
 export function Board(): React.ReactElement {
@@ -228,41 +213,16 @@ export function Board(): React.ReactElement {
   const entregas = useMemo(() => entregasQuery.data ?? [], [entregasQuery.data]);
 
   /** Entregas agrupadas por pedido — insumo do cálculo de saldo. */
-  const entregasPorPedido = useMemo(() => {
-    const mapa = new Map<string, Entrega[]>();
-    for (const e of entregas) {
-      const lista = mapa.get(e.pedidoId) ?? [];
-      lista.push(e);
-      mapa.set(e.pedidoId, lista);
-    }
-    return mapa;
-  }, [entregas]);
+  const entregasPorPedido = useMemo(
+    () => agruparEntregasPorPedido(entregas),
+    [entregas],
+  );
 
   /** Pedidos que ainda têm o que entregar, com o saldo já calculado. */
-  const pendentesComSaldo = useMemo<PedidoComSaldo[]>(() => {
-    const resultado: PedidoComSaldo[] = [];
-    for (const p of pedidos) {
-      if (p.statusLogistico !== 'pendente') continue;
-      const linhasEntrega = (entregasPorPedido.get(p.id) ?? []).flatMap((e) =>
-        e.itens.map((i) => ({
-          produtoCodigo: i.produtoCodigo,
-          qtd: i.qtd,
-          statusEntrega: e.status,
-        })),
-      );
-      const saldo = calcularSaldo(
-        p.itens.map((i) => ({
-          produtoCodigo: i.produtoCodigo,
-          nomeProduto: i.nomeProduto,
-          qtd: i.qtd,
-          pesoUnitKg: i.pesoUnitKg,
-        })),
-        linhasEntrega,
-      );
-      if (saldo.some((s) => s.qtdSaldo > 0)) resultado.push({ pedido: p, saldo });
-    }
-    return resultado;
-  }, [pedidos, entregasPorPedido]);
+  const pendentesComSaldo = useMemo<PedidoComSaldo[]>(
+    () => pedidosComSaldo(pedidos, entregasPorPedido),
+    [pedidos, entregasPorPedido],
+  );
 
   // --- busca ----------------------------------------------------------------
 
