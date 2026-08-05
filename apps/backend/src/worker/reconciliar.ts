@@ -27,13 +27,30 @@
 //    feita por alguém. O cliente não pode receber mensagem por causa de um tick.
 //  - NUNCA rebaixa um pedido 'entregue' (a regra pura cuida disso): cancelar a
 //    nota depois da entrega é problema fiscal — o caminhão não desentrega.
-//  - Pedido que NÃO aparece na resposta do Órix não é tocado. Pode estar num
-//    status que não pedimos; sumir do painel por ausência de dado seria um erro.
 //  - Falha do Órix aborta o ciclo sem derrubar o processo (mesmo circuit-breaker
 //    do poll).
+//
+// AUSÊNCIA (05/08/2026) — "o que foi concluído não é para ficar aparecendo"
+// ------------------------------------------------------------------------
+// Até aqui, pedido que NÃO voltava na resposta era ignorado. Só que o pedido
+// FATURADO no Órix (00030) sai do gatilho e é exatamente isso que acontece com
+// ele: some da resposta e fica preso na coluna Pendente para sempre. Eram 52
+// pedidos parados há mais de um mês quando a Natália reclamou.
+//
+// Agora a ausência decide — sem consultar o 00030, que seria toda venda
+// faturada do período contra um servidor que já cai sozinho. Se a data do
+// pedido cai dentro da janela consultada e ele não voltou, ele não está nem em
+// gatilho nem cancelado.
+//
+// Como é um sinal INDIRETO, tem três freios:
+//   1) carência de 24 h — a primeira ausência só carimba a data;
+//   2) pedido com viagem em andamento nunca é tocado (regra pura);
+//   3) se mais da METADE dos abertos sumir de uma vez, o ciclo não marca
+//      ninguém: resposta anormalmente vazia é falha do Órix, não backlog.
 
 import {
   decidirReconciliacao,
+  decidirAusencia,
   type StatusLogistico,
 } from '@pastobom/shared';
 
@@ -61,13 +78,32 @@ const MAX_DIAS_RETROATIVOS = 365;
 /** Tamanho da página ao ler os pedidos (PostgREST corta em 1000 por padrão). */
 const PAGINA = 1000;
 
-interface PedidoAberto {
+/**
+ * Quanto tempo um pedido precisa ficar ausente da resposta do Órix antes de ser
+ * descartado. 24 h = 48 ciclos de 30 min: o Órix cai à noite inteira e ainda
+ * sobra folga. O script one-shot passa 0 (decisão humana, com --dry conferido).
+ */
+export const HORAS_CARENCIA_AUSENCIA = 24;
+
+/**
+ * Acima desta fração de ausentes, o ciclo não marca ninguém. Se metade do
+ * quadro "sumiu" do Órix de uma vez, o problema é a resposta, não o backlog.
+ */
+const FRACAO_AUSENTES_SUSPEITA = 0.5;
+
+// Uma string literal só: o supabase-js infere o tipo do retorno a partir dela,
+// e concatenar quebra essa inferência.
+// prettier-ignore
+const COLUNAS_PEDIDO_ABERTO = 'id, orix_id_pedido, status_logistico, status_orix, status_orix_nome, data_pedido, ausente_orix_desde';
+
+export interface PedidoAberto {
   id: string;
   orix_id_pedido: string;
   status_logistico: StatusLogistico;
   status_orix: string | null;
   status_orix_nome: string | null;
   data_pedido: string | null;
+  ausente_orix_desde: string | null;
 }
 
 export interface ResultadoReconciliacao {
@@ -80,7 +116,22 @@ export interface ResultadoReconciliacao {
   cancelados: number;
   /** Pedidos cujo status/nome do Órix foi atualizado. */
   atualizados: number;
+  /** Pedidos carimbados como ausentes (aguardando a carência). */
+  marcados: number;
+  /** Pedidos descartados por ausência prolongada (faturados no Órix). */
+  descartados: number;
+  /** O freio de volume disparou: nenhuma ausência foi processada. */
+  ausenciaSuspeita?: boolean;
   motivoAbort?: string;
+}
+
+export interface OpcoesReconciliacao {
+  /** Carência da ausência. Default: HORAS_CARENCIA_AUSENCIA. */
+  horasCarencia?: number;
+  /** Só relata, não escreve nada no banco. Usado pelo --dry do script. */
+  dryRun?: boolean;
+  /** Recebe cada pedido que seria/foi descartado por ausência (relatório). */
+  aoDescartar?: (pedido: PedidoAberto) => void;
 }
 
 /** yyyy-mm-dd de um Date, em UTC. */
@@ -104,9 +155,7 @@ async function lerPedidosAbertos(): Promise<PedidoAberto[]> {
     const de = pagina * PAGINA;
     const { data, error } = await supabase
       .from('pedidos')
-      .select(
-        'id, orix_id_pedido, status_logistico, status_orix, status_orix_nome, data_pedido',
-      )
+      .select(COLUNAS_PEDIDO_ABERTO)
       .in('status_logistico', ABERTOS)
       .order('id', { ascending: true })
       .range(de, de + PAGINA - 1);
@@ -122,10 +171,41 @@ async function lerPedidosAbertos(): Promise<PedidoAberto[]> {
 }
 
 /**
+ * Ids dos pedidos que têm viagem EM ANDAMENTO (agendada ou em rota).
+ *
+ * Serve à guarda da ausência: não se arranca do quadro uma carga que já está no
+ * caminhão, mesmo que o Órix já tenha faturado a nota. Quem encerra é a equipe,
+ * dando baixa.
+ */
+async function lerPedidosComEntregaAtiva(): Promise<Set<string>> {
+  const ids = new Set<string>();
+  for (let pagina = 0; ; pagina += 1) {
+    const de = pagina * PAGINA;
+    const { data, error } = await supabase
+      .from('entregas')
+      .select('pedido_id')
+      .in('status', ['agendada', 'em_rota'])
+      .range(de, de + PAGINA - 1);
+
+    if (error) {
+      throw new Error(`ler entregas ativas: ${error.message}`);
+    }
+    const lote = (data ?? []) as { pedido_id: string }[];
+    for (const linha of lote) ids.add(linha.pedido_id);
+    if (lote.length < PAGINA) break;
+  }
+  return ids;
+}
+
+/**
  * Executa UM ciclo de reconciliação. Não lança em caso de falha da Órix:
  * loga, aborta e devolve { ok:false }.
  */
-export async function reconciliarOnce(): Promise<ResultadoReconciliacao> {
+export async function reconciliarOnce(
+  opcoes: OpcoesReconciliacao = {},
+): Promise<ResultadoReconciliacao> {
+  const horasCarencia = opcoes.horasCarencia ?? HORAS_CARENCIA_AUSENCIA;
+  const dryRun = opcoes.dryRun ?? false;
   const inicio = Date.now();
   const resultado: ResultadoReconciliacao = {
     ok: true,
@@ -133,9 +213,14 @@ export async function reconciliarOnce(): Promise<ResultadoReconciliacao> {
     encontrados: 0,
     cancelados: 0,
     atualizados: 0,
+    marcados: 0,
+    descartados: 0,
   };
 
-  const abertos = await lerPedidosAbertos();
+  const [abertos, comEntregaAtiva] = await Promise.all([
+    lerPedidosAbertos(),
+    lerPedidosComEntregaAtiva(),
+  ]);
   resultado.examinados = abertos.length;
   if (abertos.length === 0) {
     log.info('[reconciliar] Nenhum pedido em aberto; nada a fazer.');
@@ -217,11 +302,110 @@ export async function reconciliarOnce(): Promise<ResultadoReconciliacao> {
 
   const agora = new Date().toISOString();
 
+  // FREIO DE VOLUME. Antes de tratar qualquer ausência, olha o tamanho dela.
+  // Uma resposta anormalmente vazia do Órix (que já aconteceu: o servidor cai,
+  // devolve 200 com pouca coisa) não pode virar limpeza em massa do quadro.
+  const ausentes = abertos.filter((p) => !doOrix.has(p.orix_id_pedido));
+  const fracaoAusente = abertos.length > 0 ? ausentes.length / abertos.length : 0;
+  const ausenciaSuspeita = fracaoAusente > FRACAO_AUSENTES_SUSPEITA;
+  if (ausenciaSuspeita) {
+    resultado.ausenciaSuspeita = true;
+    log.warn(
+      `[reconciliar] ${ausentes.length}/${abertos.length} pedidos ausentes ` +
+        `(${Math.round(fracaoAusente * 100)}%) — acima do limite de ` +
+        `${Math.round(FRACAO_AUSENTES_SUSPEITA * 100)}%. Isso tem cara de ` +
+        `resposta incompleta do Órix, não de backlog resolvido: nenhuma ` +
+        `ausência será processada neste ciclo.`,
+    );
+  }
+
   for (const pedido of abertos) {
     const noOrix = doOrix.get(pedido.orix_id_pedido);
-    // Não veio na resposta: pode estar num status que não pedimos. Não tocar.
-    if (!noOrix) continue;
+
+    // ---- Não veio na resposta do Órix ------------------------------------
+    if (!noOrix) {
+      if (ausenciaSuspeita) continue;
+
+      const acaoAusencia = decidirAusencia(
+        {
+          statusLogistico: pedido.status_logistico,
+          dataPedido: pedido.data_pedido,
+          janelaInicial: dataInicial,
+          janelaFinal: dataFinal,
+          temEntregaAtiva: comEntregaAtiva.has(pedido.id),
+          ausenteDesde: pedido.ausente_orix_desde,
+          agora,
+        },
+        horasCarencia,
+      );
+
+      if (acaoAusencia === 'nada') continue;
+
+      if (acaoAusencia === 'marcar_ausente') {
+        resultado.marcados += 1;
+        if (dryRun) continue;
+        const { error } = await supabase
+          .from('pedidos')
+          .update({ ausente_orix_desde: agora })
+          .eq('id', pedido.id);
+        if (error) {
+          log.warn(
+            `[reconciliar] Falha ao carimbar ausência do pedido ${pedido.id}: ${error.message}`,
+          );
+        }
+        continue;
+      }
+
+      // descartar: o pedido saiu do gatilho e não voltou. Vai para Descartados,
+      // de onde a logística consegue trazer de volta pelo botão "Restaurar".
+      resultado.descartados += 1;
+      opcoes.aoDescartar?.(pedido);
+      if (dryRun) continue;
+
+      const { error } = await supabase
+        .from('pedidos')
+        .update({ status_logistico: 'cancelada', atualizado_em: agora })
+        .eq('id', pedido.id);
+      if (error) {
+        log.warn(
+          `[reconciliar] Falha ao descartar pedido ausente ${pedido.id}: ${error.message}`,
+        );
+        resultado.descartados -= 1;
+        continue;
+      }
+
+      const { error: errEvento } = await supabase.from('eventos_status').insert({
+        pedido_id: pedido.id,
+        de_status: pedido.status_logistico,
+        para_status: 'cancelada',
+        ator: 'sistema',
+        ator_user_id: null,
+      });
+      if (errEvento) {
+        log.warn(
+          `[reconciliar] Falha ao registrar evento de ausência do pedido ` +
+            `${pedido.id}: ${errEvento.message}`,
+        );
+      }
+      continue;
+    }
+
+    // ---- Veio na resposta -------------------------------------------------
     resultado.encontrados += 1;
+
+    // Reapareceu depois de ter sido carimbado: limpa o carimbo. Sem isso, uma
+    // ausência antiga somada a uma nova falharia a carência cedo demais.
+    if (pedido.ausente_orix_desde && !dryRun) {
+      const { error } = await supabase
+        .from('pedidos')
+        .update({ ausente_orix_desde: null })
+        .eq('id', pedido.id);
+      if (error) {
+        log.warn(
+          `[reconciliar] Falha ao limpar carimbo do pedido ${pedido.id}: ${error.message}`,
+        );
+      }
+    }
 
     const acao = decidirReconciliacao(
       {
@@ -235,6 +419,12 @@ export async function reconciliarOnce(): Promise<ResultadoReconciliacao> {
     );
 
     if (acao === 'nada') continue;
+
+    if (dryRun) {
+      if (acao === 'cancelar') resultado.cancelados += 1;
+      else resultado.atualizados += 1;
+      continue;
+    }
 
     const patch: Record<string, unknown> = {
       status_orix: noOrix.status,
@@ -279,10 +469,12 @@ export async function reconciliarOnce(): Promise<ResultadoReconciliacao> {
   }
 
   log.info(
-    `[reconciliar] Ciclo concluído em ${Date.now() - inicio}ms: ` +
+    `[reconciliar] Ciclo concluído em ${Date.now() - inicio}ms${dryRun ? ' [DRY]' : ''}: ` +
       `${resultado.examinados} em aberto, ${resultado.encontrados} encontrado(s) ` +
       `no Órix, ${resultado.cancelados} cancelado(s), ` +
-      `${resultado.atualizados} atualizado(s).`,
+      `${resultado.atualizados} atualizado(s), ` +
+      `${resultado.marcados} marcado(s) ausente(s), ` +
+      `${resultado.descartados} descartado(s) por ausência.`,
   );
 
   return resultado;

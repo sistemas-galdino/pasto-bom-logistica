@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   decidirReconciliacao,
+  decidirAusencia,
   type EntradaReconciliacao,
+  type EntradaAusencia,
 } from './reconciliacao.js';
 import type { StatusLogistico } from './types/domain.js';
 
@@ -115,5 +117,132 @@ describe('decidirReconciliacao', () => {
     expect(
       decidirReconciliacao(entrada({ statusOrixNovo: '00031' }), ['00099']),
     ).toBe('atualizar_orix');
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/** Entrada base da ausência: pendente, dentro da janela, sem viagem, 1ª vez. */
+function ausencia(over: Partial<EntradaAusencia> = {}): EntradaAusencia {
+  return {
+    statusLogistico: 'pendente',
+    dataPedido: '2026-07-10',
+    janelaInicial: '2026-05-19',
+    janelaFinal: '2026-08-05',
+    temEntregaAtiva: false,
+    ausenteDesde: null,
+    agora: '2026-08-05T12:00:00.000Z',
+    ...over,
+  };
+}
+
+describe('decidirAusencia', () => {
+  it('na primeira ausência apenas carimba, nunca descarta', () => {
+    expect(decidirAusencia(ausencia(), 24)).toBe('marcar_ausente');
+  });
+
+  it('descarta quando a carência venceu', () => {
+    expect(
+      decidirAusencia(
+        ausencia({ ausenteDesde: '2026-08-04T11:00:00.000Z' }),
+        24,
+      ),
+    ).toBe('descartar');
+  });
+
+  it('espera enquanto a carência não venceu', () => {
+    expect(
+      decidirAusencia(
+        ausencia({ ausenteDesde: '2026-08-05T06:00:00.000Z' }),
+        24,
+      ),
+    ).toBe('nada');
+  });
+
+  it('com carência zero descarta já na primeira leitura (script one-shot)', () => {
+    expect(decidirAusencia(ausencia(), 0)).toBe('descartar');
+    expect(
+      decidirAusencia(ausencia({ ausenteDesde: '2026-08-05T12:00:00.000Z' }), 0),
+    ).toBe('descartar');
+  });
+
+  it('carência zero NÃO atropela as guardas', () => {
+    expect(decidirAusencia(ausencia({ statusLogistico: 'entregue' }), 0)).toBe(
+      'nada',
+    );
+    expect(decidirAusencia(ausencia({ temEntregaAtiva: true }), 0)).toBe('nada');
+    expect(decidirAusencia(ausencia({ dataPedido: '2026-05-18' }), 0)).toBe(
+      'nada',
+    );
+  });
+
+  it('nunca rebaixa um desfecho', () => {
+    for (const s of ['entregue', 'cancelada'] as StatusLogistico[]) {
+      expect(
+        decidirAusencia(
+          ausencia({ statusLogistico: s, ausenteDesde: '2026-01-01T00:00:00.000Z' }),
+          24,
+        ),
+      ).toBe('nada');
+    }
+  });
+
+  it('protege o pedido sem data (não dá para provar que foi perguntado)', () => {
+    expect(
+      decidirAusencia(
+        ausencia({ dataPedido: null, ausenteDesde: '2026-01-01T00:00:00.000Z' }),
+        24,
+      ),
+    ).toBe('nada');
+  });
+
+  it('protege o pedido fora da janela consultada', () => {
+    // Anterior ao início: a varredura tem teto e ele não foi perguntado.
+    expect(
+      decidirAusencia(
+        ausencia({
+          dataPedido: '2026-05-18',
+          ausenteDesde: '2026-01-01T00:00:00.000Z',
+        }),
+        24,
+      ),
+    ).toBe('nada');
+    // Posterior ao fim: pedido futuro, idem.
+    expect(
+      decidirAusencia(
+        ausencia({
+          dataPedido: '2026-08-06',
+          ausenteDesde: '2026-01-01T00:00:00.000Z',
+        }),
+        24,
+      ),
+    ).toBe('nada');
+  });
+
+  it('aceita o pedido exatamente nas bordas da janela', () => {
+    expect(decidirAusencia(ausencia({ dataPedido: '2026-05-19' }), 24)).toBe(
+      'marcar_ausente',
+    );
+    expect(decidirAusencia(ausencia({ dataPedido: '2026-08-05' }), 24)).toBe(
+      'marcar_ausente',
+    );
+  });
+
+  it('não arranca do quadro uma viagem em andamento', () => {
+    expect(
+      decidirAusencia(
+        ausencia({
+          temEntregaAtiva: true,
+          ausenteDesde: '2026-01-01T00:00:00.000Z',
+        }),
+        24,
+      ),
+    ).toBe('nada');
+  });
+
+  it('carimbo ilegível não vira descarte', () => {
+    expect(
+      decidirAusencia(ausencia({ ausenteDesde: 'nao-e-uma-data' }), 24),
+    ).toBe('nada');
   });
 });

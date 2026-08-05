@@ -24,12 +24,18 @@ dependências entre si (o da 0013 derruba tabelas que o da 0014 usa).
 
 ## Estado
 
+Conferido contra o banco em 05/08/2026.
+
 | Migração | Aplicada em produção? |
 |---|---|
-| 0001 – 0011 | sim |
-| 0012 motivos_nao_entrega | **não** — bloqueia o deploy da Onda 1 |
-| 0013 entregas | não (Onda 2, branch `onda2-entregas`) |
-| 0014 migrar_pedidos_para_entregas | não (Onda 2) |
+| 0001 – 0015 | sim |
+| 0016 ausencia_orix | não — pendente de autorização |
+| 0017 reset_quadro_teste | não — pendente de autorização |
+
+A 0017 apaga TODAS as entregas, por assumir que são o teste da equipe (13, a
+última de 28/07). Ela aborta sozinha se encontrar entrega criada depois de
+28/07 — quanto mais tempo passar, maior a chance de a guarda disparar, e aí o
+recorte precisa ser refeito antes de aplicar.
 
 Dev e produção compartilham o MESMO projeto Supabase (`xphebokxfgmhbpspcuar`).
 Aplicar aqui vale para a equipe na hora — por isso as migrações da Onda 2 só
