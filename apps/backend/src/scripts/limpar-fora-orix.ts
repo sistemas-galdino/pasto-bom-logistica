@@ -32,8 +32,18 @@ import { log } from '../log.js';
 
 const SECO = process.argv.includes('--dry');
 
+// O freio de volume (50% dos abertos ausentes) existe para o REGIME: em um dia
+// normal somem poucos pedidos, e metade sumindo de uma vez é resposta
+// incompleta do Órix. O passivo acumulado é a exceção — na primeira limpeza
+// eram 92 de 183 (50,3%), e a sondagem confirmou 00030 em todos os checados.
+//
+// --forcar desliga o freio. Só use depois de rodar com --dry e conferir a
+// amostra na tela do Órix: é exatamente a checagem que o freio pede.
+const FORCAR = process.argv.includes('--forcar');
+
 interface Amostra {
-  orix_id_pedido: string;
+  /** Número da OV — é este que se digita na tela do Órix, não o id interno. */
+  orix_numero: string | null;
   data_pedido: string | null;
   status_orix: string | null;
 }
@@ -41,7 +51,8 @@ interface Amostra {
 async function main(): Promise<void> {
   log.info(
     '[limpar-fora-orix] Varrendo os pedidos em aberto contra o Órix' +
-      `${SECO ? ' — MODO SECO (nada será gravado)' : ''}...`,
+      `${SECO ? ' — MODO SECO (nada será gravado)' : ''}` +
+      `${FORCAR ? ' — FREIO DE VOLUME DESLIGADO (--forcar)' : ''}...`,
   );
 
   const amostras: Amostra[] = [];
@@ -49,9 +60,10 @@ async function main(): Promise<void> {
   const r = await reconciliarOnce({
     horasCarencia: 0,
     dryRun: SECO,
+    fracaoAusentesMax: FORCAR ? 1 : undefined,
     aoDescartar: (p) => {
       amostras.push({
-        orix_id_pedido: p.orix_id_pedido,
+        orix_numero: p.orix_numero,
         data_pedido: p.data_pedido,
         status_orix: p.status_orix,
       });
@@ -67,7 +79,8 @@ async function main(): Promise<void> {
       '[limpar-fora-orix] O freio de volume disparou: mais da metade dos ' +
         'pedidos em aberto não voltou na resposta do Órix. Isso quase sempre ' +
         'é resposta incompleta do servidor, não backlog resolvido. NADA foi ' +
-        'processado — rode de novo mais tarde.',
+        'processado. Rode de novo mais tarde; se o número se repetir e a ' +
+        'amostra conferir no Órix, use --forcar.',
     );
     return;
   }
@@ -95,8 +108,13 @@ async function main(): Promise<void> {
   }
 
   log.info('[limpar-fora-orix] Amostra (confira algumas na tela do Órix):');
-  for (const a of amostras.slice(0, 15)) {
-    log.info(`   OV ${a.orix_id_pedido}  ${a.data_pedido}  (${a.status_orix})`);
+  // Os mais RECENTES primeiro: backlog velho preso é o esperado, pedido de
+  // ontem na lista é o que merece um olhar antes de gravar.
+  const recentes = [...amostras].sort((a, b) =>
+    (b.data_pedido ?? '').localeCompare(a.data_pedido ?? ''),
+  );
+  for (const a of recentes.slice(0, 15)) {
+    log.info(`   OV ${a.orix_numero}  ${a.data_pedido}  (banco: ${a.status_orix})`);
   }
 
   if (SECO) {

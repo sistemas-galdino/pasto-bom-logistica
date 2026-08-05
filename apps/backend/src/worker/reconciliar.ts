@@ -86,19 +86,27 @@ const PAGINA = 1000;
 export const HORAS_CARENCIA_AUSENCIA = 24;
 
 /**
- * Acima desta fração de ausentes, o ciclo não marca ninguém. Se metade do
- * quadro "sumiu" do Órix de uma vez, o problema é a resposta, não o backlog.
+ * Acima desta fração de ausentes, o ciclo não marca ninguém. Em regime, a
+ * ausência diária é de poucos pedidos; metade do quadro sumindo de uma vez é
+ * quase sempre resposta incompleta do Órix, não backlog resolvido.
+ *
+ * O passivo acumulado é a exceção: na primeira limpeza (05/08/2026) eram 92 de
+ * 183, e a sondagem confirmou 00030 em todos os checados. Para esse caso o
+ * script one-shot passa `fracaoAusentesMax: 1` — deliberadamente, depois de
+ * conferir, e não baixando este limite.
  */
 const FRACAO_AUSENTES_SUSPEITA = 0.5;
 
 // Uma string literal só: o supabase-js infere o tipo do retorno a partir dela,
 // e concatenar quebra essa inferência.
 // prettier-ignore
-const COLUNAS_PEDIDO_ABERTO = 'id, orix_id_pedido, status_logistico, status_orix, status_orix_nome, data_pedido, ausente_orix_desde';
+const COLUNAS_PEDIDO_ABERTO = 'id, orix_id_pedido, orix_numero, status_logistico, status_orix, status_orix_nome, data_pedido, ausente_orix_desde';
 
 export interface PedidoAberto {
   id: string;
   orix_id_pedido: string;
+  /** Número da OV como a equipe vê na tela do Órix. */
+  orix_numero: string | null;
   status_logistico: StatusLogistico;
   status_orix: string | null;
   status_orix_nome: string | null;
@@ -132,6 +140,12 @@ export interface OpcoesReconciliacao {
   dryRun?: boolean;
   /** Recebe cada pedido que seria/foi descartado por ausência (relatório). */
   aoDescartar?: (pedido: PedidoAberto) => void;
+  /**
+   * Teto do freio de volume. Default: FRACAO_AUSENTES_SUSPEITA. Passar 1
+   * desliga o freio — só para a limpeza do passivo, com conferência humana
+   * antes (ver o --forcar do script limpar-fora-orix).
+   */
+  fracaoAusentesMax?: number;
 }
 
 /** yyyy-mm-dd de um Date, em UTC. */
@@ -307,13 +321,14 @@ export async function reconciliarOnce(
   // devolve 200 com pouca coisa) não pode virar limpeza em massa do quadro.
   const ausentes = abertos.filter((p) => !doOrix.has(p.orix_id_pedido));
   const fracaoAusente = abertos.length > 0 ? ausentes.length / abertos.length : 0;
-  const ausenciaSuspeita = fracaoAusente > FRACAO_AUSENTES_SUSPEITA;
+  const tetoAusentes = opcoes.fracaoAusentesMax ?? FRACAO_AUSENTES_SUSPEITA;
+  const ausenciaSuspeita = fracaoAusente > tetoAusentes;
   if (ausenciaSuspeita) {
     resultado.ausenciaSuspeita = true;
     log.warn(
       `[reconciliar] ${ausentes.length}/${abertos.length} pedidos ausentes ` +
         `(${Math.round(fracaoAusente * 100)}%) — acima do limite de ` +
-        `${Math.round(FRACAO_AUSENTES_SUSPEITA * 100)}%. Isso tem cara de ` +
+        `${Math.round(tetoAusentes * 100)}%. Isso tem cara de ` +
         `resposta incompleta do Órix, não de backlog resolvido: nenhuma ` +
         `ausência será processada neste ciclo.`,
     );
