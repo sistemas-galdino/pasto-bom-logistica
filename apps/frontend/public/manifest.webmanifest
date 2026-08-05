@@ -1,7 +1,7 @@
 {
-  "name": "Pasto Bom — Logística",
-  "short_name": "Pasto Bom",
-  "description": "Sistema de Logística Inteligente — Pasto Bom Irmãos Agropecuária",
+  "name": "PB Logística",
+  "short_name": "PB Logística",
+  "description": "Sistema de Logística Inteligente — Rede do Campo / Pasto Bom Irmãos Agropecuária",
   "lang": "pt-BR",
   "start_url": "/",
   "scope": "/",
@@ -23,7 +23,7 @@
       "purpose": "any"
     },
     {
-      "src": "/icone-512.png",
+      "src": "/icone-maskable-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

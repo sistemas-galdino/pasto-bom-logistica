@@ -1,5 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Pasto Bom Logística">
   <!--
+    APOSENTADO em 05/08/2026. Este arquivo NÃO é mais a fonte dos ícones.
+
+    O David pediu o logo de verdade na tela inicial, em vez deste redesenho.
+    Os PNGs agora saem do arquivo oficial da marca, por
+    `apps/frontend/scripts/gerar-icones.py` (fonte: scripts/logo-fonte.jpeg).
+
+    Fica aqui porque é o mesmo desenho que segue vivo em marca.svg (favicon da
+    aba) e no SVG embutido em src/components/Marca.tsx — se um dia esses forem
+    revistos, este é o ponto de partida.
+
+    ---- descrição original ----
+
     FONTE dos ícones do app (PWA). Diferente de marca.svg, que é a marca solta
     usada dentro da interface, este é um ÍCONE: quadrado, fundo opaco e com a
     marca recuada.
