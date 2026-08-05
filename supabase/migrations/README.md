@@ -28,14 +28,15 @@ Conferido contra o banco em 05/08/2026.
 
 | Migração | Aplicada em produção? |
 |---|---|
-| 0001 – 0015 | sim |
-| 0016 ausencia_orix | não — pendente de autorização |
-| 0017 reset_quadro_teste | não — pendente de autorização |
+| 0001 – 0017 | sim |
 
-A 0017 apaga TODAS as entregas, por assumir que são o teste da equipe (13, a
-última de 28/07). Ela aborta sozinha se encontrar entrega criada depois de
-28/07 — quanto mais tempo passar, maior a chance de a guarda disparar, e aí o
-recorte precisa ser refeito antes de aplicar.
+A 0017 já rodou (05/08/2026, com autorização do David). Ela apagou as 13
+entregas de teste da equipe e não pode ser reaplicada: a guarda dela aborta se
+encontrar entrega criada depois de 28/07, o que passa a ser o caso assim que a
+operação de verdade começar. Os snapshots `backup_*_pre_reset` continuam no
+banco — são a fonte do rollback e da auditoria, e só devem ser derrubados
+quando a equipe estiver rodando há tempo suficiente para a volta deixar de
+fazer sentido.
 
 Dev e produção compartilham o MESMO projeto Supabase (`xphebokxfgmhbpspcuar`).
 Aplicar aqui vale para a equipe na hora — por isso as migrações da Onda 2 só
