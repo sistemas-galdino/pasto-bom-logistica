@@ -17,6 +17,7 @@
     "backfill:pesos": "node --import tsx --env-file-if-exists=.env src/scripts/backfill-pesos.ts",
     "backfill:natureza": "node --import tsx --env-file-if-exists=.env src/scripts/backfill-natureza.ts",
     "limpar:oficina": "node --import tsx --env-file-if-exists=.env src/scripts/limpar-oficina.ts",
+    "limpar:fora-orix": "node --import tsx --env-file-if-exists=.env src/scripts/limpar-fora-orix.ts",
     "limpar:fora-gatilho": "node --import tsx --env-file-if-exists=.env src/scripts/limpar-fora-gatilho.ts"
   },
   "dependencies": {

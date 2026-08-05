@@ -24,12 +24,19 @@ dependências entre si (o da 0013 derruba tabelas que o da 0014 usa).
 
 ## Estado
 
+Conferido contra o banco em 05/08/2026.
+
 | Migração | Aplicada em produção? |
 |---|---|
-| 0001 – 0011 | sim |
-| 0012 motivos_nao_entrega | **não** — bloqueia o deploy da Onda 1 |
-| 0013 entregas | não (Onda 2, branch `onda2-entregas`) |
-| 0014 migrar_pedidos_para_entregas | não (Onda 2) |
+| 0001 – 0017 | sim |
+
+A 0017 já rodou (05/08/2026, com autorização do David). Ela apagou as 13
+entregas de teste da equipe e não pode ser reaplicada: a guarda dela aborta se
+encontrar entrega criada depois de 28/07, o que passa a ser o caso assim que a
+operação de verdade começar. Os snapshots `backup_*_pre_reset` continuam no
+banco — são a fonte do rollback e da auditoria, e só devem ser derrubados
+quando a equipe estiver rodando há tempo suficiente para a volta deixar de
+fazer sentido.
 
 Dev e produção compartilham o MESMO projeto Supabase (`xphebokxfgmhbpspcuar`).
 Aplicar aqui vale para a equipe na hora — por isso as migrações da Onda 2 só

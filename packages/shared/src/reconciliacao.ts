@@ -90,3 +90,104 @@ export function decidirReconciliacao(
   // logística tem o "voltar" de cancelada -> pendente no quadro.
   return mudouNoOrix ? 'atualizar_orix' : 'nada';
 }
+
+// ---------------------------------------------------------------------------
+// AUSÊNCIA: o pedido que sumiu da resposta do Órix
+// ---------------------------------------------------------------------------
+//
+// Por que isso existe (áudio da Natália, 05/08/2026):
+//   "aparecer o que foi concluído também não é para ficar aparecendo aí mais"
+//
+// A reconciliação consulta o Órix nos status de GATILHO + CANCELADO. O pedido
+// que é FATURADO sai do gatilho (vira 00030) e some da resposta — e o código
+// antigo simplesmente o ignorava, deixando-o preso na coluna Pendente para
+// sempre. Eram 52 pedidos parados há mais de um mês.
+//
+// A correção NÃO precisa consultar o 00030 (seria toda venda faturada do
+// período, dezenas de milhares de linhas contra um servidor que já cai
+// sozinho). A ausência já é o sinal: se a data do pedido está dentro da janela
+// que foi consultada e ele não voltou, ele não está nem em gatilho nem
+// cancelado. Só sobra ter saído por baixo.
+//
+// A ausência é um sinal INDIRETO, então nunca age na primeira vez: marca a
+// data, e só descarta depois de uma carência. Quem chama cuida do freio de
+// volume (resposta anormalmente vazia do Órix não pode virar limpeza em massa).
+
+/** O que fazer com um pedido que NÃO veio na resposta do Órix. */
+export type AcaoAusencia =
+  /** Não mexe: protegido por alguma guarda, ou a carência ainda não venceu. */
+  | 'nada'
+  /** Primeira ausência observada: grava o carimbo e espera a carência. */
+  | 'marcar_ausente'
+  /** Ausente tempo suficiente: sai do quadro (vai para Descartados). */
+  | 'descartar';
+
+export interface EntradaAusencia {
+  /** Status logístico atual no nosso banco. */
+  statusLogistico: StatusLogistico;
+  /** Data do pedido (yyyy-mm-dd). Nula quando o Órix não informou. */
+  dataPedido: string | null;
+  /** Início da janela realmente consultada no Órix (yyyy-mm-dd). */
+  janelaInicial: string;
+  /** Fim da janela realmente consultada no Órix (yyyy-mm-dd). */
+  janelaFinal: string;
+  /** O pedido tem entrega 'agendada' ou 'em_rota'? */
+  temEntregaAtiva: boolean;
+  /** Quando a ausência foi observada pela primeira vez (ISO), ou null. */
+  ausenteDesde: string | null;
+  /** Agora (ISO) — injetado para o teste ser determinístico. */
+  agora: string;
+}
+
+/**
+ * Decide o que fazer com um pedido em aberto que não apareceu na resposta do
+ * Órix.
+ *
+ * @param entrada        estado do pedido e da janela que foi consultada
+ * @param horasCarencia  quanto tempo de ausência antes de descartar (0 = já)
+ */
+export function decidirAusencia(
+  entrada: EntradaAusencia,
+  horasCarencia: number,
+): AcaoAusencia {
+  const {
+    statusLogistico,
+    dataPedido,
+    janelaInicial,
+    janelaFinal,
+    temEntregaAtiva,
+    ausenteDesde,
+    agora,
+  } = entrada;
+
+  // Mesma garantia da reconciliação: desfecho não se rebaixa por leitura.
+  if (DESFECHOS.includes(statusLogistico)) return 'nada';
+
+  // Sem data não dá para afirmar que o pedido estava na janela consultada.
+  // Ausência de um pedido que nunca foi perguntado não prova nada.
+  if (!dataPedido) return 'nada';
+
+  // Fora da janela: a varredura tem teto (MAX_DIAS_RETROATIVOS). Um pedido
+  // anterior ao corte "some" da resposta porque não foi perguntado — não
+  // porque saiu do gatilho. Descartar aqui seria apagar pedido por engano.
+  if (dataPedido < janelaInicial || dataPedido > janelaFinal) return 'nada';
+
+  // A carga já está no caminhão do Johnny. Mesmo que o Órix já tenha faturado,
+  // não se arranca do quadro uma viagem em andamento: quem encerra é a equipe,
+  // dando baixa. O pedido é reavaliado quando a entrega terminar.
+  if (temEntregaAtiva) return 'nada';
+
+  // Primeira vez: só carimba, e a decisão fica para o próximo ciclo.
+  //
+  // Exceção: carência zero é o script one-shot, rodado à mão depois de um
+  // --dry conferido por gente. Ali a espera não protege ninguém — quem decidiu
+  // já olhou a lista.
+  if (!ausenteDesde) {
+    return horasCarencia <= 0 ? 'descartar' : 'marcar_ausente';
+  }
+
+  const decorridoMs = Date.parse(agora) - Date.parse(ausenteDesde);
+  if (Number.isNaN(decorridoMs)) return 'nada';
+
+  return decorridoMs >= horasCarencia * 3_600_000 ? 'descartar' : 'nada';
+}
