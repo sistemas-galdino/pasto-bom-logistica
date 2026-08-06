@@ -156,7 +156,7 @@ export function DefinirSenha(): React.ReactElement {
         </div>
 
         <p className="mt-5 text-center text-xs text-tinta-suave">
-          Acesso restrito à equipe Pasto Bom · Três Pontas/MG
+          Acesso restrito à equipe Pasto Bom · Botelhos/MG
         </p>
       </div>
     </div>
