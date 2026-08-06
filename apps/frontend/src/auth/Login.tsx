@@ -98,6 +98,12 @@ export function Login(): React.ReactElement {
           >
             {enviando ? 'Entrando…' : 'Entrar'}
           </button>
+
+          {/* Sem link: não há autoatendimento (o sistema não envia e-mail).
+              Quem redefine é a logística, pela tela Usuários. */}
+          <p className="mt-4 text-center text-xs text-tinta-suave">
+            Esqueceu a senha? Peça um novo link de acesso à logística.
+          </p>
         </form>
 
         <p className="mt-5 text-center text-xs text-tinta-suave">

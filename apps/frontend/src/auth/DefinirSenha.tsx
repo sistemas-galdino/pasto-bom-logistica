@@ -1,4 +1,6 @@
-// Tela de destino do link de convite (/definir-senha).
+// Tela de destino dos links de acesso (/definir-senha) — serve tanto ao convite
+// de um novo colaborador quanto à redefinição de senha de quem já usa o sistema.
+// Por isso o texto é neutro: o link é o mesmo nos dois casos.
 //
 // O supabase-js parseia o hash da URL e cria a sessão automaticamente. Com
 // sessão, a pessoa define a senha de acesso (updateUser). Sem sessão (link
@@ -66,16 +68,17 @@ export function DefinirSenha(): React.ReactElement {
         <div className="rounded-xl2 border border-linha bg-papel/90 p-6 shadow-flutua backdrop-blur">
           {carregando ? (
             <p className="py-6 text-center text-sm text-tinta-suave">
-              Validando o convite…
+              Validando o link…
             </p>
           ) : !session ? (
             <div className="text-center">
               <h2 className="font-display text-lg font-semibold text-mata-escuro">
-                Convite inválido ou expirado
+                Link inválido ou expirado
               </h2>
               <p className="mt-2 text-sm text-tinta-suave">
-                Este link não é mais válido. Peça à logística um novo convite ou
-                acesse com sua senha, se já a tiver definido.
+                Este link não é mais válido — ele vale por tempo limitado e uma
+                vez só. Peça um novo link à logística ou entre com sua senha, se
+                já a tiver cadastrado.
               </p>
               <Link
                 to="/login"
@@ -100,7 +103,7 @@ export function DefinirSenha(): React.ReactElement {
           ) : (
             <form onSubmit={aoSubmeter}>
               <h2 className="mb-4 font-display text-lg font-semibold text-mata-escuro">
-                Crie sua senha de acesso
+                Defina sua senha de acesso
               </h2>
 
               <label className="mb-4 block">

@@ -2,6 +2,11 @@
 // com papel, status e último acesso. Permite convidar novos usuários gerando
 // um link de acesso (sem e-mail), trocar o papel e ativar/desativar o acesso.
 //
+// Senha esquecida: não há e-mail no sistema, então quem redefine é a logística
+// — gera um link aqui e manda pela pessoa (WhatsApp). O mesmo endpoint serve
+// para regerar um convite expirado e para redefinir a senha de quem já usa o
+// sistema; o que muda é só o rótulo do botão.
+//
 // Auto-proteção (UX): na própria linha, o usuário não pode rebaixar o próprio
 // papel nem desativar a si mesmo (o backend também barra com 422).
 
@@ -10,6 +15,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Check,
   Copy,
+  KeyRound,
   Link2,
   Plus,
   RefreshCw,
@@ -271,11 +277,18 @@ export function Usuarios(): React.ReactElement {
                             ))}
                           </select>
 
-                          {u.status === 'pendente' && (
+                          {/* Escondido para inativo de propósito: quem está
+                              desativado segue banido no Auth, então o link não
+                              o deixaria entrar — seria promessa falsa. */}
+                          {u.status !== 'inativo' && (
                             <button
                               type="button"
                               disabled={linkOcupado}
-                              title="Gerar um novo link de acesso (o anterior pode ter expirado)."
+                              title={
+                                u.status === 'pendente'
+                                  ? 'Gerar um novo link de acesso (o anterior pode ter expirado).'
+                                  : 'Gerar um link para a pessoa cadastrar uma nova senha.'
+                              }
                               onClick={() => {
                                 setErroAcao(null);
                                 linkMutacao.mutate({
@@ -285,8 +298,22 @@ export function Usuarios(): React.ReactElement {
                               }}
                               className="flex items-center gap-1.5 rounded-lg border border-folha/50 px-3 py-1.5 text-xs font-semibold text-mata transition hover:bg-folha-claro disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-                              {linkOcupado ? '…' : 'Regerar link'}
+                              {u.status === 'pendente' ? (
+                                <RefreshCw
+                                  className="h-3.5 w-3.5"
+                                  aria-hidden="true"
+                                />
+                              ) : (
+                                <KeyRound
+                                  className="h-3.5 w-3.5"
+                                  aria-hidden="true"
+                                />
+                              )}
+                              {linkOcupado
+                                ? '…'
+                                : u.status === 'pendente'
+                                  ? 'Regerar link'
+                                  : 'Redefinir senha'}
                             </button>
                           )}
 
@@ -585,8 +612,9 @@ interface LinkModalProps {
   onFechar: () => void;
 }
 
-// Exibe um link de acesso já gerado (ex.: ao regerar para um usuário pendente),
-// com botão de copiar. Reaproveita o visual do estado de sucesso do convite.
+// Exibe um link de acesso já gerado — serve tanto para regerar um convite
+// expirado quanto para redefinir a senha de quem já usa o sistema. Texto
+// neutro, porque o link é o mesmo nos dois casos.
 function LinkModal({
   nome,
   link,
@@ -640,9 +668,14 @@ function LinkModal({
           </button>
         </div>
 
-        <p className="mb-4 text-sm text-tinta-suave">
-          Envie este link ao colaborador (ex.: WhatsApp). Ao abri-lo, ele define
-          a senha e entra. O link tem validade limitada — envie logo.
+        <p className="mb-3 text-sm text-tinta-suave">
+          Envie este link à pessoa (ex.: WhatsApp). Ao abri-lo, ela cadastra a
+          senha e entra. Vale por tempo limitado e uma vez só — envie logo.
+        </p>
+
+        <p className="mb-4 rounded-lg border border-trigo/40 bg-trigo-claro px-3 py-2 text-xs text-trigo-escuro">
+          Mande no privado, nunca em grupo: quem abrir o link define a senha
+          desta conta.
         </p>
 
         <div className="flex items-center gap-2">
