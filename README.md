@@ -152,7 +152,8 @@ cp .env.example apps/backend/.env
 | `EVOLUTION_API_KEY` | não | API key da Evolution |
 | `POLL_CRON` | não (default `*/5 * * * *`) | Frequência do polling (janela curta) |
 | `RECONCILIAR_CRON` | não (default `*/30 * * * *`) | Reconciliação com o Órix |
-| `VARREDURA_CRON` | não (default `20 3 * * *`) | Varredura profunda (1 ano), 1x/dia |
+| `VARREDURA_CHECK_CRON` | não (default `15 * * * *`) | De quanto em quanto tempo VERIFICA se está na hora da varredura profunda |
+| `VARREDURA_INTERVALO_HORAS` | não (default `20`) | Intervalo mínimo entre varreduras profundas bem-sucedidas |
 | `API_PORT` | não (default 3333) | Porta da API |
 | `ALLOW_NO_AUTH` | não (default `true`) | Em dev, libera rotas sem JWT (assume papel `logistica`) |
 

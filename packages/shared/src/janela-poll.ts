@@ -71,3 +71,62 @@ export function inicioJanelaPoll(entrada: EntradaJanelaPoll): string {
   // invertida: o Órix devolveria vazio e o tick "passaria" sem ler nada.
   return inicio > hoje ? hoje : inicio;
 }
+
+// ---------------------------------------------------------------------------
+// QUANDO rodar a varredura profunda
+// ---------------------------------------------------------------------------
+//
+// Por que não é um horário fixo (apontado pelo David em 12/08/2026)
+// -----------------------------------------------------------------
+// A primeira versão agendava a varredura às 3h20. Só que o servidor não fica
+// ligado de madrugada — e a API do Órix também cai à noite. O cron disparava,
+// a primeira sub-janela falhava, o circuit-breaker abortava, e a próxima
+// tentativa era só no dia seguinte no mesmo horário ruim: a varredura nunca
+// rodava, silenciosamente.
+//
+// A regra passa a ser por INTERVALO: "faz mais de N horas que não roda com
+// sucesso?". Assim tanto faz quem dorme (o Órix ou o nosso serviço) e tanto faz
+// qual é a janela de disponibilidade — a primeira oportunidade depois do prazo
+// serve.
+//
+// O intervalo padrão é 20 h, não 24, DE PROPÓSITO: 24 fixaria a varredura no
+// mesmo horário todo dia, que é justo o problema. Com 20 h ela anda ~4 h por dia
+// no relógio e acaba caindo dentro da janela em que o Órix está de pé, sem
+// ninguém precisar descobrir qual é essa janela.
+
+/** Horas entre varreduras profundas bem-sucedidas. */
+export const HORAS_ENTRE_VARREDURAS_PADRAO = 20;
+
+export interface EntradaVarredura {
+  /** `ultimoSucesso` da chave `varredura_profunda` (ISO), ou null se nunca rodou. */
+  ultimoSucesso: string | null;
+  /** Agora (ISO) — injetado para o teste ser determinístico. */
+  agora: string;
+  /** Intervalo mínimo, em horas. */
+  horasIntervalo?: number;
+}
+
+/**
+ * Decide se está na hora de rodar a varredura profunda.
+ *
+ * Nunca rodou → roda. Timestamp ilegível → roda (o lado seguro é varrer de
+ * novo: a ingestão é idempotente, e o contrário seria nunca mais varrer por
+ * causa de um campo corrompido).
+ */
+export function deveVarrer(entrada: EntradaVarredura): boolean {
+  const {
+    ultimoSucesso,
+    agora,
+    horasIntervalo = HORAS_ENTRE_VARREDURAS_PADRAO,
+  } = entrada;
+
+  if (!ultimoSucesso) return true;
+
+  const decorridoMs = Date.parse(agora) - Date.parse(ultimoSucesso);
+  if (Number.isNaN(decorridoMs)) return true;
+
+  // Registro no futuro (relógio torto) não pode travar a varredura para sempre.
+  if (decorridoMs < 0) return true;
+
+  return decorridoMs >= Math.abs(horasIntervalo) * 3_600_000;
+}

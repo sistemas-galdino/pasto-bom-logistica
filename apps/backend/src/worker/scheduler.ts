@@ -12,12 +12,14 @@
 //    intervalo do cron, o próximo é ignorado até o atual terminar).
 
 import cron from 'node-cron';
+import { deveVarrer } from '@pastobom/shared';
 import {
   pollOnce,
   registrarSincronizacao,
   varreduraProfundaOnce,
 } from './poll.js';
 import { reconciliarOnce } from './reconciliar.js';
+import { supabase } from '../db/supabase.js';
 import { env } from '../config/env.js';
 import { log } from '../log.js';
 
@@ -83,11 +85,43 @@ async function tickReconciliacao(): Promise<void> {
 }
 
 /**
- * Varredura profunda protegida. Lock próprio: são ~23 chamadas à Órix e pode
- * demorar minutos; sobrepor duas seria bater no servidor à toa.
+ * Lê o heartbeat da varredura profunda. Em erro de leitura devolve null, o que
+ * faz a varredura rodar: perder uma varredura é pior que rodar uma a mais (a
+ * ingestão é idempotente).
+ */
+async function lerVarreduraProfunda(): Promise<{
+  ultimoSucesso?: string | null;
+} | null> {
+  const { data, error } = await supabase
+    .from('sync_state')
+    .select('valor')
+    .eq('chave', 'varredura_profunda')
+    .maybeSingle();
+  if (error) {
+    log.warn(
+      `[scheduler] Falha ao ler o estado da varredura profunda: ${error.message}`,
+    );
+    return null;
+  }
+  return (data?.valor as { ultimoSucesso?: string | null } | undefined) ?? null;
+}
+
+/**
+ * Verificação horária da varredura profunda: roda só se faz mais de
+ * VARREDURA_INTERVALO_HORAS que não roda com sucesso.
  *
- * Ela NÃO pode derrubar o tick rápido: falha aqui é logada e tentada de novo no
- * dia seguinte, enquanto o poll de 5 min segue independente.
+ * Por que por intervalo, e não em horário fixo: nem o Órix nem o servidor ficam
+ * de pé de madrugada. Um cron noturno dispararia, abortaria na primeira
+ * sub-janela e só tentaria de novo no dia seguinte, no mesmo horário ruim — a
+ * varredura nunca completaria, e em silêncio. Com intervalo, a primeira
+ * oportunidade depois do prazo serve, seja qual for a janela em que o Órix está
+ * no ar.
+ *
+ * Tentar de hora em hora com o Órix fora é barato: o circuit-breaker aborta na
+ * primeira sub-janela que falhar, então custa ~1 chamada, não 23.
+ *
+ * Lock próprio: a varredura leva minutos e não pode empilhar. E ela NÃO derruba
+ * o tick rápido — o poll de 5 min segue independente.
  */
 async function tickVarredura(): Promise<void> {
   if (varrendo) {
@@ -96,6 +130,24 @@ async function tickVarredura(): Promise<void> {
     );
     return;
   }
+
+  const estado = await lerVarreduraProfunda();
+  if (
+    !deveVarrer({
+      ultimoSucesso: estado?.ultimoSucesso ?? null,
+      agora: new Date().toISOString(),
+      horasIntervalo: env.VARREDURA_INTERVALO_HORAS,
+    })
+  ) {
+    // debug, não info: esta verificação roda de hora em hora e na maioria das
+    // vezes não faz nada — em info, afogaria o log do worker.
+    log.debug(
+      `[scheduler] Varredura profunda ainda no prazo (último sucesso: ` +
+        `${estado?.ultimoSucesso ?? 'nunca'}); pulando.`,
+    );
+    return;
+  }
+
   varrendo = true;
   try {
     const resultado = await varreduraProfundaOnce();
@@ -154,10 +206,10 @@ export function start(): void {
   );
 
   // --- Varredura profunda (independente das outras duas) ---
-  const cronVarredura = env.VARREDURA_CRON;
+  const cronVarredura = env.VARREDURA_CHECK_CRON;
   if (!cron.validate(cronVarredura)) {
     log.error(
-      `[scheduler] VARREDURA_CRON inválido ("${cronVarredura}"); varredura ` +
+      `[scheduler] VARREDURA_CHECK_CRON inválido ("${cronVarredura}"); varredura ` +
         'profunda NÃO iniciada. Pedido antigo que entrar no gatilho não aparecerá no quadro.',
     );
     return;
@@ -168,7 +220,8 @@ export function start(): void {
   });
 
   log.info(
-    `[scheduler] Varredura profunda ativa (cron="${cronVarredura}").`,
+    `[scheduler] Varredura profunda ativa (verifica com cron="${cronVarredura}", ` +
+      `roda a cada ${env.VARREDURA_INTERVALO_HORAS}h).`,
   );
 }
 

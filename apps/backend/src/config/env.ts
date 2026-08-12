@@ -32,8 +32,16 @@ const envSchema = z.object({
   // Varredura profunda: um ano de pedidos nos status de gatilho, para pegar o
   // pedido ANTIGO que só agora entrou no gatilho (o 00027 "Parcial" chega dias
   // ou meses depois da data do pedido, e a API só filtra por data do pedido).
-  // São ~23 chamadas, então roda 1x/dia de madrugada, fora do horário da equipe.
-  VARREDURA_CRON: z.string().min(1).default('20 3 * * *'),
+  //
+  // NÃO é horário de execução, é a frequência da VERIFICAÇÃO: de hora em hora o
+  // worker pergunta "faz mais de VARREDURA_INTERVALO_HORAS que não varro?" e só
+  // então varre. Horário fixo não serve — nem o Órix nem o servidor ficam de pé
+  // de madrugada, e um cron noturno abortaria todo dia sem nunca completar.
+  VARREDURA_CHECK_CRON: z.string().min(1).default('15 * * * *'),
+  // 20 e não 24 de propósito: 24 fixaria a varredura no mesmo horário todo dia.
+  // Com 20 ela anda ~4 h por dia e cedo ou tarde cai na janela em que o Órix
+  // está no ar, sem ninguém precisar descobrir qual é essa janela.
+  VARREDURA_INTERVALO_HORAS: z.coerce.number().positive().default(20),
   API_PORT: z.coerce.number().int().positive().default(3333),
   // URL do frontend — usada no link de convite (definir senha). NÃO envia
   // e-mail: o link é copiado na tela Usuários e mandado pela logística.
