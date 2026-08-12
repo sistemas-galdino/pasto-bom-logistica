@@ -51,6 +51,7 @@
 import {
   decidirReconciliacao,
   decidirAusencia,
+  type OrixPedidoItem,
   type StatusLogistico,
 } from '@pastobom/shared';
 
@@ -58,7 +59,12 @@ import { OrixClient } from '../orix/client.js';
 import { supabase } from '../db/supabase.js';
 import { env } from '../config/env.js';
 import { log } from '../log.js';
-import { getStatusCancelado, getStatusGatilho } from '../orix/status.js';
+import {
+  getStatusCancelado,
+  getStatusGatilho,
+  getStatusParcial,
+} from '../orix/status.js';
+import { ingest } from './ingest.js';
 import { dividirEmSubJanelas } from './poll.js';
 
 /** Status logísticos considerados "em aberto" (os que a varredura observa). */
@@ -128,6 +134,8 @@ export interface ResultadoReconciliacao {
   marcados: number;
   /** Pedidos descartados por ausência prolongada (faturados no Órix). */
   descartados: number;
+  /** Pedidos parciais cujos itens foram reingeridos (quantidades a faturar). */
+  itensAtualizados: number;
   /** O freio de volume disparou: nenhuma ausência foi processada. */
   ausenciaSuspeita?: boolean;
   motivoAbort?: string;
@@ -229,6 +237,7 @@ export async function reconciliarOnce(
     atualizados: 0,
     marcados: 0,
     descartados: 0,
+    itensAtualizados: 0,
   };
 
   const [abertos, comEntregaAtiva] = await Promise.all([
@@ -251,9 +260,10 @@ export async function reconciliarOnce(
   const dataInicial = maisAntiga < limite ? limite : maisAntiga;
   const dataFinal = formatarISO(hoje);
 
-  const [gatilho, cancelado] = await Promise.all([
+  const [gatilho, cancelado, parcial] = await Promise.all([
     getStatusGatilho(),
     getStatusCancelado(),
+    getStatusParcial(),
   ]);
   // Gatilho + cancelado, e SÓ isso.
   //
@@ -284,6 +294,20 @@ export async function reconciliarOnce(
   // orix_id_pedido -> status atual no Órix.
   const doOrix = new Map<string, { status: string; nome: string }>();
 
+  // Linhas cruas dos pedidos PARCIAIS que já temos no banco.
+  //
+  // Estas linhas já foram baixadas para descobrir o status — reaproveitá-las
+  // para refrescar as quantidades não custa nenhuma chamada nova ao Órix. E é o
+  // que a Natália pediu (áudio de 12/08/2026): num pedido parcial, mostrar só o
+  // que ainda falta faturar. A API já devolve exatamente isso; o que faltava era
+  // reingerir, porque a reconciliação atualizava o status e descartava os itens.
+  //
+  // Só os parciais e só os que já existem: é neles que a quantidade muda, e
+  // descobrir pedido novo continua sendo da varredura profunda, que enriquece o
+  // cadastro de cliente direito.
+  const idsConhecidos = new Set(abertos.map((p) => p.orix_id_pedido));
+  const linhasParciais: OrixPedidoItem[] = [];
+
   for (const janela of subJanelas) {
     try {
       const itens = await orix.getPedidos({
@@ -297,10 +321,14 @@ export async function reconciliarOnce(
         const id = String(item.id_pedido ?? '');
         if (!id) continue;
         // A API devolve 1 linha por produto; o status é do pedido (repetido).
+        const status = String(item.status ?? '');
         doOrix.set(id, {
-          status: String(item.status ?? ''),
+          status,
           nome: String(item.nome_status ?? ''),
         });
+        if (parcial.includes(status) && idsConhecidos.has(id)) {
+          linhasParciais.push(item);
+        }
       }
     } catch (err) {
       // CIRCUIT-BREAKER: aborta o ciclo. Como a reconciliação não tem cursor,
@@ -483,13 +511,36 @@ export async function reconciliarOnce(
     }
   }
 
+  // Refresca as quantidades dos parciais com as linhas que já vieram acima.
+  // Sem enriquecer cliente: seriam centenas de chamadas extras ao Órix a cada
+  // ciclo, e estes pedidos já têm cadastro (só entram aqui se já existem).
+  if (linhasParciais.length > 0 && !dryRun) {
+    try {
+      const r = await ingest(linhasParciais, orix, {
+        enriquecerClientes: false,
+      });
+      resultado.itensAtualizados = r.atualizados;
+      log.info(
+        `[reconciliar] Quantidades reconferidas em ${r.atualizados} pedido(s) ` +
+          `parcial(is) (${r.itensGravados} item(ns)), sem chamada nova ao Órix.`,
+      );
+    } catch (err) {
+      // Não derruba o ciclo: o status já foi reconciliado, que é o principal.
+      log.warn(
+        '[reconciliar] Falha ao reconferir quantidades dos parciais:',
+        err,
+      );
+    }
+  }
+
   log.info(
     `[reconciliar] Ciclo concluído em ${Date.now() - inicio}ms${dryRun ? ' [DRY]' : ''}: ` +
       `${resultado.examinados} em aberto, ${resultado.encontrados} encontrado(s) ` +
       `no Órix, ${resultado.cancelados} cancelado(s), ` +
       `${resultado.atualizados} atualizado(s), ` +
       `${resultado.marcados} marcado(s) ausente(s), ` +
-      `${resultado.descartados} descartado(s) por ausência.`,
+      `${resultado.descartados} descartado(s) por ausência, ` +
+      `${resultado.itensAtualizados} parcial(is) com quantidade reconferida.`,
   );
 
   return resultado;

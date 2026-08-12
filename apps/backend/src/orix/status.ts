@@ -16,6 +16,19 @@ export interface StatusConfig {
   cancelado: string[];
   concluido: string[];
   /**
+   * Status em que a OV está PARCIALMENTE faturada — subconjunto do gatilho.
+   *
+   * Estes são os únicos pedidos cuja QUANTIDADE muda com o tempo: a API devolve
+   * o que ainda falta faturar, então a linha diminui a cada faturamento e
+   * desaparece quando acaba. Medido em 12/08/2026 no pedido 0000068706: nosso
+   * banco tinha 9 produtos (14061 com 12, 14272 com 100) e a API já devolvia 8
+   * (14061 com 7, o 14272 sumido).
+   *
+   * Pedido fora do parcial não precisa disso: o não faturado tem a quantidade
+   * cheia, e o totalmente faturado sai do gatilho.
+   */
+  parcial: string[];
+  /**
    * Naturezas de OPERAÇÃO que viram entrega. Filtro ortogonal ao status: diz o
    * QUE é a operação (venda, remessa, faturamento, locação), enquanto o status
    * diz em que ETAPA ela está.
@@ -56,6 +69,7 @@ const PADRAO: StatusConfig = {
   gatilho: ['00041', '00045', '00027'],
   cancelado: ['00031'],
   concluido: ['00030'],
+  parcial: ['00027'],
   naturezaPermitida: ['00001', '00012'],
   produtosServico: ['11930', '11931'],
 };
@@ -99,13 +113,15 @@ export async function carregarStatusConfig(
     return cache;
   }
 
-  const [gatilho, cancelado, concluido, natureza, servico] = await Promise.all([
-    lerSyncState<unknown>('status_gatilho'),
-    lerSyncState<unknown>('status_cancelado'),
-    lerSyncState<unknown>('status_concluido'),
-    lerSyncState<unknown>('natureza_permitida'),
-    lerSyncState<unknown>('produtos_servico'),
-  ]);
+  const [gatilho, cancelado, concluido, natureza, servico, parcial] =
+    await Promise.all([
+      lerSyncState<unknown>('status_gatilho'),
+      lerSyncState<unknown>('status_cancelado'),
+      lerSyncState<unknown>('status_concluido'),
+      lerSyncState<unknown>('natureza_permitida'),
+      lerSyncState<unknown>('produtos_servico'),
+      lerSyncState<unknown>('status_parcial'),
+    ]);
 
   cache = {
     gatilho: normalizarLista(gatilho, PADRAO.gatilho),
@@ -113,6 +129,7 @@ export async function carregarStatusConfig(
     concluido: normalizarLista(concluido, PADRAO.concluido),
     naturezaPermitida: normalizarLista(natureza, PADRAO.naturezaPermitida),
     produtosServico: normalizarLista(servico, PADRAO.produtosServico),
+    parcial: normalizarLista(parcial, PADRAO.parcial),
   };
   cacheEmMs = Date.now();
   return cache;
@@ -126,6 +143,11 @@ export async function getStatusGatilho(): Promise<string[]> {
 /** Lê apenas a lista de status de cancelamento de sync_state. */
 export async function getStatusCancelado(): Promise<string[]> {
   return (await carregarStatusConfig()).cancelado;
+}
+
+/** Lê apenas a lista de status de faturamento PARCIAL de sync_state. */
+export async function getStatusParcial(): Promise<string[]> {
+  return (await carregarStatusConfig()).parcial;
 }
 
 /** Lê apenas a lista de status de conclusão de sync_state. */

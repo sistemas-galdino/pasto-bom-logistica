@@ -56,11 +56,19 @@ export function PedidoCard({
 
   const statusOrixNome = pedido.statusOrixNome?.trim() ?? '';
   const statusOrixRotulo = rotuloStatusOrix(pedido.statusOrix, statusOrixNome);
+  // Parcial no Órix: parte da OV já foi faturada. As quantidades abaixo são o
+  // que AINDA FALTA faturar — a API do Órix já devolve só o restante. Dizer
+  // isso na etiqueta é o que faz a equipe confiar no número quando ele mudar.
+  const parcialNoOrix = pedido.statusOrix === '00027';
 
   const comSaldo = (saldo ?? []).filter((s) => s.qtdSaldo > 0);
-  // "Parcial" quando alguma coisa já foi para uma viagem: é o aviso de que este
-  // cartão é o RESTO de um pedido, não o pedido inteiro.
-  const parcial = (saldo ?? []).some((s) => s.qtdComprometida > 0);
+  // "Em viagem" quando alguma coisa já foi para um caminhão: é o aviso de que
+  // este cartão é o RESTO de um pedido, não o pedido inteiro.
+  //
+  // NÃO confundir com o "Parcial" ao lado, que é o status do Órix: aquele diz
+  // que o ERP já faturou parte da OV. São coisas diferentes, e as duas
+  // etiquetas apareciam escritas igual.
+  const emViagem = (saldo ?? []).some((s) => s.qtdComprometida > 0);
   const descartado = pedido.statusLogistico === 'cancelada';
 
   return (
@@ -90,18 +98,22 @@ export function PedidoCard({
         )}
         {statusOrixRotulo !== '' && (
           <span
-            title={`Status no Órix: ${statusOrixNome || statusOrixRotulo}`}
+            title={
+              parcialNoOrix
+                ? 'O Órix já faturou parte desta OV. As quantidades abaixo são o que ainda falta faturar.'
+                : `Status no Órix: ${statusOrixNome || statusOrixRotulo}`
+            }
             className="max-w-full truncate rounded-md bg-creme-100 px-1.5 py-0.5 font-semibold text-tinta-suave"
           >
             {statusOrixRotulo}
           </span>
         )}
-        {parcial && (
+        {emViagem && (
           <span
             title="Parte deste pedido já está em uma entrega."
             className="rounded-md bg-trigo-claro px-1.5 py-0.5 font-semibold text-trigo-escuro"
           >
-            Parcial
+            Em viagem
           </span>
         )}
       </div>

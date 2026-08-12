@@ -137,15 +137,34 @@ async function decidirReadmissaoDoPedido(
   );
 }
 
+export interface OpcoesIngestao {
+  /**
+   * Buscar cliente e propriedades na Órix (default true).
+   *
+   * Desligar quando o objetivo é só REFRESCAR pedidos que já existem — caso da
+   * reconciliação, que reingere os parciais a cada 30 min. `enriquecerCliente`
+   * faz getCliente + getPropriedades por cliente distinto do lote, o que num
+   * lote grande viraria centenas de chamadas extras contra um servidor que já
+   * cai sozinho. Com o flag desligado o refresh é só banco.
+   *
+   * O cadastro de cliente não fica para trás: quem enriquece é o tick rápido
+   * (pedido novo) e a varredura profunda.
+   */
+  enriquecerClientes?: boolean;
+}
+
 /**
  * Ingestão idempotente de um lote de itens da Órix.
- * @param itens  linhas cruas da Órix (1 por produto)
- * @param orix   cliente Órix (para enriquecer cliente/propriedades)
+ * @param itens    linhas cruas da Órix (1 por produto)
+ * @param orix     cliente Órix (para enriquecer cliente/propriedades)
+ * @param opcoes   ver OpcoesIngestao
  */
 export async function ingest(
   itens: OrixPedidoItem[],
   orix: OrixClient,
+  opcoes: OpcoesIngestao = {},
 ): Promise<ResultadoIngestao> {
+  const enriquecerClientes = opcoes.enriquecerClientes ?? true;
   const resultado: ResultadoIngestao = {
     pedidosProcessados: 0,
     inseridos: 0,
@@ -239,6 +258,7 @@ export async function ingest(
         propriedadesEnriquecidas,
         produtosDoLote,
         resultado,
+        enriquecerClientes,
       );
     } catch (err) {
       resultado.erros += 1;
@@ -272,6 +292,7 @@ async function processarGrupo(
   propriedadesEnriquecidas: Set<string>,
   produtosDoLote: Map<string, string>,
   resultado: ResultadoIngestao,
+  enriquecerClientes: boolean,
 ): Promise<void> {
   // Cabeçalho do pedido vem da primeira linha (campos repetidos entre itens).
   const cab = linhas[0];
@@ -279,7 +300,7 @@ async function processarGrupo(
   const clienteCodigo = texto(cab.cliente);
 
   // 2) Enriquecer cliente + propriedades ANTES do upsert do pedido.
-  if (clienteCodigo) {
+  if (clienteCodigo && enriquecerClientes) {
     await enriquecerCliente(
       orix,
       clienteCodigo,
