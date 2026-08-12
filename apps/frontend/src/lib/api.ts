@@ -138,6 +138,12 @@ export interface CriarEntregaBody {
   propriedadeCodigo?: string;
   /** produto_codigo -> quantidade desta viagem. */
   quantidades: Record<string, number>;
+  /**
+   * produto_codigo -> peso unitário (kg) digitado no modal. Só vem quando
+   * faltava peso ou quando a equipe alterou um peso informado antes. O backend
+   * congela esse peso NA VIAGEM e guarda o valor como sugestão do produto.
+   */
+  pesos?: Record<string, number>;
 }
 
 /** Filtros server-side da lista de PEDIDOS (todos opcionais). */

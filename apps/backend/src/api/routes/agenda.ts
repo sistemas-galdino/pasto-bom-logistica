@@ -83,7 +83,12 @@ interface EntregaAgendaRow {
   status: StatusEntrega;
   pedido_id: string;
   entrega_itens?:
-    | { produto_codigo: string | null; qtd: number | string | null }[]
+    | {
+        produto_codigo: string | null;
+        qtd: number | string | null;
+        /** Peso congelado no agendamento (0019); null nas viagens antigas. */
+        peso_unit_kg?: number | string | null;
+      }[]
     | null;
   /** O pedido vem embutido: a agenda mostra cliente, não viagem anônima. */
   pedidos?: {
@@ -104,7 +109,7 @@ interface CaminhaoRow {
 
 const SELECT_AGENDA =
   'id, pedido_id, data_agendada, periodo, motorista_id, caminhao_id, status, ' +
-  'entrega_itens(produto_codigo, qtd), ' +
+  'entrega_itens(produto_codigo, qtd, peso_unit_kg), ' +
   'pedidos(orix_numero, cliente_codigo, cliente_nome, cidade_cliente)';
 
 /** Peso da viagem: total agregado (desconhecido = 0) e o exibível (null se faltar peso). */
@@ -298,7 +303,13 @@ function pesoDaLinha(
   let completo = true;
 
   for (const item of linha.entrega_itens ?? []) {
-    const unit = pesos.get(item.produto_codigo ?? '');
+    // O peso CONGELADO na viagem manda (0019); o cadastro só responde pelas
+    // viagens agendadas antes da migração. Sem isso, a agenda mostraria um peso
+    // e o cartão da entrega outro assim que alguém corrigisse um produto.
+    const congelado = Number(item.peso_unit_kg);
+    const unit = Number.isFinite(congelado)
+      ? congelado
+      : pesos.get(item.produto_codigo ?? '');
     const qtd = Number(item.qtd) || 0;
     if (unit === undefined) {
       completo = false;

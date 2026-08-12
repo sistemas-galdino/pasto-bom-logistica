@@ -66,6 +66,12 @@ const criarSchema = z.object({
   propriedadeCodigo: z.string().optional(),
   /** produto_codigo -> quantidade desta viagem. */
   quantidades: z.record(z.string(), z.number().finite().nonnegative()),
+  /**
+   * produto_codigo -> peso unitário em kg, digitado na tela. Opcional: só vem
+   * quando falta peso ou quando a equipe alterou um peso que ela mesma informou
+   * antes (o caso da soja, que muda a cada compra).
+   */
+  pesos: z.record(z.string(), z.number().finite().positive()).optional(),
 });
 
 const transicaoSchema = z.object({

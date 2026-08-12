@@ -8,6 +8,7 @@ export * from './state-machine.js';
 export * from './phone.js';
 export * from './clima.js';
 export * from './peso.js';
+export * from './peso-agendamento.js';
 export * from './separacao.js';
 export * from './reconciliacao.js';
 export * from './janela-poll.js';

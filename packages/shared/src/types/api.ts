@@ -41,10 +41,32 @@ export interface AtualizarCaminhaoRequest {
 
 /**
  * Peso digitado pela equipe para um produto sem peso conhecido.
- * Fica salvo NO PRODUTO e vale para todos os pedidos seguintes.
+ * Fica salvo NO PRODUTO e passa a ser o valor sugerido nos pedidos seguintes.
  */
 export interface DefinirPesoProdutoRequest {
   pesoKg: number;
+}
+
+/**
+ * Agendamento de uma viagem.
+ *
+ * `pesos` é o que a logística digitou na tela: produto sem peso, ou peso manual
+ * que ela decidiu alterar (a soja muda a cada compra). Vai junto com o
+ * agendamento de propósito — peso e viagem gravam na mesma decisão, ou nenhum
+ * dos dois grava. Salvar o peso e recusar o agendamento deixaria o cadastro
+ * mexido por uma viagem que não existe.
+ */
+export interface AgendarEntregaRequest {
+  pedidoId: string;
+  dataAgendada: string;
+  periodo: 'manha' | 'tarde';
+  motoristaId: string;
+  caminhaoId: string;
+  propriedadeCodigo?: string;
+  /** produto_codigo -> quantidade desta viagem. */
+  quantidades: Record<string, number>;
+  /** produto_codigo -> peso unitário em kg. */
+  pesos?: Record<string, number>;
 }
 
 export interface ConfigResponse {

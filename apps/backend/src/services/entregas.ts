@@ -16,6 +16,7 @@
 //  - Falha de envio não invalida a transição já persistida.
 
 import {
+  avaliarPesoAgendamento,
   calcularSaldo,
   pesoDaCarga,
   podeReverterEntrega,
@@ -35,6 +36,8 @@ import { log } from '../log.js';
 import { TransicaoError } from './erros.js';
 import {
   carregarCaminhao,
+  gravarPesosManuais,
+  lerPesosDetalhados,
   lerPesosProdutos,
   validarCargaDoAgendamento,
 } from './carga.js';
@@ -68,6 +71,8 @@ interface EntregaItemRow {
   qtd: number | string | null;
   separado: boolean | null;
   separado_em: string | null;
+  /** Peso unitário congelado no agendamento (0019). Null nas viagens antigas. */
+  peso_unit_kg: number | string | null;
 }
 
 /** Campos do pedido que o cartão da entrega precisa mostrar. */
@@ -86,12 +91,19 @@ const COLUNAS_ENTREGA =
   'criado_em, atualizado_em';
 
 const COLUNAS_ENTREGA_ITEM =
-  'id, entrega_id, produto_codigo, nome_produto, qtd, separado, separado_em';
+  'id, entrega_id, produto_codigo, nome_produto, qtd, separado, separado_em, peso_unit_kg';
 
 function num(v: number | string | null | undefined): number {
   if (v === null || v === undefined) return 0;
   const n = typeof v === 'number' ? v : Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+/** Peso congelado do item da viagem, ou null se a viagem é anterior à 0019. */
+function pesoCongelado(item: { peso_unit_kg: number | string | null }): number | null {
+  if (item.peso_unit_kg === null || item.peso_unit_kg === undefined) return null;
+  const n = Number(item.peso_unit_kg);
+  return Number.isFinite(n) ? n : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -158,12 +170,18 @@ export async function saldoDoPedido(pedidoId: string): Promise<SaldoItem[]> {
 
   const saldo = calcularSaldo(linhasPedido, linhasEntrega);
 
-  // Peso unitário resolvido em lote (produtos_peso), como no ItemPedido.
-  const pesos = await lerPesosProdutos(saldo.map((s) => s.produtoCodigo));
-  return saldo.map((s) => ({
-    ...s,
-    pesoUnitKg: pesos.get(s.produtoCodigo) ?? null,
-  }));
+  // Peso resolvido em lote (produtos_peso), com a procedência: a tela de
+  // agendamento pede conferência do peso 'manual' e ignora o 'auto'.
+  const pesos = await lerPesosDetalhados(saldo.map((s) => s.produtoCodigo));
+  return saldo.map((s) => {
+    const p = pesos.get(s.produtoCodigo);
+    return {
+      ...s,
+      pesoUnitKg: p?.kg ?? null,
+      pesoOrigem: p?.origem ?? null,
+      pesoAtualizadoEm: p?.atualizadoEm ?? null,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -347,7 +365,10 @@ async function montarEntregas(
       qtd: num(i.qtd),
       separado: i.separado === true,
       separadoEm: i.separado_em,
-      pesoUnitKg: pesos.get(i.produto_codigo) ?? null,
+      // O peso CONGELADO no agendamento manda (0019): é o que de fato saiu no
+      // caminhão naquele dia. O cadastro só responde pelas viagens anteriores à
+      // migração — sem isso, corrigir o peso da soja reescreveria o histórico.
+      pesoUnitKg: pesoCongelado(i) ?? pesos.get(i.produto_codigo) ?? null,
     });
     itensPorEntrega.set(i.entrega_id, lista);
   }
@@ -485,6 +506,12 @@ export interface CriarEntregaArgs {
   propriedadeCodigo?: string;
   /** produto_codigo -> quantidade desta viagem. */
   quantidades: Record<string, number>;
+  /**
+   * produto_codigo -> peso unitário (kg) digitado na tela de agendamento.
+   * Vale mais que o cadastro: é a informação mais recente que existe sobre
+   * aquele lote.
+   */
+  pesos?: Record<string, number>;
   atorUserId?: string;
 }
 
@@ -494,6 +521,11 @@ export interface CriarEntregaArgs {
  * Valida, nesta ordem: quantidades contra o saldo, peso conhecido de tudo que
  * vai, e as travas de carga do slot (capacidade, caminhão com dois motoristas,
  * motorista em dois caminhões).
+ *
+ * O peso de cada produto fica CONGELADO na viagem (`entrega_itens.peso_unit_kg`,
+ * migração 0019). O cadastro `produtos_peso` guarda o último valor informado só
+ * para sugerir no próximo pedido — assim, corrigir o peso da soja não reescreve
+ * o peso das viagens que já saíram.
  */
 export async function criarEntrega(args: CriarEntregaArgs): Promise<Entrega> {
   const {
@@ -504,6 +536,7 @@ export async function criarEntrega(args: CriarEntregaArgs): Promise<Entrega> {
     caminhaoId,
     propriedadeCodigo,
     quantidades,
+    pesos: pesosInformados,
     atorUserId,
   } = args;
 
@@ -546,6 +579,38 @@ export async function criarEntrega(args: CriarEntregaArgs): Promise<Entrega> {
     throw new TransicaoError(422, 'quantidade_invalida', erros.join(' '));
   }
 
+  // 2) Peso: sem o peso de TUDO que vai, não dá para saber se cabe. A regra é a
+  // MESMA que a tela usa (@pastobom/shared) — foi um `if` duplicado entre os
+  // dois lados que sumiu numa refatoração e deixou o botão habilitado com o
+  // servidor recusando.
+  const mapaPesos = new Map<string, number>(
+    Object.entries(pesosInformados ?? {}).map(([k, v]) => [k, Number(v)]),
+  );
+  const avaliacao = avaliarPesoAgendamento({
+    linhas: saldo.map((s) => ({
+      produtoCodigo: s.produtoCodigo,
+      nomeProduto: s.nomeProduto,
+      pesoUnitKg: s.pesoUnitKg,
+      pesoOrigem: s.pesoOrigem ?? null,
+    })),
+    quantidades: mapa,
+    pesosInformados: mapaPesos,
+    // A confirmação é um ato humano na tela; o servidor não tem como verificá-la
+    // e não é dele essa guarda. Aqui o que se exige é o peso EXISTIR.
+    confirmados: new Set(saldo.map((s) => s.produtoCodigo)),
+  });
+
+  if (avaliacao.faltando.length > 0) {
+    const faltando = avaliacao.faltando
+      .map((f) => f.nomeProduto || f.produtoCodigo)
+      .join(', ');
+    throw new TransicaoError(
+      422,
+      'peso_pendente',
+      `Falta o peso de: ${faltando}. Informe o peso desses produtos para agendar.`,
+    );
+  }
+
   // Só o que tem quantidade positiva vira linha da entrega.
   const linhas = [...mapa]
     .filter(([, qtd]) => qtd > 0)
@@ -555,23 +620,21 @@ export async function criarEntrega(args: CriarEntregaArgs): Promise<Entrega> {
         produto_codigo: codigo,
         nome_produto: item.nomeProduto,
         qtd,
-        pesoUnitKg: item.pesoUnitKg,
+        // O peso que valeu na decisão — é ele que vai congelado na viagem.
+        pesoUnitKg: avaliacao.pesosFinais.get(codigo) ?? null,
       };
     });
 
-  // 2) Peso: sem o peso de TUDO que vai, não dá para saber se cabe.
+  // Depois da checagem acima toda linha tem peso; o null aqui seria um furo na
+  // regra, não um caso de operação — por isso a mensagem é genérica.
   const peso = pesoDaCarga(
     linhas.map((l) => ({ qtd: l.qtd, pesoUnitKg: l.pesoUnitKg })),
   );
   if (peso === null) {
-    const faltando = linhas
-      .filter((l) => l.pesoUnitKg === null)
-      .map((l) => l.nome_produto || l.produto_codigo)
-      .join(', ');
     throw new TransicaoError(
       422,
       'peso_pendente',
-      `Falta o peso de: ${faltando}. Cadastre o peso desses produtos para agendar.`,
+      'Falta o peso de algum produto desta viagem.',
     );
   }
 
@@ -605,7 +668,21 @@ export async function criarEntrega(args: CriarEntregaArgs): Promise<Entrega> {
     pesoDaCargaKg: peso,
   });
 
-  // 5) Grava a entrega e seus itens.
+  // 5) Guarda o peso digitado NO CADASTRO, para sugerir no próximo pedido.
+  // Depois de todas as validações: se a viagem vai ser recusada, o cadastro não
+  // se mexe. Se der erro aqui, o agendamento não acontece — o peso é parte da
+  // mesma decisão, não um efeito colateral dela.
+  const novosPesos = [...mapaPesos]
+    .filter(([codigo, kg]) => Number.isFinite(kg) && kg > 0 && (mapa.get(codigo) ?? 0) > 0)
+    .map(([codigo, kg]) => ({
+      produtoCodigo: codigo,
+      nomeProduto:
+        saldo.find((s) => s.produtoCodigo === codigo)?.nomeProduto ?? null,
+      pesoKg: kg,
+    }));
+  await gravarPesosManuais(novosPesos, atorUserId ?? null);
+
+  // 6) Grava a entrega e seus itens.
   const { data: criada, error: errIns } = await supabase
     .from('entregas')
     .insert({
@@ -634,6 +711,8 @@ export async function criarEntrega(args: CriarEntregaArgs): Promise<Entrega> {
       produto_codigo: l.produto_codigo,
       nome_produto: l.nome_produto,
       qtd: l.qtd,
+      // O congelamento (0019): esta viagem carrega o peso do dia dela.
+      peso_unit_kg: l.pesoUnitKg,
     })),
   );
 
@@ -647,7 +726,7 @@ export async function criarEntrega(args: CriarEntregaArgs): Promise<Entrega> {
     );
   }
 
-  // 6) Auditoria + WhatsApp de agendamento.
+  // 7) Auditoria + WhatsApp de agendamento.
   await registrarEvento({
     pedidoId,
     entregaId: criada.id,

@@ -1,0 +1,25 @@
+-- 0019_peso_na_viagem_rollback.sql
+-- Desfaz a 0019_peso_na_viagem.sql.
+--
+-- O QUE SE PERDE: o peso que cada viagem congelou. O sistema volta a calcular o
+-- peso de TODA entrega pelo cadastro atual do produto (`produtos_peso`) — ou
+-- seja, volta o comportamento em que corrigir o peso de um produto reescreve o
+-- peso das viagens já entregues. Para as viagens em que o peso congelado era
+-- diferente do cadastro (o caso da soja), o número exibido MUDA.
+--
+-- O QUE NÃO SE PERDE: nenhuma entrega, item, quantidade ou conferência de
+-- separação. Só o carimbo de peso da viagem.
+--
+-- Exporte antes, se quiser poder reconstruir:
+--   select ei.entrega_id, ei.produto_codigo, ei.nome_produto,
+--          ei.qtd, ei.peso_unit_kg, e.data_agendada
+--     from entrega_itens ei
+--     join entregas e on e.id = ei.entrega_id
+--    where ei.peso_unit_kg is not null
+--    order by e.data_agendada;
+--
+-- ATENÇÃO: a versão atual do sistema grava e lê esta coluna. Só rode este
+-- rollback junto com o deploy de uma versão anterior, senão o agendamento passa
+-- a falhar ao inserir os itens da viagem.
+
+alter table entrega_itens drop column if exists peso_unit_kg;

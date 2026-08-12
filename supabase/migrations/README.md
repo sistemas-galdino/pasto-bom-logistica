@@ -28,7 +28,12 @@ Conferido contra o banco em 12/08/2026.
 
 | Migração | Aplicada em produção? |
 |---|---|
-| 0001 – 0018 | sim |
+| 0001 – 0019 | sim |
+
+A 0019 rodou em 12/08/2026, com autorização do David. Só ACRESCENTA uma coluna
+nulável (`peso_unit_kg`) em `entrega_itens` — o peso congelado da viagem. Nada
+destrutivo, sem backfill, e o código anterior não se importa com ela. Pode ser
+reaplicada à vontade: é `if not exists`.
 
 A 0018 rodou em 12/08/2026, com autorização do David. Ela só ACRESCENTA três
 colunas nuláveis em `profiles` (o link curto de acesso) — nada destrutivo, e o

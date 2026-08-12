@@ -572,9 +572,18 @@ function CartaoSeparacao({
           <Truck className="h-3.5 w-3.5 shrink-0 text-pedra" aria-hidden="true" />
           <span className="truncate">{pedido.caminhaoNome || '—'}</span>
         </span>
-        {pedido.pesoTotalKg !== null && (
+        {pedido.pesoTotalKg !== null ? (
           <span className="font-semibold text-mata-escuro">
             {formatarPeso(pedido.pesoTotalKg)}
+          </span>
+        ) : (
+          // Peso desconhecido sumia da tela sem dizer nada. Agora aparece, como
+          // já aparece na Agenda — quem separa a carga é quem percebe primeiro.
+          <span
+            className="font-semibold text-trigo-escuro"
+            title="Algum item desta viagem está sem peso cadastrado."
+          >
+            peso pendente
           </span>
         )}
       </div>

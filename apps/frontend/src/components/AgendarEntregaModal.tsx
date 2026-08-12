@@ -11,6 +11,19 @@
 //
 // RF-1.8 continua valendo: cliente com mais de uma propriedade exige escolher
 // para qual delas a carga vai.
+//
+// O PESO (áudios da Natália, 12/08/2026)
+// ---------------------------------------------------------------------------
+// Produto sem peso ganha campo AQUI. Antes da Onda 2 isso existia no
+// TransicaoModal e se perdeu quando ele foi substituído — e ficou só a trava do
+// servidor: o botão habilitado, a pessoa clicava, e o erro "falta o peso" não
+// tinha onde ser resolvido.
+//
+// Peso 'manual' (digitado pela equipe) pede conferência a cada agendamento, que
+// é o pedido do terceiro áudio: a soja "sempre vem com peso diferente", então o
+// valor guardado é sugestão, não verdade. Peso 'auto' (extraído do nome do
+// produto) passa direto — pedir confirmação de "CALCARIO ... 50T" todo dia
+// ensinaria a equipe a clicar sem ler.
 
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -22,7 +35,11 @@ import type {
   Propriedade,
   SaldoItem,
 } from '@pastobom/shared';
-import { pesoDaCarga, validarQuantidades } from '@pastobom/shared';
+import {
+  avaliarPesoAgendamento,
+  pesoDaCarga,
+  validarQuantidades,
+} from '@pastobom/shared';
 import { api } from '../lib/api';
 
 interface Props {
@@ -38,6 +55,7 @@ interface Props {
     caminhaoId: string;
     propriedadeCodigo?: string;
     quantidades: Record<string, number>;
+    pesos?: Record<string, number>;
   }) => void;
 }
 
@@ -57,6 +75,25 @@ function formatarT(kg: number): string {
     minimumFractionDigits: 1,
     maximumFractionDigits: 2,
   })} t`;
+}
+
+function formatarKg(kg: number): string {
+  return `${kg.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} kg`;
+}
+
+/** '2026-08-05T…' -> '05/08'. Só a data, que é o que importa na conferência. */
+function dataCurta(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${String(d.getDate()).padStart(2, '0')}/${String(
+    d.getMonth() + 1,
+  ).padStart(2, '0')}`;
+}
+
+/** Aceita vírgula decimal — a equipe digita 1,5 e não 1.5. */
+function paraNumero(valor: string): number {
+  return Number(valor.replace(',', '.'));
 }
 
 export function AgendarEntregaModal({
@@ -84,6 +121,12 @@ export function AgendarEntregaModal({
     Object.fromEntries(comSaldo.map((s) => [s.produtoCodigo, s.qtdSaldo])),
   );
 
+  // Peso digitado agora, como TEXTO: guardar número atrapalharia quem está no
+  // meio de digitar "1," ou apagou o campo para redigitar.
+  const [pesos, setPesos] = useState<Record<string, string>>({});
+  /** Produtos cujo peso já foi conferido nesta tela (o checkbox da soja). */
+  const [confirmados, setConfirmados] = useState<Set<string>>(new Set());
+
   const motoristasQuery = useQuery({
     queryKey: ['motoristas'],
     queryFn: ({ signal }) => api.listarMotoristas(signal),
@@ -106,16 +149,46 @@ export function AgendarEntregaModal({
   const propriedades: Propriedade[] = propriedadesQuery.data ?? [];
   const exigePropriedade = propriedades.length > 1;
 
+  /** Pesos digitados, já como números válidos (o que a regra pura consome). */
+  const pesosInformados = useMemo(() => {
+    const mapa = new Map<string, number>();
+    for (const [codigo, texto] of Object.entries(pesos)) {
+      const n = paraNumero(texto);
+      if (texto.trim() !== '' && Number.isFinite(n) && n > 0) mapa.set(codigo, n);
+    }
+    return mapa;
+  }, [pesos]);
+
+  // A MESMA regra que o backend aplica: o que falta de peso e o que pede
+  // conferência. Repetir o `if` nos dois lados foi o que produziu o bug atual.
+  const situacaoPeso = useMemo(
+    () =>
+      avaliarPesoAgendamento({
+        linhas: comSaldo.map((s) => ({
+          produtoCodigo: s.produtoCodigo,
+          nomeProduto: s.nomeProduto,
+          pesoUnitKg: s.pesoUnitKg,
+          pesoOrigem: s.pesoOrigem ?? null,
+        })),
+        quantidades: new Map(Object.entries(quantidades)),
+        pesosInformados,
+        confirmados,
+      }),
+    [comSaldo, quantidades, pesosInformados, confirmados],
+  );
+
   /** Peso do que está digitado agora — é o que a trava do caminhão vai medir. */
   const pesoSelecionado = useMemo(
     () =>
       pesoDaCarga(
         comSaldo.map((s) => ({
           qtd: quantidades[s.produtoCodigo] ?? 0,
-          pesoUnitKg: s.pesoUnitKg,
+          // O peso digitado vale mais que o cadastro: o total tem de reagir na
+          // hora, senão ela digita o peso e continua vendo "peso desconhecido".
+          pesoUnitKg: pesosInformados.get(s.produtoCodigo) ?? s.pesoUnitKg,
         })),
       ),
-    [comSaldo, quantidades],
+    [comSaldo, quantidades, pesosInformados],
   );
 
   const caminhaoEscolhido = caminhoes.find((c) => c.id === caminhaoId);
@@ -137,28 +210,50 @@ export function AgendarEntregaModal({
     caminhaoId === '' ||
     (exigePropriedade && propriedadeCodigo === '');
 
-  const bloqueado = enviando || faltaCampo || errosQtd.length > 0;
+  const bloqueado =
+    enviando || faltaCampo || errosQtd.length > 0 || !situacaoPeso.podeAgendar;
 
   function definirQtd(codigo: string, valor: string): void {
-    const n = Number(valor.replace(',', '.'));
+    const n = paraNumero(valor);
     setQuantidades((atual) => ({
       ...atual,
       [codigo]: Number.isFinite(n) ? n : 0,
     }));
   }
 
+  function definirPeso(codigo: string, valor: string): void {
+    setPesos((atual) => ({ ...atual, [codigo]: valor }));
+  }
+
+  function alternarConfirmacao(codigo: string): void {
+    setConfirmados((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(codigo)) novo.delete(codigo);
+      else novo.add(codigo);
+      return novo;
+    });
+  }
+
   function confirmar(): void {
     if (bloqueado) return;
+    // Só o que tem quantidade positiva vai para a viagem.
+    const quantidadesEnviadas = Object.fromEntries(
+      Object.entries(quantidades).filter(([, q]) => q > 0),
+    );
+    // Só os pesos que ela realmente digitou, e só dos produtos que vão nesta
+    // viagem — mandar o resto mexeria no cadastro sem motivo.
+    const pesosEnviados = Object.fromEntries(
+      [...pesosInformados].filter(([codigo]) => codigo in quantidadesEnviadas),
+    );
+
     onConfirmar({
       dataAgendada: data,
       periodo,
       motoristaId,
       caminhaoId,
       propriedadeCodigo: exigePropriedade ? propriedadeCodigo : undefined,
-      // Só o que tem quantidade positiva vai para a viagem.
-      quantidades: Object.fromEntries(
-        Object.entries(quantidades).filter(([, q]) => q > 0),
-      ),
+      quantidades: quantidadesEnviadas,
+      pesos: Object.keys(pesosEnviados).length > 0 ? pesosEnviados : undefined,
     });
   }
 
@@ -197,55 +292,139 @@ export function AgendarEntregaModal({
 
           <ul className="mt-2 space-y-1.5">
             {comSaldo.map((item) => {
-              const valor = quantidades[item.produtoCodigo] ?? 0;
+              const codigo = item.produtoCodigo;
+              const valor = quantidades[codigo] ?? 0;
               const excede = valor > item.qtdSaldo;
+              const vaiNestaViagem = valor > 0;
+
+              const semPeso = item.pesoUnitKg === null;
+              const pesoManual = item.pesoOrigem === 'manual';
+              // Campo de peso só para quem precisa: falta o peso, ou é peso da
+              // equipe (que pode mudar de lote para lote).
+              const pedePeso = vaiNestaViagem && (semPeso || pesoManual);
+              const digitado = pesos[codigo] ?? '';
+              const pesoValendo = pesosInformados.get(codigo) ?? item.pesoUnitKg;
+              const precisaConfirmar = situacaoPeso.aConfirmar.some(
+                (c) => c.produtoCodigo === codigo,
+              );
+              const falta = situacaoPeso.faltando.some(
+                (f) => f.produtoCodigo === codigo,
+              );
+              const quando = dataCurta(item.pesoAtualizadoEm);
+
               return (
                 <li
-                  key={item.produtoCodigo}
-                  className="flex items-center gap-3 rounded-lg border border-linha bg-creme-50 px-3 py-2"
+                  key={codigo}
+                  className={`rounded-lg border px-3 py-2 ${
+                    falta || precisaConfirmar
+                      ? 'border-trigo/50 bg-trigo-claro/40'
+                      : 'border-linha bg-creme-50'
+                  }`}
                 >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-tinta">
-                      {item.nomeProduto || item.produtoCodigo}
-                    </p>
-                    <p className="text-[11px] text-tinta-suave">
-                      restam {formatarQtd(item.qtdSaldo)}
-                      {item.qtdComprometida > 0 && (
-                        <> · {formatarQtd(item.qtdComprometida)} já em viagem</>
-                      )}
-                      {item.pesoUnitKg === null && (
-                        <span className="text-trigo-escuro"> · sem peso</span>
-                      )}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-tinta">
+                        {item.nomeProduto || codigo}
+                      </p>
+                      <p className="text-[11px] text-tinta-suave">
+                        restam {formatarQtd(item.qtdSaldo)}
+                        {item.qtdComprometida > 0 && (
+                          <>
+                            {' '}
+                            · {formatarQtd(item.qtdComprometida)} já em viagem
+                          </>
+                        )}
+                        {semPeso && (
+                          <span className="text-trigo-escuro"> · sem peso</span>
+                        )}
+                        {!semPeso && pesoManual && (
+                          <span className="text-trigo-escuro">
+                            {' '}
+                            · peso informado pela equipe
+                            {quando ? ` em ${quando}` : ''}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <input
+                      type="number"
+                      min={0}
+                      max={item.qtdSaldo}
+                      step="any"
+                      value={valor}
+                      disabled={enviando}
+                      onChange={(e) => definirQtd(codigo, e.target.value)}
+                      aria-label={`Quantidade de ${item.nomeProduto}`}
+                      className={`w-24 shrink-0 rounded-lg border bg-papel px-2 py-1.5 text-right text-sm outline-none transition ${
+                        excede
+                          ? 'border-brasa text-brasa-escuro'
+                          : 'border-linha text-tinta focus:border-mata/40'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      disabled={enviando}
+                      onClick={() => definirQtd(codigo, String(item.qtdSaldo))}
+                      title="Levar tudo o que resta deste produto"
+                      className="shrink-0 rounded-md border border-linha px-2 py-1 text-[11px] font-semibold text-tinta-suave transition hover:border-mata/30 hover:text-mata"
+                    >
+                      tudo
+                    </button>
                   </div>
-                  <input
-                    type="number"
-                    min={0}
-                    max={item.qtdSaldo}
-                    step="any"
-                    value={valor}
-                    disabled={enviando}
-                    onChange={(e) =>
-                      definirQtd(item.produtoCodigo, e.target.value)
-                    }
-                    aria-label={`Quantidade de ${item.nomeProduto}`}
-                    className={`w-24 shrink-0 rounded-lg border bg-papel px-2 py-1.5 text-right text-sm outline-none transition ${
-                      excede
-                        ? 'border-brasa text-brasa-escuro'
-                        : 'border-linha text-tinta focus:border-mata/40'
-                    }`}
-                  />
-                  <button
-                    type="button"
-                    disabled={enviando}
-                    onClick={() =>
-                      definirQtd(item.produtoCodigo, String(item.qtdSaldo))
-                    }
-                    title="Levar tudo o que resta deste produto"
-                    className="shrink-0 rounded-md border border-linha px-2 py-1 text-[11px] font-semibold text-tinta-suave transition hover:border-mata/30 hover:text-mata"
-                  >
-                    tudo
-                  </button>
+
+                  {pedePeso && (
+                    <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-linha/70 pt-2">
+                      <label className="flex items-center gap-2 text-[11px] text-tinta-suave">
+                        <span>Peso de 1 unidade</span>
+                        <input
+                          type="number"
+                          min={0}
+                          step="any"
+                          inputMode="decimal"
+                          value={digitado}
+                          disabled={enviando}
+                          onChange={(e) => definirPeso(codigo, e.target.value)}
+                          placeholder={
+                            item.pesoUnitKg === null
+                              ? ''
+                              : String(item.pesoUnitKg)
+                          }
+                          aria-label={`Peso unitário de ${item.nomeProduto || codigo} em quilos`}
+                          className={`w-24 rounded-lg border bg-papel px-2 py-1 text-right text-sm outline-none transition ${
+                            falta
+                              ? 'border-trigo text-trigo-escuro'
+                              : 'border-linha text-tinta focus:border-mata/40'
+                          }`}
+                        />
+                        <span>kg</span>
+                      </label>
+
+                      {/* Confirmação: só para peso que a equipe digitou antes.
+                          Some quando ela digita um peso novo — aí a conferência
+                          já aconteceu. NÃO some ao ser marcado: o checkbox que
+                          desaparece no clique deixa a pessoa sem saber se
+                          pegou. */}
+                      {pesoManual && !semPeso && !pesosInformados.has(codigo) && (
+                        <label className="flex items-center gap-1.5 text-[11px] font-semibold text-trigo-escuro">
+                          <input
+                            type="checkbox"
+                            checked={confirmados.has(codigo)}
+                            disabled={enviando}
+                            onChange={() => alternarConfirmacao(codigo)}
+                            className="h-3.5 w-3.5 rounded border-linha text-mata focus:ring-mata/30"
+                          />
+                          confirmo o peso
+                        </label>
+                      )}
+
+                      <span className="ml-auto text-[11px] text-tinta-suave">
+                        {falta
+                          ? 'informe o peso para agendar'
+                          : pesoValendo !== null &&
+                            `${formatarQtd(valor)} × ${formatarKg(pesoValendo)} = ${formatarT(pesoValendo * valor)}`}
+                      </span>
+                    </div>
+                  )}
                 </li>
               );
             })}
@@ -364,6 +543,20 @@ export function AgendarEntregaModal({
               <li key={e}>{e}</li>
             ))}
           </ul>
+        )}
+
+        {/* O motivo da trava, escrito. O bug que estamos consertando era
+            justamente o botão travar (no servidor) sem dizer por quê. */}
+        {errosQtd.length === 0 && !situacaoPeso.podeAgendar && (
+          <p className="mt-4 rounded-lg border border-trigo/40 bg-trigo-claro px-3 py-2 text-sm text-trigo-escuro">
+            {situacaoPeso.faltando.length > 0
+              ? `Falta o peso de: ${situacaoPeso.faltando
+                  .map((f) => f.nomeProduto || f.produtoCodigo)
+                  .join(', ')}. Sem o peso não dá para saber se a carga cabe no caminhão.`
+              : `Confira o peso de: ${situacaoPeso.aConfirmar
+                  .map((c) => c.nomeProduto || c.produtoCodigo)
+                  .join(', ')}. Este peso foi informado pela equipe — confirme ou altere se este lote for diferente.`}
+          </p>
         )}
 
         {estouraCaminhao && errosQtd.length === 0 && (

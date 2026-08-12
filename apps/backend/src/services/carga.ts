@@ -18,6 +18,7 @@
 import {
   pesoDoNomeProduto,
   type ItemPedido,
+  type OrigemPeso,
   type PeriodoEntrega,
 } from '@pastobom/shared';
 
@@ -29,16 +30,29 @@ import { TransicaoError } from './erros.js';
 // Peso
 // ---------------------------------------------------------------------------
 
-/** Peso unitário conhecido de cada produto informado (código -> kg). */
-export async function lerPesosProdutos(
+/** O que se sabe do peso de um produto, além do número. */
+export interface PesoDetalhado {
+  kg: number;
+  origem: OrigemPeso;
+  atualizadoEm: string | null;
+}
+
+/**
+ * Peso de cada produto informado, com a procedência.
+ *
+ * A origem importa na tela de agendamento: peso 'manual' foi a equipe que
+ * digitou, então é uma sugestão a conferir (a soja nunca vem com o mesmo peso);
+ * peso 'auto' saiu do nome do produto e não precisa de aval humano nenhum.
+ */
+export async function lerPesosDetalhados(
   codigos: string[],
-): Promise<Map<string, number>> {
+): Promise<Map<string, PesoDetalhado>> {
   const unicos = [...new Set(codigos.filter((c) => c.length > 0))];
   if (unicos.length === 0) return new Map();
 
   const { data, error } = await supabase
     .from('produtos_peso')
-    .select('produto_codigo, peso_kg')
+    .select('produto_codigo, peso_kg, origem, atualizado_em')
     .in('produto_codigo', unicos);
 
   if (error) {
@@ -46,12 +60,69 @@ export async function lerPesosProdutos(
     return new Map();
   }
 
-  const mapa = new Map<string, number>();
+  const mapa = new Map<string, PesoDetalhado>();
   for (const r of data ?? []) {
     const kg = Number(r.peso_kg);
-    if (Number.isFinite(kg)) mapa.set(r.produto_codigo as string, kg);
+    if (!Number.isFinite(kg)) continue;
+    mapa.set(r.produto_codigo as string, {
+      kg,
+      origem: r.origem === 'manual' ? 'manual' : 'auto',
+      atualizadoEm: (r.atualizado_em as string | null) ?? null,
+    });
   }
   return mapa;
+}
+
+/** Peso unitário conhecido de cada produto informado (código -> kg). */
+export async function lerPesosProdutos(
+  codigos: string[],
+): Promise<Map<string, number>> {
+  const detalhado = await lerPesosDetalhados(codigos);
+  return new Map([...detalhado].map(([codigo, p]) => [codigo, p.kg]));
+}
+
+/**
+ * Grava o peso digitado pela equipe (origem='manual'), sobrescrevendo o que
+ * havia. É a porta do agendamento e da correção avulsa na rota de produtos.
+ *
+ * Sobrescrever é o comportamento certo AGORA que a viagem congela o próprio
+ * peso (migração 0019): o cadastro guarda só o último valor informado, para
+ * sugerir no próximo pedido. Nenhuma entrega já feita se mexe.
+ */
+export async function gravarPesosManuais(
+  pesos: { produtoCodigo: string; nomeProduto?: string | null; pesoKg: number }[],
+  usuarioId: string | null,
+): Promise<void> {
+  const agora = new Date().toISOString();
+  const linhas = pesos
+    .filter((p) => p.produtoCodigo && Number.isFinite(p.pesoKg) && p.pesoKg > 0)
+    .map((p) => {
+      const linha: Record<string, unknown> = {
+        produto_codigo: p.produtoCodigo,
+        peso_kg: p.pesoKg,
+        origem: 'manual',
+        atualizado_em: agora,
+        atualizado_por: usuarioId,
+      };
+      // `nome_produto` só entra quando se sabe: mandar null apagaria um nome já
+      // gravado, e o upsert não tem como distinguir "não sei" de "apague".
+      if (p.nomeProduto) linha.nome_produto = p.nomeProduto;
+      return linha;
+    });
+
+  if (linhas.length === 0) return;
+
+  const { error } = await supabase
+    .from('produtos_peso')
+    .upsert(linhas, { onConflict: 'produto_codigo' });
+
+  if (error) {
+    throw new TransicaoError(
+      500,
+      'erro_banco',
+      `Falha ao gravar o peso do produto: ${error.message}`,
+    );
+  }
 }
 
 /**
@@ -189,7 +260,7 @@ export async function ocupacaoDoSlot(
   const ids = relevantes.map((l) => l.id);
   const { data: itens, error: errItens } = await supabase
     .from('entrega_itens')
-    .select('entrega_id, produto_codigo, qtd')
+    .select('entrega_id, produto_codigo, qtd, peso_unit_kg')
     .in('entrega_id', ids);
 
   if (errItens) {
@@ -207,7 +278,14 @@ export async function ocupacaoDoSlot(
   const pesoPorEntrega = new Map<string, number>();
   for (const item of itens ?? []) {
     const codigo = (item.produto_codigo as string) ?? '';
-    const unit = pesos.get(codigo) ?? 0; // peso desconhecido conta como 0
+    // O peso CONGELADO da viagem manda (migração 0019). O cadastro é o fallback
+    // das viagens agendadas antes dela. Sem nenhum dos dois, conta como 0 — a
+    // trava de capacidade prefere subestimar a recusar uma viagem por um dado
+    // que ninguém tem.
+    const congelado = Number(item.peso_unit_kg);
+    const unit = Number.isFinite(congelado)
+      ? congelado
+      : (pesos.get(codigo) ?? 0);
     const qtd = Number(item.qtd) || 0;
     const entregaId = item.entrega_id as string;
     pesoPorEntrega.set(

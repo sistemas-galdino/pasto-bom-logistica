@@ -179,6 +179,14 @@ export interface SaldoItem {
   /** qtdPedido − qtdComprometida (nunca negativo). */
   qtdSaldo: number;
   pesoUnitKg: number | null;
+  /**
+   * De onde veio o peso: 'auto' (extraído do nome do produto) ou 'manual'
+   * (digitado pela equipe). null quando não há peso. O agendamento pede
+   * conferência do 'manual' — é o peso que muda a cada compra, como a soja.
+   */
+  pesoOrigem?: OrigemPeso | null;
+  /** Quando o peso foi informado (ISO) — a tela mostra a data na conferência. */
+  pesoAtualizadoEm?: string | null;
 }
 
 /** Destino de entrega resolvido (propriedade ou, na falta, cliente). */
@@ -232,13 +240,15 @@ export interface Caminhao {
   ativo: boolean;
 }
 
+/** De onde veio o peso: 'auto' = parser do nome; 'manual' = digitado pela equipe. */
+export type OrigemPeso = 'auto' | 'manual';
+
 /** Peso unitário conhecido de um produto (tabela produtos_peso). */
 export interface PesoProduto {
   produtoCodigo: string;
   nomeProduto: string | null;
   pesoKg: number;
-  /** 'auto' = extraído do nome pelo parser; 'manual' = digitado pela equipe. */
-  origem: 'auto' | 'manual';
+  origem: OrigemPeso;
   atualizadoEm: string;
 }
 
