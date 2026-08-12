@@ -19,12 +19,17 @@
 
 import type { OrixClient } from '../orix/client.js';
 import type { OrixPedidoItem } from '@pastobom/shared';
-import { escolherNumeroWhatsApp, transportarSeparacao } from '@pastobom/shared';
+import {
+  decidirReadmissao,
+  escolherNumeroWhatsApp,
+  transportarSeparacao,
+} from '@pastobom/shared';
 import { supabase } from '../db/supabase.js';
 import { log } from '../log.js';
 import {
   getNaturezaPermitida,
   getProdutosServico,
+  getStatusGatilho,
   normalizarNatureza,
   temProdutoServico,
 } from '../orix/status.js';
@@ -83,6 +88,53 @@ interface ResultadoIngestao {
   descartadosNatureza: number;
   /** Pedidos ignorados por conterem prestação de serviço (oficina). */
   descartadosServico: number;
+  /** Pedidos descartados que voltaram ao gatilho e retornaram ao quadro. */
+  readmitidos: number;
+}
+
+/**
+ * O pedido descartado voltou ao gatilho: decide se ele retorna ao quadro.
+ *
+ * A pergunta que a regra pura não consegue responder sozinha é "quem
+ * descartou?". Ela sai do último evento de entrada em 'cancelada': se foi
+ * 'sistema' (reconciliação por ausência ou script de limpeza), readmitir é
+ * consertar um engano nosso; se foi 'usuario', a equipe decidiu, e o sistema
+ * não desfaz decisão de gente.
+ *
+ * Em caso de erro de leitura, devolve false — o silêncio mantém o pedido como
+ * está, que é o lado seguro.
+ */
+async function decidirReadmissaoDoPedido(
+  pedidoId: string,
+  statusOrixNovo: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('eventos_status')
+    .select('ator')
+    .eq('pedido_id', pedidoId)
+    .eq('para_status', 'cancelada')
+    .order('criado_em', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    log.warn(
+      `[ingest] Falha ao ler histórico do pedido ${pedidoId} para readmissão: ${error.message}`,
+    );
+    return false;
+  }
+
+  const gatilho = await getStatusGatilho();
+  return (
+    decidirReadmissao(
+      {
+        statusLogistico: 'cancelada',
+        statusOrixNovo,
+        descartadoPeloSistema: data?.ator === 'sistema',
+      },
+      gatilho,
+    ) === 'readmitir'
+  );
 }
 
 /**
@@ -102,6 +154,7 @@ export async function ingest(
     erros: 0,
     descartadosNatureza: 0,
     descartadosServico: 0,
+    readmitidos: 0,
   };
 
   if (!itens || itens.length === 0) {
@@ -265,11 +318,23 @@ async function processarGrupo(
   let pedidoId: string;
 
   if (existente) {
+    // Pedido descartado que voltou ao gatilho: decide se readmite. A consulta
+    // ao histórico só acontece para quem está 'cancelada' — é raro, e é o que
+    // separa descarte do sistema de decisão da equipe.
+    const readmitir =
+      existente.status_logistico === 'cancelada' &&
+      (await decidirReadmissaoDoPedido(existente.id, texto(cab.status)));
+
     // ATUALIZAR — preserva status_logistico, data_agendada, data_entregue,
     // propriedade_codigo (campos de estado manual NÃO entram no update).
+    // A ÚNICA exceção é a readmissão acima, que é o Órix desfazendo o motivo
+    // do descarte.
     const { data: atualizado, error: erroUpd } = await supabase
       .from('pedidos')
       .update({
+        ...(readmitir
+          ? { status_logistico: 'pendente' as const, ausente_orix_desde: null }
+          : {}),
         orix_numero: texto(cab.numero_pedido),
         empresa: Number.isFinite(empresa) ? empresa : null,
         cliente_codigo: clienteCodigo || null,
@@ -283,7 +348,7 @@ async function processarGrupo(
         status_orix_nome: texto(cab.nome_status),
         natureza: normalizarNatureza(cab.natureza) || null,
         natureza_nome: texto(cab.nome_natureza) || null,
-        // status_logistico: NÃO incluído de propósito (estado manual).
+        // status_logistico: fora do update, salvo readmissão (estado manual).
         atualizado_em: new Date().toISOString(),
       })
       .eq('id', existente.id)
@@ -295,6 +360,27 @@ async function processarGrupo(
     }
     pedidoId = atualizado.id;
     resultado.atualizados += 1;
+
+    if (readmitir) {
+      resultado.readmitidos += 1;
+      log.info(
+        `[ingest] Pedido ${texto(cab.numero_pedido)} voltou ao gatilho ` +
+          `(${texto(cab.status)}) e foi readmitido no quadro.`,
+      );
+      const { error: errEvento } = await supabase.from('eventos_status').insert({
+        pedido_id: pedidoId,
+        de_status: 'cancelada',
+        para_status: 'pendente',
+        ator: 'sistema',
+        ator_user_id: null,
+      });
+      if (errEvento) {
+        log.warn(
+          `[ingest] Falha ao registrar evento de readmissão do pedido ` +
+            `${pedidoId}: ${errEvento.message}`,
+        );
+      }
+    }
   } else {
     // INSERIR — pedido novo nasce com status_logistico = 'pendente'.
     const { data: inserido, error: erroIns } = await supabase

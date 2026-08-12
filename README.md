@@ -150,7 +150,9 @@ cp .env.example apps/backend/.env
 | `EVOLUTION_URL` | não | URL da Evolution API v2 (ausente ⇒ dry-run) |
 | `EVOLUTION_INSTANCE` | não | Nome da instância Evolution |
 | `EVOLUTION_API_KEY` | não | API key da Evolution |
-| `POLL_CRON` | não (default `*/30 * * * *`) | Frequência do polling |
+| `POLL_CRON` | não (default `*/5 * * * *`) | Frequência do polling (janela curta) |
+| `RECONCILIAR_CRON` | não (default `*/30 * * * *`) | Reconciliação com o Órix |
+| `VARREDURA_CRON` | não (default `20 3 * * *`) | Varredura profunda (1 ano), 1x/dia |
 | `API_PORT` | não (default 3333) | Porta da API |
 | `ALLOW_NO_AUTH` | não (default `true`) | Em dev, libera rotas sem JWT (assume papel `logistica`) |
 

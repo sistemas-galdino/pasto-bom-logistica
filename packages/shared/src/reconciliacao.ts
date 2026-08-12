@@ -85,10 +85,75 @@ export function decidirReconciliacao(
     return 'cancelar';
   }
 
-  // Note que NÃO existe o caminho de volta: se a OV deixar de estar cancelada
-  // no Órix, o pedido não ressuscita sozinho. Restaurar é decisão humana — a
-  // logística tem o "voltar" de cancelada -> pendente no quadro.
+  // Aqui não há caminho de volta: quem decide ressuscitar é `decidirReadmissao`,
+  // chamada na INGESTÃO (é lá que se sabe que a OV voltou ao gatilho).
   return mudouNoOrix ? 'atualizar_orix' : 'nada';
+}
+
+// ---------------------------------------------------------------------------
+// READMISSÃO: o pedido descartado que reaparece no gatilho
+// ---------------------------------------------------------------------------
+//
+// Por que isso existe (investigação de 11/08/2026):
+//   A OV 0000069407 saiu do gatilho em julho (foi para 00028), foi descartada
+//   pelo sistema, e em 10/08 voltou para 00027. O update da ingestão preserva
+//   `status_logistico` de propósito, então ela ficou invisível para sempre.
+//
+// O caso não é raro por acaso: um pedido pode sair do gatilho e voltar (volta
+// de faturamento, faturamento parcial que reabre saldo). Sem readmissão, cada
+// ida e volta come um pedido do quadro em definitivo.
+//
+// A guarda que importa é NÃO desfazer decisão de gente. Se a logística
+// descartou à mão um pedido que segue no gatilho do Órix, readmitir o traria de
+// volta a cada 5 minutos — o sistema brigando com a operação. Por isso a
+// readmissão exige que o descarte tenha sido do SISTEMA (ator='sistema' no
+// evento), e não da equipe.
+
+/** O que fazer com um pedido descartado que voltou a aparecer no gatilho. */
+export type AcaoReadmissao =
+  /** Não mexe. */
+  | 'nada'
+  /** Volta para a coluna Pendente (com evento de auditoria). */
+  | 'readmitir';
+
+export interface EntradaReadmissao {
+  /** Status logístico atual no nosso banco. */
+  statusLogistico: StatusLogistico;
+  /** Código do status do Órix que a API acabou de devolver. */
+  statusOrixNovo: string;
+  /**
+   * O descarte foi do sistema (reconciliação/script), e não da equipe?
+   * Quem chama descobre isso no último evento para 'cancelada'.
+   */
+  descartadoPeloSistema: boolean;
+}
+
+/**
+ * Decide se um pedido descartado deve voltar ao quadro por ter reaparecido em
+ * um status de gatilho no Órix.
+ *
+ * @param entrada        estado do pedido e status que veio do Órix
+ * @param statusGatilho  códigos de gatilho (config: sync_state, ex. ['00041','00045','00027'])
+ */
+export function decidirReadmissao(
+  entrada: EntradaReadmissao,
+  statusGatilho: readonly string[],
+): AcaoReadmissao {
+  const { statusLogistico, statusOrixNovo, descartadoPeloSistema } = entrada;
+
+  // Só se readmite quem está descartado. 'entregue' é desfecho e não se mexe:
+  // a mercadoria já chegou ao cliente, voltar para Pendente mandaria o Johnny
+  // entregar de novo.
+  if (statusLogistico !== 'cancelada') return 'nada';
+
+  // Decisão da equipe não se desfaz sozinha.
+  if (!descartadoPeloSistema) return 'nada';
+
+  // Sem código novo não há o que decidir.
+  if (statusOrixNovo === '') return 'nada';
+
+  // Só volta se o Órix estiver de novo dizendo "esta OV espera entrega".
+  return statusGatilho.includes(statusOrixNovo) ? 'readmitir' : 'nada';
 }
 
 // ---------------------------------------------------------------------------

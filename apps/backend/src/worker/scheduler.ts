@@ -12,13 +12,17 @@
 //    intervalo do cron, o próximo é ignorado até o atual terminar).
 
 import cron from 'node-cron';
-import { pollOnce, registrarSincronizacao } from './poll.js';
+import {
+  pollOnce,
+  registrarSincronizacao,
+  varreduraProfundaOnce,
+} from './poll.js';
 import { reconciliarOnce } from './reconciliar.js';
 import { env } from '../config/env.js';
 import { log } from '../log.js';
 
 // Reexport para uso manual.
-export { pollOnce } from './poll.js';
+export { pollOnce, varreduraProfundaOnce } from './poll.js';
 export { reconciliarOnce } from './reconciliar.js';
 
 let tarefa: cron.ScheduledTask | null = null;
@@ -26,6 +30,9 @@ let executando = false;
 
 let tarefaReconciliacao: cron.ScheduledTask | null = null;
 let reconciliando = false;
+
+let tarefaVarredura: cron.ScheduledTask | null = null;
+let varrendo = false;
 
 /** Executa um tick protegido (sem nunca lançar / derrubar o processo). */
 async function tickProtegido(): Promise<void> {
@@ -76,6 +83,35 @@ async function tickReconciliacao(): Promise<void> {
 }
 
 /**
+ * Varredura profunda protegida. Lock próprio: são ~23 chamadas à Órix e pode
+ * demorar minutos; sobrepor duas seria bater no servidor à toa.
+ *
+ * Ela NÃO pode derrubar o tick rápido: falha aqui é logada e tentada de novo no
+ * dia seguinte, enquanto o poll de 5 min segue independente.
+ */
+async function tickVarredura(): Promise<void> {
+  if (varrendo) {
+    log.warn(
+      '[scheduler] Varredura profunda anterior ainda em execução; pulando este ciclo.',
+    );
+    return;
+  }
+  varrendo = true;
+  try {
+    const resultado = await varreduraProfundaOnce();
+    await registrarSincronizacao(resultado, 'varredura_profunda');
+  } catch (err) {
+    log.error('[scheduler] Erro inesperado na varredura profunda (contido):', err);
+    await registrarSincronizacao(
+      { ok: false, janelas: 0, itens: 0, pedidos: 0 },
+      'varredura_profunda',
+    ).catch(() => {});
+  } finally {
+    varrendo = false;
+  }
+}
+
+/**
  * Inicia o agendador. Idempotente: se já houver tarefa registrada, não duplica.
  */
 export function start(): void {
@@ -116,6 +152,24 @@ export function start(): void {
   log.info(
     `[scheduler] Reconciliação com o Órix ativa (cron="${cronReconciliar}").`,
   );
+
+  // --- Varredura profunda (independente das outras duas) ---
+  const cronVarredura = env.VARREDURA_CRON;
+  if (!cron.validate(cronVarredura)) {
+    log.error(
+      `[scheduler] VARREDURA_CRON inválido ("${cronVarredura}"); varredura ` +
+        'profunda NÃO iniciada. Pedido antigo que entrar no gatilho não aparecerá no quadro.',
+    );
+    return;
+  }
+
+  tarefaVarredura = cron.schedule(cronVarredura, () => {
+    void tickVarredura();
+  });
+
+  log.info(
+    `[scheduler] Varredura profunda ativa (cron="${cronVarredura}").`,
+  );
 }
 
 /** Para o agendador (útil para testes / shutdown gracioso). */
@@ -129,5 +183,10 @@ export function stop(): void {
     tarefaReconciliacao.stop();
     tarefaReconciliacao = null;
     log.info('[scheduler] Reconciliação parada.');
+  }
+  if (tarefaVarredura) {
+    tarefaVarredura.stop();
+    tarefaVarredura = null;
+    log.info('[scheduler] Varredura profunda parada.');
   }
 }

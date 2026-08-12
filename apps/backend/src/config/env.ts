@@ -29,8 +29,14 @@ const envSchema = z.object({
   // que o poll de propósito: a varredura cobre TODOS os pedidos em aberto, não
   // só a janela do dia.
   RECONCILIAR_CRON: z.string().min(1).default('*/30 * * * *'),
+  // Varredura profunda: um ano de pedidos nos status de gatilho, para pegar o
+  // pedido ANTIGO que só agora entrou no gatilho (o 00027 "Parcial" chega dias
+  // ou meses depois da data do pedido, e a API só filtra por data do pedido).
+  // São ~23 chamadas, então roda 1x/dia de madrugada, fora do horário da equipe.
+  VARREDURA_CRON: z.string().min(1).default('20 3 * * *'),
   API_PORT: z.coerce.number().int().positive().default(3333),
-  // URL do frontend — usada no link de convite por e-mail (definir senha).
+  // URL do frontend — usada no link de convite (definir senha). NÃO envia
+  // e-mail: o link é copiado na tela Usuários e mandado pela logística.
   APP_URL: z.string().url().default('http://localhost:5173'),
   ALLOW_NO_AUTH: z
     .union([z.literal('true'), z.literal('false')])

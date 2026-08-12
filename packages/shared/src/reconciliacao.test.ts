@@ -2,12 +2,15 @@ import { describe, it, expect } from 'vitest';
 import {
   decidirReconciliacao,
   decidirAusencia,
+  decidirReadmissao,
   type EntradaReconciliacao,
   type EntradaAusencia,
+  type EntradaReadmissao,
 } from './reconciliacao.js';
 import type { StatusLogistico } from './types/domain.js';
 
 const CANCELADO = ['00031'];
+const GATILHO = ['00041', '00045', '00027'];
 
 /** Entrada base: pedido pendente, aguardando entrega, nada mudou. */
 function entrada(over: Partial<EntradaReconciliacao> = {}): EntradaReconciliacao {
@@ -244,5 +247,75 @@ describe('decidirAusencia', () => {
     expect(
       decidirAusencia(ausencia({ ausenteDesde: 'nao-e-uma-data' }), 24),
     ).toBe('nada');
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/** Entrada base: pedido descartado pelo sistema que voltou ao gatilho. */
+function readmissao(over: Partial<EntradaReadmissao> = {}): EntradaReadmissao {
+  return {
+    statusLogistico: 'cancelada',
+    statusOrixNovo: '00027',
+    descartadoPeloSistema: true,
+    ...over,
+  };
+}
+
+describe('decidirReadmissao', () => {
+  it('readmite o pedido que o sistema descartou e voltou ao gatilho', () => {
+    expect(decidirReadmissao(readmissao(), GATILHO)).toBe('readmitir');
+  });
+
+  it('readmite em qualquer um dos status de gatilho', () => {
+    for (const status of GATILHO) {
+      expect(
+        decidirReadmissao(readmissao({ statusOrixNovo: status }), GATILHO),
+      ).toBe('readmitir');
+    }
+  });
+
+  // A guarda que mais importa: o sistema não desfaz decisão da equipe. Sem
+  // isso, um descarte manual de pedido que segue no gatilho voltaria a cada
+  // tick do poll.
+  it('NÃO desfaz descarte feito pela equipe', () => {
+    expect(
+      decidirReadmissao(readmissao({ descartadoPeloSistema: false }), GATILHO),
+    ).toBe('nada');
+  });
+
+  it('não readmite se o status novo não é de gatilho', () => {
+    expect(
+      decidirReadmissao(readmissao({ statusOrixNovo: '00030' }), GATILHO),
+    ).toBe('nada');
+    expect(
+      decidirReadmissao(readmissao({ statusOrixNovo: '00031' }), GATILHO),
+    ).toBe('nada');
+  });
+
+  it('status vazio não decide nada', () => {
+    expect(decidirReadmissao(readmissao({ statusOrixNovo: '' }), GATILHO)).toBe(
+      'nada',
+    );
+  });
+
+  // 'entregue' é desfecho: voltar para Pendente mandaria entregar de novo.
+  it('não mexe em pedido que não está descartado', () => {
+    const outros: StatusLogistico[] = [
+      'pendente',
+      'agendada',
+      'em_rota',
+      'entregue',
+      'nao_realizado',
+    ];
+    for (const status of outros) {
+      expect(
+        decidirReadmissao(readmissao({ statusLogistico: status }), GATILHO),
+      ).toBe('nada');
+    }
+  });
+
+  it('gatilho vazio não readmite ninguém', () => {
+    expect(decidirReadmissao(readmissao(), [])).toBe('nada');
   });
 });

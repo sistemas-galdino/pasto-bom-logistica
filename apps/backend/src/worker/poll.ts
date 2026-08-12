@@ -1,19 +1,36 @@
-// [AGENTE WORKER] Tick de polling da Órix.
+// [AGENTE WORKER] Polling da Órix, em DUAS VELOCIDADES.
 //
-// A cada tick (pollOnce):
-//  1) lê status_gatilho de sync_state;
-//  2) calcula a janela [cursor.last_to ou (hoje - 30d)] -> hoje;
-//  3) divide em sub-janelas <= 16 dias (chunking — a API retorna tudo de uma
-//     vez por janela, então o controle de volume é por intervalo de data);
-//  4) para cada sub-janela chama orix.getPedidos({ ..., status: gatilho }) e
-//     passa o resultado para ingest();
-//  5) atualiza poll_cursor (last_to = hoje) ao final.
+// pollOnce() — tick rápido, a cada 5 min. Janela curta: dos últimos
+// DIAS_REVISITA dias (ou de onde o cursor parou, o que for mais antigo) até
+// hoje. Serve para o pedido novo aparecer no quadro em minutos.
 //
-// Circuit-breaker: se a Órix falhar, logamos e ABORTAMOS o tick sem derrubar o
-// processo (não atualizamos o cursor, para reprocessar a janela no próximo tick;
-// a ingestão é idempotente, então reprocessar é seguro).
+// varreduraProfundaOnce() — 1x/dia. Janela de DIAS_VARREDURA_PROFUNDA dias.
+// Serve para pegar o pedido ANTIGO que só agora entrou no gatilho.
+//
+// POR QUE DUAS (investigação de 11/08/2026)
+// ----------------------------------------
+// A API só filtra por DATA DO PEDIDO — não existe "alterado desde". E o pedido
+// NÃO nasce no gatilho: ele vira 00027 "Parcial" dias depois, quando sai o
+// faturamento parcial. O código antigo perguntava "[cursor, hoje]" e, no fim de
+// cada tick, gravava o cursor como hoje — ou seja, a próxima pergunta era
+// "pedidos de hoje". Quando o pedido de 4 dias atrás entrava no gatilho, a
+// janela já tinha passado pela data dele, e ninguém perguntava de novo: ele
+// nunca entrava no sistema.
+//
+// Não era caso de borda. Em 11/08 faltavam 24 dos 135 pedidos elegíveis, e os
+// 6 mais recentes eram TODOS 00027 — o status que chega atrasado. Um deles com
+// 55 dias entre a data do pedido e a entrada no gatilho. Daí a varredura
+// profunda ser de um ano, e não de uma semana.
+//
+// A reconciliação não cobre isso: ela varre 365 dias, mas só atualiza pedido
+// que JÁ existe no banco. Quem nunca entrou, nunca entra.
+//
+// Circuit-breaker: se a Órix falhar, logamos e ABORTAMOS a varredura sem
+// derrubar o processo (não atualizamos o cursor, para reprocessar depois; a
+// ingestão é idempotente, então reprocessar é seguro).
 
 import { OrixClient } from '../orix/client.js';
+import { inicioJanelaPoll } from '@pastobom/shared';
 import { ingest } from './ingest.js';
 import { supabase } from '../db/supabase.js';
 import { env } from '../config/env.js';
@@ -23,6 +40,12 @@ import { log } from '../log.js';
 const MAX_DIAS_JANELA = 16;
 // Janela inicial padrão quando ainda não há cursor (hoje - 30 dias).
 const DIAS_FALLBACK = 30;
+// Piso do tick rápido: sempre reperguntar os últimos N dias, mesmo com o cursor
+// em hoje. Cobre a virada de status do dia anterior sem custo (1 chamada).
+const DIAS_REVISITA = 2;
+// Alcance da varredura profunda. Um ano porque o atraso entre a data do pedido
+// e a entrada no gatilho chega a meses (medido: 55 dias no pior caso de 11/08).
+export const DIAS_VARREDURA_PROFUNDA = 365;
 
 /** Status de gatilho default caso sync_state não tenha sido semeado.
  *  O 00028 ("aguardando faturamento 2") saiu na reunião de 25/06/2026. */
@@ -83,26 +106,29 @@ async function lerStatusGatilho(): Promise<string[]> {
 }
 
 /**
- * Calcula a janela total a partir do cursor.
- * - início: cursor.last_to (se existir) senão (hoje - 30d);
+ * Calcula a janela do TICK RÁPIDO.
+ * - início: o MAIS ANTIGO entre o cursor e (hoje - DIAS_REVISITA);
  * - fim: hoje.
+ *
+ * O cursor sozinho não basta: como ele vira "hoje" a cada tick, a janela
+ * encolhia para um único dia e o pedido que entrava no gatilho depois da sua
+ * própria data nunca era perguntado de novo. O piso de DIAS_REVISITA garante
+ * uma segunda olhada barata; o cursor continua servindo de rede para queda
+ * longa (se o worker ficou 5 dias fora, a janela cobre os 5).
  */
 async function calcularJanela(hoje: Date): Promise<JanelaDatas> {
   const cursor = await lerSyncState<{ last_to: string | null }>('poll_cursor');
-  let inicio: Date | null = null;
+  const dataFinal = formatarISO(hoje);
 
-  if (cursor && cursor.last_to) {
-    inicio = parseISO(cursor.last_to);
-  }
-  if (!inicio) {
-    inicio = adicionarDias(hoje, -DIAS_FALLBACK);
-  }
-  // Garante que início não passe do fim.
-  if (inicio.getTime() > hoje.getTime()) {
-    inicio = hoje;
-  }
+  // A decisão em si é regra pura e testada em @pastobom/shared.
+  const dataInicial = inicioJanelaPoll({
+    cursorLastTo: cursor?.last_to ?? null,
+    hoje: dataFinal,
+    diasRevisita: DIAS_REVISITA,
+    diasFallback: DIAS_FALLBACK,
+  });
 
-  return { dataInicial: formatarISO(inicio), dataFinal: formatarISO(hoje) };
+  return { dataInicial, dataFinal };
 }
 
 /** Divide [inicio, fim] em sub-janelas de no máximo MAX_DIAS_JANELA dias. */
@@ -175,16 +201,75 @@ export async function pollOnce(): Promise<ResultadoPoll> {
   const inicioTick = Date.now();
   log.info('[poll] Iniciando tick de polling da Órix...');
 
-  const statusGatilho = await lerStatusGatilho();
   const hoje = parseISO(formatarISO(new Date())) as Date; // normaliza p/ meia-noite UTC
   const janelaTotal = await calcularJanela(hoje);
+  const resultado = await varrerJanela(janelaTotal, 'poll');
+
+  if (!resultado.ok) return resultado;
+
+  // Sucesso: avança o cursor até o fim da janela (hoje).
+  await atualizarCursor(janelaTotal.dataFinal);
+
+  const ms = Date.now() - inicioTick;
+  log.info(
+    `[poll] Tick concluído em ${ms}ms: ${resultado.itens} item(ns), ` +
+      `${resultado.pedidos} pedido(s). Cursor avançado para ${janelaTotal.dataFinal}.`,
+  );
+
+  return resultado;
+}
+
+/**
+ * VARREDURA PROFUNDA: um ano de pedidos, nos status de gatilho.
+ *
+ * É o que traz o pedido antigo que só agora entrou no gatilho — o buraco que o
+ * tick rápido não tem como cobrir, porque a API só filtra por data do pedido.
+ * Custa ~23 chamadas (365 / 16), então roda 1x/dia, de madrugada.
+ *
+ * NÃO mexe no poll_cursor: o cursor é do tick rápido, e uma falha aqui não pode
+ * fazer o tick rápido reprocessar um ano.
+ */
+export async function varreduraProfundaOnce(): Promise<ResultadoPoll> {
+  const inicio = Date.now();
+  const hoje = parseISO(formatarISO(new Date())) as Date;
+  const janela: JanelaDatas = {
+    dataInicial: formatarISO(adicionarDias(hoje, -DIAS_VARREDURA_PROFUNDA)),
+    dataFinal: formatarISO(hoje),
+  };
+
+  log.info(
+    `[varredura] Iniciando varredura profunda (${DIAS_VARREDURA_PROFUNDA} dias)...`,
+  );
+  const resultado = await varrerJanela(janela, 'varredura');
+
+  const ms = Date.now() - inicio;
+  log.info(
+    `[varredura] ${resultado.ok ? 'Concluída' : 'ABORTADA'} em ${ms}ms: ` +
+      `${resultado.itens} item(ns), ${resultado.pedidos} pedido(s).`,
+  );
+
+  return resultado;
+}
+
+/**
+ * Percorre uma janela em sub-janelas de <= MAX_DIAS_JANELA dias, buscando na
+ * Órix e ingerindo. Compartilhada pelo tick rápido e pela varredura profunda —
+ * a diferença entre os dois é só o tamanho da janela e o que se faz depois.
+ *
+ * Não lança: em falha, loga, aborta e devolve { ok:false }.
+ */
+async function varrerJanela(
+  janelaTotal: JanelaDatas,
+  rotulo: 'poll' | 'varredura',
+): Promise<ResultadoPoll> {
+  const statusGatilho = await lerStatusGatilho();
   const subJanelas = dividirEmSubJanelas(
     janelaTotal.dataInicial,
     janelaTotal.dataFinal,
   );
 
   log.info(
-    `[poll] Janela total ${janelaTotal.dataInicial} -> ${janelaTotal.dataFinal} ` +
+    `[${rotulo}] Janela total ${janelaTotal.dataInicial} -> ${janelaTotal.dataFinal} ` +
       `(${subJanelas.length} sub-janela(s) <= ${MAX_DIAS_JANELA}d), ` +
       `status_gatilho=[${statusGatilho.join(',')}]`,
   );
@@ -206,12 +291,12 @@ export async function pollOnce(): Promise<ResultadoPoll> {
         empresas,
       });
     } catch (err) {
-      // CIRCUIT-BREAKER: Órix falhou. Aborta o tick SEM atualizar o cursor
-      // (próximo tick reprocessa; ingestão é idempotente) e sem derrubar o processo.
+      // CIRCUIT-BREAKER: Órix falhou. Aborta a varredura SEM atualizar o cursor
+      // (a próxima reprocessa; ingestão é idempotente) e sem derrubar o processo.
       const motivo = err instanceof Error ? err.message : String(err);
       log.error(
-        `[poll] Órix falhou na sub-janela ${janela.dataInicial}->${janela.dataFinal}; ` +
-          `abortando tick sem atualizar cursor. Motivo: ${motivo}`,
+        `[${rotulo}] Órix falhou na sub-janela ${janela.dataInicial}->${janela.dataFinal}; ` +
+          `abortando sem atualizar cursor. Motivo: ${motivo}`,
       );
       return {
         ok: false,
@@ -225,7 +310,7 @@ export async function pollOnce(): Promise<ResultadoPoll> {
     const qtde = itens?.length ?? 0;
     totalItens += qtde;
     log.info(
-      `[poll] Sub-janela ${janela.dataInicial}->${janela.dataFinal}: ${qtde} item(ns).`,
+      `[${rotulo}] Sub-janela ${janela.dataInicial}->${janela.dataFinal}: ${qtde} item(ns).`,
     );
 
     if (qtde > 0) {
@@ -233,16 +318,17 @@ export async function pollOnce(): Promise<ResultadoPoll> {
         const res = await ingest(itens, orix);
         totalPedidos += res.pedidosProcessados;
         log.info(
-          `[poll] Ingestão: ${res.pedidosProcessados} pedido(s) ` +
+          `[${rotulo}] Ingestão: ${res.pedidosProcessados} pedido(s) ` +
             `(${res.inseridos} novo(s), ${res.atualizados} atualizado(s), ` +
+            `${res.readmitidos} readmitido(s), ` +
             `${res.itensGravados} item(ns), ${res.erros} erro(s)).`,
         );
       } catch (err) {
         // Falha de ingestão (banco) — não atualizamos o cursor; reprocessa depois.
         const motivo = err instanceof Error ? err.message : String(err);
         log.error(
-          `[poll] Falha na ingestão da sub-janela ${janela.dataInicial}->${janela.dataFinal}; ` +
-            `abortando tick sem atualizar cursor. Motivo: ${motivo}`,
+          `[${rotulo}] Falha na ingestão da sub-janela ${janela.dataInicial}->${janela.dataFinal}; ` +
+            `abortando sem atualizar cursor. Motivo: ${motivo}`,
         );
         return {
           ok: false,
@@ -255,15 +341,6 @@ export async function pollOnce(): Promise<ResultadoPoll> {
     }
   }
 
-  // Sucesso: avança o cursor até o fim da janela (hoje).
-  await atualizarCursor(janelaTotal.dataFinal);
-
-  const ms = Date.now() - inicioTick;
-  log.info(
-    `[poll] Tick concluído em ${ms}ms: ${totalItens} item(ns), ` +
-      `${totalPedidos} pedido(s). Cursor avançado para ${janelaTotal.dataFinal}.`,
-  );
-
   return {
     ok: true,
     janelas: subJanelas.length,
@@ -273,30 +350,33 @@ export async function pollOnce(): Promise<ResultadoPoll> {
 }
 
 /**
- * Grava um "heartbeat" de sincronização em sync_state (chave 'sync_status'),
- * chamado ao fim de TODO tick (sucesso ou falha contida). Preserva o timestamp
- * do último tick BEM-SUCEDIDO (ultimoSucesso) quando a tentativa atual falha,
- * para que a UI mostre "atualizado há X" baseado no último sucesso real.
+ * Grava um "heartbeat" de sincronização em sync_state, chamado ao fim de TODO
+ * tick (sucesso ou falha contida). Preserva o timestamp do último tick
+ * BEM-SUCEDIDO (ultimoSucesso) quando a tentativa atual falha, para que a UI
+ * mostre "atualizado há X" baseado no último sucesso real.
  * Read-modify-write é seguro: há um único worker e o scheduler não sobrepõe ticks.
+ *
+ * A varredura profunda grava numa chave separada ('varredura_profunda') de
+ * propósito: a UI lê 'sync_status' para dizer há quanto tempo o quadro está
+ * atualizado, e isso é o tick rápido. Misturar as duas faria uma varredura
+ * noturna bem-sucedida mascarar um poll quebrado a manhã inteira.
  */
 export async function registrarSincronizacao(
   resultado: ResultadoPoll,
+  chave: 'sync_status' | 'varredura_profunda' = 'sync_status',
 ): Promise<void> {
   const agora = new Date().toISOString();
-  const anterior = await lerSyncState<{ ultimoSucesso?: string | null }>(
-    'sync_status',
-  );
+  const anterior = await lerSyncState<{ ultimoSucesso?: string | null }>(chave);
   const valor = {
     ultimoSucesso: resultado.ok ? agora : (anterior?.ultimoSucesso ?? null),
     ultimoTick: agora,
     sucesso: resultado.ok,
     pedidos: resultado.pedidos,
   };
-  const { error } = await supabase.from('sync_state').upsert(
-    { chave: 'sync_status', valor, atualizado_em: agora },
-    { onConflict: 'chave' },
-  );
+  const { error } = await supabase
+    .from('sync_state')
+    .upsert({ chave, valor, atualizado_em: agora }, { onConflict: 'chave' });
   if (error) {
-    log.warn(`[poll] Falha ao gravar sync_status: ${error.message}`);
+    log.warn(`[poll] Falha ao gravar ${chave}: ${error.message}`);
   }
 }
