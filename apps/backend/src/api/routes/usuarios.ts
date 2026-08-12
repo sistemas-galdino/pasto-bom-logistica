@@ -1,10 +1,16 @@
 // [AGENTE API] Console de administração de usuários (somente logística).
 //
-//   GET   /api/usuarios              -> UsuarioAdmin[]   (diretório completo)
-//   POST  /api/usuarios/convite      -> {usuario,link}   (gera link de acesso; sem e-mail)
-//   PATCH /api/usuarios/:id          -> UsuarioAdmin     (papel e/ou nome)
-//   PATCH /api/usuarios/:id/status   -> UsuarioAdmin     (ativar/desativar)
-//   POST  /api/usuarios/:id/link     -> {link}           (regera link de acesso)
+//   GET   /api/usuarios                    -> UsuarioAdmin[] (diretório completo)
+//   POST  /api/usuarios/convite            -> {usuario,link} (gera link de acesso; sem e-mail)
+//   PATCH /api/usuarios/:id                -> UsuarioAdmin   (papel e/ou nome)
+//   PATCH /api/usuarios/:id/status         -> UsuarioAdmin   (ativar/desativar)
+//   POST  /api/usuarios/:id/link           -> {link}         (regera link de acesso)
+//   POST  /api/usuarios/eu/acesso-concluido-> 204            (encerra o próprio link)
+//
+// O `link` devolvido é o NOSSO link curto (services/link-acesso.ts), não o
+// action_link do Supabase: aquele era longo, ficava no domínio do Supabase e
+// era queimado pelo robô de pré-visualização do WhatsApp antes de a pessoa
+// abrir.
 //
 // Cruza o Auth (supabase.auth.admin) com a tabela `profiles` (papel/nome).
 // O prefixo /api é aplicado no registro do plugin (server.ts).
@@ -23,6 +29,10 @@ import type {
 import { env } from '../../config/env.js';
 import { supabase } from '../../db/supabase.js';
 import { log } from '../../log.js';
+import {
+  criarLinkAcesso,
+  encerrarLinkAcesso,
+} from '../../services/link-acesso.js';
 import { exigirLogistica } from '../guards.js';
 
 // ---------------------------------------------------------------------------
@@ -188,13 +198,17 @@ export async function usuariosRoutes(app: FastifyInstance): Promise<void> {
     }
 
     try {
-      const redirectTo = `${env.APP_URL}/definir-senha`;
-      // Gera o link de convite SEM enviar e-mail: a logística repassa o link
-      // (ex.: WhatsApp) e o colaborador define a própria senha em /definir-senha.
+      // Esta chamada existe para CRIAR o usuário no Auth — é o efeito que nos
+      // interessa. O link que ela devolve é descartado de propósito: quem vai
+      // para o WhatsApp é o nosso link curto (ver services/link-acesso.ts), que
+      // sobrevive ao robô de pré-visualização e vale 7 dias.
       const { data, error } = await supabase.auth.admin.generateLink({
         type: 'invite',
         email: parsed.data.email,
-        options: { data: { nome: parsed.data.nome }, redirectTo },
+        options: {
+          data: { nome: parsed.data.nome },
+          redirectTo: `${env.APP_URL}/definir-senha`,
+        },
       });
 
       if (error) {
@@ -212,10 +226,13 @@ export async function usuariosRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const novo = data.user;
-      const link = data.properties?.action_link ?? '';
       await supabase
         .from('profiles')
         .upsert({ id: novo.id, papel: parsed.data.papel, nome: parsed.data.nome });
+
+      // O link curto vem DEPOIS do upsert: ele grava em `profiles`, e a linha
+      // precisa existir.
+      const link = await criarLinkAcesso(novo.id);
 
       const u = novo as unknown as AuthUserParcial;
       const usuario: UsuarioAdmin = {
@@ -351,25 +368,35 @@ export async function usuariosRoutes(app: FastifyInstance): Promise<void> {
           .send({ error: 'nao_encontrado', message: 'Usuário não encontrado.' });
       }
 
-      const redirectTo = `${env.APP_URL}/definir-senha`;
-      const { data, error } = await supabase.auth.admin.generateLink({
-        type: 'recovery',
-        email: alvo.user.email,
-        options: { redirectTo },
-      });
-      if (error) {
-        log.error(`[POST /usuarios/${id}/link] falha ao gerar link: ${error.message}`);
-        return reply
-          .code(502)
-          .send({ error: 'erro_link', message: error.message });
-      }
-
-      const resposta: LinkAcessoResposta = {
-        link: data.properties?.action_link ?? '',
-      };
+      // Nada é gerado no Supabase agora: o link dele nasce quando a pessoa
+      // clica no botão da página /acesso. Aqui só sorteamos o link curto.
+      const resposta: LinkAcessoResposta = { link: await criarLinkAcesso(id) };
       return reply.send(resposta);
     } catch (err) {
       return responderErro(reply, err, `[POST /usuarios/${id}/link]`);
+    }
+  });
+
+  // POST /usuarios/eu/acesso-concluido -> encerra o próprio link de acesso.
+  //
+  // Chamado por /definir-senha depois que a senha foi efetivamente criada. É
+  // isto que faz o link morrer no SUCESSO, e não no primeiro clique — se
+  // morresse no clique, um redirecionamento que falhasse deixaria a pessoa a pé,
+  // que é exatamente a queixa que esta mudança conserta.
+  //
+  // Sem guarda de papel: qualquer um pode encerrar o PRÓPRIO link, e só ele.
+  app.post('/usuarios/eu/acesso-concluido', async (req, reply) => {
+    const id = req.usuario?.id;
+    if (!id) {
+      return reply
+        .code(401)
+        .send({ error: 'nao_autenticado', message: 'Sessão ausente.' });
+    }
+    try {
+      await encerrarLinkAcesso(id);
+      return reply.code(204).send();
+    } catch (err) {
+      return responderErro(reply, err, '[POST /usuarios/eu/acesso-concluido]');
     }
   });
 }

@@ -286,7 +286,7 @@ export function Usuarios(): React.ReactElement {
                               disabled={linkOcupado}
                               title={
                                 u.status === 'pendente'
-                                  ? 'Gerar um novo link de acesso (o anterior pode ter expirado).'
+                                  ? 'Gerar um novo link de acesso. O anterior deixa de valer na hora.'
                                   : 'Gerar um link para a pessoa cadastrar uma nova senha.'
                               }
                               onClick={() => {
@@ -475,8 +475,8 @@ function ConviteModal({
           <div className="space-y-4">
             <p className="text-sm text-tinta-suave">
               Envie este link ao colaborador (ex.: WhatsApp). Ao abri-lo, ele
-              cria a própria senha e entra. O link tem validade limitada —
-              envie logo.
+              confirma num botão e cria a própria senha.{' '}
+              <strong>Vale 7 dias</strong> e não se gasta por ser aberto.
             </p>
             <div className="flex items-center gap-2">
               <input
@@ -669,8 +669,9 @@ function LinkModal({
         </div>
 
         <p className="mb-3 text-sm text-tinta-suave">
-          Envie este link à pessoa (ex.: WhatsApp). Ao abri-lo, ela cadastra a
-          senha e entra. Vale por tempo limitado e uma vez só — envie logo.
+          Envie este link à pessoa (ex.: WhatsApp). Ao abri-lo, ela confirma num
+          botão e cadastra a senha. <strong>Vale 7 dias</strong> e não se gasta
+          por ser aberto.
         </p>
 
         <p className="mb-4 rounded-lg border border-trigo/40 bg-trigo-claro px-3 py-2 text-xs text-trigo-escuro">

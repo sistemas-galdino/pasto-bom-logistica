@@ -24,11 +24,16 @@ dependências entre si (o da 0013 derruba tabelas que o da 0014 usa).
 
 ## Estado
 
-Conferido contra o banco em 05/08/2026.
+Conferido contra o banco em 12/08/2026.
 
 | Migração | Aplicada em produção? |
 |---|---|
-| 0001 – 0017 | sim |
+| 0001 – 0018 | sim |
+
+A 0018 rodou em 12/08/2026, com autorização do David. Ela só ACRESCENTA três
+colunas nuláveis em `profiles` (o link curto de acesso) — nada destrutivo, e o
+código anterior não se importa com elas. Pode ser reaplicada à vontade: é toda
+`if not exists`.
 
 A 0017 já rodou (05/08/2026, com autorização do David). Ela apagou as 13
 entregas de teste da equipe e não pode ser reaplicada: a guarda dela aborta se

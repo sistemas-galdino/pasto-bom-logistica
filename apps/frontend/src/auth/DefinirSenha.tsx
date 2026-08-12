@@ -10,6 +10,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CheckCircle2 } from 'lucide-react';
 import { useAuth } from './AuthProvider';
+import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { Marca } from '../components/Marca';
 
@@ -42,6 +43,13 @@ export function DefinirSenha(): React.ReactElement {
     try {
       const { error } = await supabase.auth.updateUser({ password: senha });
       if (error) throw new Error(error.message);
+
+      // Encerra o link curto: é aqui que ele morre, no SUCESSO. Morrer no
+      // primeiro clique deixaria a pessoa a pé se o redirecionamento falhasse —
+      // justamente a queixa que o link curto veio consertar.
+      // Best-effort: falhar aqui não pode atrapalhar quem acabou de entrar.
+      await api.concluirAcesso().catch(() => {});
+
       setConcluido(true);
       // Pequena pausa para a pessoa ver a confirmação antes do redirecionamento.
       setTimeout(() => navigate('/dashboard', { replace: true }), 1500);

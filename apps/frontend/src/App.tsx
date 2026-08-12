@@ -15,6 +15,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth, type Papel } from './auth/AuthProvider';
 import { Login } from './auth/Login';
 import { DefinirSenha } from './auth/DefinirSenha';
+import { Acesso } from './auth/Acesso';
 import { AppShell } from './components/layout/AppShell';
 import { Board } from './pages/Board';
 import { Dashboard } from './pages/Dashboard';
@@ -162,7 +163,10 @@ export function App(): React.ReactElement {
                 }
               />
             </Route>
+            {/* Públicas: quem abre estas ainda não tem senha. Precisam vir
+                ANTES do catch-all "*", senão caem no redirect de home. */}
             <Route path="/definir-senha" element={<DefinirSenha />} />
+            <Route path="/acesso/:token" element={<Acesso />} />
             <Route path="/board" element={<Navigate to="/entregas" replace />} />
             <Route
               path="/rota"

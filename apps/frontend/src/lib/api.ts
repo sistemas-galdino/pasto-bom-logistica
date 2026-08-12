@@ -15,6 +15,8 @@ import type {
   ConviteUsuarioRequest,
   ConviteUsuarioResposta,
   LinkAcessoResposta,
+  EstadoLinkAcesso,
+  AcessoConfirmadoResposta,
   AtualizarUsuarioRequest,
   PrevisaoClima,
   Caminhao,
@@ -458,5 +460,35 @@ export const api = {
       `/api/usuarios/${encodeURIComponent(id)}/link`,
       { method: 'POST' },
     );
+  },
+
+  /**
+   * Consulta o estado de um link de acesso. Rota PÚBLICA e somente leitura:
+   * abrir a página não consome o link (é o que faz a pré-visualização do
+   * WhatsApp deixar de queimá-lo).
+   */
+  async estadoLinkAcesso(
+    token: string,
+    signal?: AbortSignal,
+  ): Promise<EstadoLinkAcesso> {
+    return request<EstadoLinkAcesso>(
+      `/api/acesso/${encodeURIComponent(token)}`,
+      { signal },
+    );
+  },
+
+  /** Confirma o link de acesso: devolve para onde o navegador deve ir. */
+  async confirmarLinkAcesso(token: string): Promise<AcessoConfirmadoResposta> {
+    return request<AcessoConfirmadoResposta>(
+      `/api/acesso/${encodeURIComponent(token)}`,
+      { method: 'POST' },
+    );
+  },
+
+  /** Encerra o próprio link de acesso, depois que a senha foi criada. */
+  async concluirAcesso(): Promise<void> {
+    await request<void>('/api/usuarios/eu/acesso-concluido', {
+      method: 'POST',
+    });
   },
 };

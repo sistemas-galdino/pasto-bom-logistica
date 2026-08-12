@@ -370,3 +370,21 @@ export interface ConviteUsuarioResposta {
 export interface LinkAcessoResposta {
   link: string;
 }
+
+/**
+ * Estado de um link curto de acesso, consultado pela página /acesso ANTES de
+ * qualquer coisa ser consumida. É o que permite o robô de pré-visualização do
+ * WhatsApp abrir o link sem queimá-lo.
+ */
+export interface EstadoLinkAcesso {
+  valido: boolean;
+  /** Primeiro nome de quem vai criar a senha, para a página cumprimentar. */
+  nome?: string;
+  /** Por que não vale. Ausente quando `valido`. */
+  motivo?: 'expirado' | 'invalido';
+}
+
+/** Resposta ao confirmar o link: para onde o navegador deve ir. */
+export interface AcessoConfirmadoResposta {
+  url: string;
+}

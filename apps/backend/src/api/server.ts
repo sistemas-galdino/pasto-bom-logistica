@@ -24,6 +24,7 @@ import { produtosRoutes } from './routes/produtos.js';
 import { agendaRoutes } from './routes/agenda.js';
 import { motivosRoutes } from './routes/motivos.js';
 import { entregasRoutes } from './routes/entregas.js';
+import { acessoRoutes } from './routes/acesso.js';
 
 // Origens permitidas para CORS. Por padrão o dev server do Vite (5173).
 const ORIGENS_PERMITIDAS = new Set<string>([
@@ -105,6 +106,16 @@ export function buildServer(): FastifyInstance {
 
   // Health check público (sem prefixo de domínio autenticado).
   app.get('/api/health', async () => ({ ok: true }));
+
+  // Link de acesso: PÚBLICO de propósito — quem vai usar ainda não tem senha.
+  // Fica num plugin próprio, SEM registrarAuth: o encapsulamento do Fastify
+  // garante que o hook do escopo autenticado abaixo não alcança estas rotas.
+  app.register(
+    async (publico) => {
+      await publico.register(acessoRoutes);
+    },
+    { prefix: '/api' },
+  );
 
   // Plugin com prefixo /api + auth + rotas de domínio.
   app.register(
