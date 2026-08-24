@@ -10,8 +10,8 @@
 // Fuso: as datas vêm como 'YYYY-MM-DD'. Toda conversão passa por dataDeIso/
 // isoDeData (Date local) — `new Date('YYYY-MM-DD')` viraria UTC e volta um dia.
 
-import React, { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import React, { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
   CalendarDays,
@@ -21,7 +21,7 @@ import {
   MapPin,
   Truck,
   User,
-} from "lucide-react";
+} from 'lucide-react';
 import type {
   AgendaEntrega,
   AgendaOcupacao,
@@ -29,28 +29,28 @@ import type {
   AgendaSlot,
   GrupoCaminhaoAgenda,
   PeriodoEntrega,
-} from "@pastobom/shared";
-import { agruparSlotPorCaminhao } from "@pastobom/shared";
-import { api } from "../lib/api";
-import { STATUS_ENTREGA_META, STATUS_META } from "../components/status";
-import { EntregaDetalheModal } from "../components/EntregaDetalheModal";
+} from '@pastobom/shared';
+import { agruparSlotPorCaminhao } from '@pastobom/shared';
+import { api } from '../lib/api';
+import { STATUS_ENTREGA_META, STATUS_META } from '../components/status';
+import { EntregaDetalheModal } from '../components/EntregaDetalheModal';
 
-type Visao = "mes" | "semana" | "dia";
+type Visao = 'mes' | 'semana' | 'dia';
 
-const PERIODOS: PeriodoEntrega[] = ["manha", "tarde"];
+const PERIODOS: PeriodoEntrega[] = ['manha', 'tarde'];
 
 const PERIODO_ROTULO: Record<PeriodoEntrega, string> = {
-  manha: "Manhã",
-  tarde: "Tarde",
+  manha: 'Manhã',
+  tarde: 'Tarde',
 };
 
-const DIAS_CURTOS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+const DIAS_CURTOS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
 // --- datas (sempre locais; nunca `new Date('YYYY-MM-DD')`) -----------------
 
 function isoDeData(d: Date): string {
-  const mes = String(d.getMonth() + 1).padStart(2, "0");
-  const dia = String(d.getDate()).padStart(2, "0");
+  const mes = String(d.getMonth() + 1).padStart(2, '0');
+  const dia = String(d.getDate()).padStart(2, '0');
   return `${d.getFullYear()}-${mes}-${dia}`;
 }
 
@@ -78,7 +78,7 @@ function capitalizar(texto: string): string {
 
 /** Toneladas com 1 casa (ex.: 4,2) — a tela sempre fala em toneladas. */
 function emToneladas(kg: number): string {
-  return (kg / 1000).toLocaleString("pt-BR", {
+  return (kg / 1000).toLocaleString('pt-BR', {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   });
@@ -95,13 +95,13 @@ interface Intervalo {
 }
 
 function intervaloDaVisao(visao: Visao, ancora: Date): Intervalo {
-  if (visao === "dia") {
+  if (visao === 'dia') {
     return { inicio: ancora, fim: ancora, dias: [ancora] };
   }
 
   let inicio: Date;
   let fim: Date;
-  if (visao === "semana") {
+  if (visao === 'semana') {
     inicio = inicioDaSemana(ancora);
     fim = addDias(inicio, 6);
   } else {
@@ -123,23 +123,23 @@ function tituloDoPeriodo(
   intervalo: Intervalo,
   ancora: Date,
 ): string {
-  if (visao === "dia") {
+  if (visao === 'dia') {
     return capitalizar(
-      ancora.toLocaleDateString("pt-BR", {
-        weekday: "long",
-        day: "2-digit",
-        month: "long",
-        year: "numeric",
+      ancora.toLocaleDateString('pt-BR', {
+        weekday: 'long',
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
       }),
     );
   }
-  if (visao === "semana") {
+  if (visao === 'semana') {
     const curto = (d: Date) =>
-      d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+      d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
     return `${curto(intervalo.inicio)} – ${curto(intervalo.fim)} de ${intervalo.fim.getFullYear()}`;
   }
   return capitalizar(
-    ancora.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }),
+    ancora.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
   );
 }
 
@@ -153,9 +153,9 @@ function tituloDoPeriodo(
  * da agenda (a rota só devolve 'agendada' e 'em_rota').
  */
 function Legenda(): React.ReactElement {
-  const itens: { status: "agendada" | "em_rota" }[] = [
-    { status: "agendada" },
-    { status: "em_rota" },
+  const itens: { status: 'agendada' | 'em_rota' }[] = [
+    { status: 'agendada' },
+    { status: 'em_rota' },
   ];
 
   return (
@@ -186,7 +186,7 @@ function Legenda(): React.ReactElement {
 }
 
 export default function Agenda(): React.ReactElement {
-  const [visao, setVisao] = useState<Visao>("semana");
+  const [visao, setVisao] = useState<Visao>('semana');
   const [ancora, setAncora] = useState<Date>(() => hojeLocal());
 
   const intervalo = useMemo(
@@ -200,7 +200,7 @@ export default function Agenda(): React.ReactElement {
   const [detalheId, setDetalheId] = useState<string | null>(null);
 
   const agendaQuery = useQuery({
-    queryKey: ["agenda", de, ate],
+    queryKey: ['agenda', de, ate],
     queryFn: ({ signal }) => api.agenda(de, ate, signal),
   });
 
@@ -221,20 +221,20 @@ export default function Agenda(): React.ReactElement {
   const titulo = tituloDoPeriodo(visao, intervalo, ancora);
 
   function navegar(passo: -1 | 1) {
-    if (visao === "dia") setAncora((a) => addDias(a, passo));
-    else if (visao === "semana") setAncora((a) => addDias(a, passo * 7));
+    if (visao === 'dia') setAncora((a) => addDias(a, passo));
+    else if (visao === 'semana') setAncora((a) => addDias(a, passo * 7));
     else setAncora((a) => addMeses(a, passo));
   }
 
   const abaCls = (ativo: boolean) =>
     `rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
       ativo
-        ? "bg-mata text-creme-50 shadow-sm"
-        : "border border-linha bg-papel text-tinta-suave hover:border-mata/30 hover:text-mata"
+        ? 'bg-mata text-creme-50 shadow-sm'
+        : 'border border-linha bg-papel text-tinta-suave hover:border-mata/30 hover:text-mata'
     }`;
 
   const navCls =
-    "flex h-8 w-8 items-center justify-center rounded-lg border border-linha bg-papel text-tinta-suave transition hover:border-mata/30 hover:text-mata";
+    'flex h-8 w-8 items-center justify-center rounded-lg border border-linha bg-papel text-tinta-suave transition hover:border-mata/30 hover:text-mata';
 
   return (
     <div className="flex h-full flex-col">
@@ -272,7 +272,7 @@ export default function Agenda(): React.ReactElement {
             </h2>
             <span className="text-pedra">·</span>
             <span className="text-tinta-suave">
-              {totalEntregas === 1 ? "1 entrega" : `${totalEntregas} entregas`}
+              {totalEntregas === 1 ? '1 entrega' : `${totalEntregas} entregas`}
             </span>
             {agendaQuery.isFetching && (
               <span className="text-xs text-pedra">atualizando…</span>
@@ -285,22 +285,22 @@ export default function Agenda(): React.ReactElement {
           <span className="hidden h-4 w-px bg-linha sm:block" />
           <button
             type="button"
-            onClick={() => setVisao("mes")}
-            className={abaCls(visao === "mes")}
+            onClick={() => setVisao('mes')}
+            className={abaCls(visao === 'mes')}
           >
             Mês
           </button>
           <button
             type="button"
-            onClick={() => setVisao("semana")}
-            className={abaCls(visao === "semana")}
+            onClick={() => setVisao('semana')}
+            className={abaCls(visao === 'semana')}
           >
             Semana
           </button>
           <button
             type="button"
-            onClick={() => setVisao("dia")}
-            className={abaCls(visao === "dia")}
+            onClick={() => setVisao('dia')}
+            className={abaCls(visao === 'dia')}
           >
             Dia
           </button>
@@ -317,7 +317,7 @@ export default function Agenda(): React.ReactElement {
             <p>
               {agendaQuery.error instanceof Error
                 ? agendaQuery.error.message
-                : "Não foi possível carregar a agenda."}
+                : 'Não foi possível carregar a agenda.'}
             </p>
             <button
               type="button"
@@ -339,7 +339,7 @@ export default function Agenda(): React.ReactElement {
               </p>
             )}
 
-            {visao === "mes" && (
+            {visao === 'mes' && (
               <VisaoMes
                 dias={intervalo.dias}
                 mesAtual={ancora.getMonth()}
@@ -348,7 +348,7 @@ export default function Agenda(): React.ReactElement {
               />
             )}
 
-            {visao === "semana" && (
+            {visao === 'semana' && (
               <VisaoSemana
                 dias={intervalo.dias}
                 isoHoje={isoHoje}
@@ -357,7 +357,7 @@ export default function Agenda(): React.ReactElement {
               />
             )}
 
-            {visao === "dia" && (
+            {visao === 'dia' && (
               <VisaoDia
                 data={isoDeData(ancora)}
                 porSlot={porSlot}
@@ -410,8 +410,8 @@ function VisaoMes({
         <div className="grid grid-cols-7 gap-2">
           {dias.map((d) => {
             const iso = isoDeData(d);
-            const manha = porSlot.get(chaveSlot(iso, "manha"));
-            const tarde = porSlot.get(chaveSlot(iso, "tarde"));
+            const manha = porSlot.get(chaveSlot(iso, 'manha'));
+            const tarde = porSlot.get(chaveSlot(iso, 'tarde'));
             const ocupacoes = [
               ...(manha?.ocupacao ?? []),
               ...(tarde?.ocupacao ?? []),
@@ -442,18 +442,18 @@ function VisaoMes({
                 key={iso}
                 className={`min-h-[104px] rounded-xl border p-2 transition ${
                   foraDoMes
-                    ? "border-linha/60 bg-creme-50/50"
-                    : "border-linha bg-papel shadow-carta"
-                } ${ehHoje ? "ring-2 ring-folha/40" : ""}`}
+                    ? 'border-linha/60 bg-creme-50/50'
+                    : 'border-linha bg-papel shadow-carta'
+                } ${ehHoje ? 'ring-2 ring-folha/40' : ''}`}
               >
                 <div className="flex items-center justify-between">
                   <span
                     className={`text-xs font-semibold ${
                       foraDoMes
-                        ? "text-pedra"
+                        ? 'text-pedra'
                         : ehHoje
-                          ? "text-mata"
-                          : "text-tinta"
+                          ? 'text-mata'
+                          : 'text-tinta'
                     }`}
                   >
                     {d.getDate()}
@@ -486,14 +486,14 @@ function VisaoMes({
                     </div>
                     {reservas > 0 && (
                       <p className="rounded border border-dashed border-pedra px-1.5 py-0.5 text-[10px] font-semibold text-tinta-suave">
-                        {reservas === 1 ? "1 reserva" : `${reservas} reservas`}
+                        {reservas === 1 ? '1 reserva' : `${reservas} reservas`}
                       </p>
                     )}
                     {capacidadeKg > 0 && (
                       <div>
                         <p
                           className={`text-[11px] font-semibold ${
-                            cheio ? "text-terra-escuro" : "text-tinta-suave"
+                            cheio ? 'text-terra-escuro' : 'text-tinta-suave'
                           }`}
                         >
                           {emToneladas(usadoKg)} / {emToneladas(capacidadeKg)} t
@@ -501,7 +501,7 @@ function VisaoMes({
                         <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-creme-100">
                           <div
                             className={`h-full rounded-full transition-all ${
-                              cheio ? "bg-terra" : "bg-folha"
+                              cheio ? 'bg-terra' : 'bg-folha'
                             }`}
                             style={{ width: `${pct}%` }}
                           />
@@ -543,7 +543,7 @@ function VisaoSemana({
               <div
                 key={iso}
                 className={`rounded-lg px-2 py-1.5 text-center ${
-                  ehHoje ? "bg-folha-claro" : ""
+                  ehHoje ? 'bg-folha-claro' : ''
                 }`}
               >
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-tinta-suave">
@@ -551,7 +551,7 @@ function VisaoSemana({
                 </p>
                 <p
                   className={`font-display text-lg font-semibold ${
-                    ehHoje ? "text-mata" : "text-tinta"
+                    ehHoje ? 'text-mata' : 'text-tinta'
                   }`}
                 >
                   {d.getDate()}
@@ -566,9 +566,9 @@ function VisaoSemana({
             <div className="mb-2 flex items-center gap-2">
               <span
                 className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                  periodo === "manha"
-                    ? "bg-folha-claro text-mata"
-                    : "bg-trigo-claro text-trigo-escuro"
+                  periodo === 'manha'
+                    ? 'bg-folha-claro text-mata'
+                    : 'bg-trigo-claro text-trigo-escuro'
                 }`}
               >
                 {PERIODO_ROTULO[periodo]}
@@ -656,7 +656,7 @@ function BlocoSlot({
   return (
     <section
       className={`rounded-xl2 border border-linha bg-creme-50/60 ${
-        compacto ? "min-h-[80px] p-2" : "p-4"
+        compacto ? 'min-h-[80px] p-2' : 'p-4'
       }`}
     >
       {mostrarTitulo && (
@@ -666,10 +666,10 @@ function BlocoSlot({
           </h3>
           <span className="text-xs text-tinta-suave">
             {entregas.length === 1
-              ? "1 entrega"
+              ? '1 entrega'
               : `${entregas.length} entregas`}
             {reservas.length > 0 &&
-              ` · ${reservas.length === 1 ? "1 reserva" : `${reservas.length} reservas`}`}
+              ` · ${reservas.length === 1 ? '1 reserva' : `${reservas.length} reservas`}`}
           </span>
         </div>
       )}
@@ -680,16 +680,16 @@ function BlocoSlot({
       {entregas.length === 0 && reservas.length === 0 ? (
         <p
           className={`text-center text-tinta-suave ${
-            compacto ? "py-3 text-[11px] text-pedra" : "py-6 text-sm"
+            compacto ? 'py-3 text-[11px] text-pedra' : 'py-6 text-sm'
           }`}
         >
-          {compacto ? "—" : "Sem entregas neste período."}
+          {compacto ? '—' : 'Sem entregas neste período.'}
         </p>
       ) : (
-        <div className={compacto ? "space-y-2.5" : "space-y-4"}>
+        <div className={compacto ? 'space-y-2.5' : 'space-y-4'}>
           {grupos.map((grupo) => (
             <GrupoCaminhao
-              key={grupo.caminhaoId ?? "__sem_caminhao__"}
+              key={grupo.caminhaoId ?? '__sem_caminhao__'}
               grupo={grupo}
               compacto={compacto}
               onAbrir={onAbrir}
@@ -721,8 +721,8 @@ function GrupoCaminhao({
     <div>
       <div
         className={`rounded-xl border bg-papel ${
-          semCaminhao ? "border-trigo/50" : "border-linha"
-        } ${compacto ? "p-2" : "p-3"}`}
+          semCaminhao ? 'border-trigo/50' : 'border-linha'
+        } ${compacto ? 'p-2' : 'p-3'}`}
       >
         {grupo.ocupacao ? (
           <BarraOcupacao ocupacao={grupo.ocupacao} compacto={compacto} />
@@ -731,18 +731,18 @@ function GrupoCaminhao({
           // pendência, não detalhe: fica em âmbar e sempre no fim do período.
           <div className="flex items-center gap-1.5">
             <AlertTriangle
-              className={`${compacto ? "h-3 w-3" : "h-3.5 w-3.5"} shrink-0 text-trigo-escuro`}
+              className={`${compacto ? 'h-3 w-3' : 'h-3.5 w-3.5'} shrink-0 text-trigo-escuro`}
               aria-hidden="true"
             />
             <span
               className={`font-semibold text-trigo-escuro ${
-                compacto ? "text-[11px]" : "text-xs"
+                compacto ? 'text-[11px]' : 'text-xs'
               }`}
             >
-              {semCaminhao ? "Sem caminhão" : grupo.caminhaoNome}
+              {semCaminhao ? 'Sem caminhão' : grupo.caminhaoNome}
             </span>
             <span
-              className={`ml-auto text-pedra ${compacto ? "text-[10px]" : "text-[11px]"}`}
+              className={`ml-auto text-pedra ${compacto ? 'text-[10px]' : 'text-[11px]'}`}
             >
               {grupo.entregas.length + grupo.reservas.length}
             </span>
@@ -752,7 +752,7 @@ function GrupoCaminhao({
 
       <div
         className={`mt-1.5 border-l border-linha ${
-          compacto ? "space-y-1.5 pl-1.5" : "space-y-2 pl-2.5"
+          compacto ? 'space-y-1.5 pl-1.5' : 'space-y-2 pl-2.5'
         }`}
       >
         {/* Reservas primeiro: elas são o contexto do caminhão no período. Ler
@@ -796,33 +796,33 @@ function BarraOcupacao({
       <div className="flex items-baseline justify-between gap-2">
         <span
           className={`truncate font-semibold text-tinta ${
-            compacto ? "text-[11px]" : "text-xs"
+            compacto ? 'text-[11px]' : 'text-xs'
           }`}
         >
           {ocupacao.caminhaoNome}
         </span>
         <span
           className={`shrink-0 font-semibold ${
-            compacto ? "text-[11px]" : "text-xs"
-          } ${cheio ? "text-terra-escuro" : "text-tinta-suave"}`}
+            compacto ? 'text-[11px]' : 'text-xs'
+          } ${cheio ? 'text-terra-escuro' : 'text-tinta-suave'}`}
         >
-          {emToneladas(ocupacao.usadoKg)} / {emToneladas(ocupacao.capacidadeKg)}{" "}
+          {emToneladas(ocupacao.usadoKg)} / {emToneladas(ocupacao.capacidadeKg)}{' '}
           t
         </span>
       </div>
       <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-creme-100">
         <div
           className={`h-full rounded-full transition-all ${
-            cheio ? "bg-terra" : "bg-folha"
+            cheio ? 'bg-terra' : 'bg-folha'
           }`}
           style={{ width: `${pct}%` }}
         />
       </div>
       {!compacto && ocupacao.motoristaNome && (
         <p className="mt-1 text-[11px] text-tinta-suave">
-          {ocupacao.motoristaNome} ·{" "}
+          {ocupacao.motoristaNome} ·{' '}
           {ocupacao.entregas === 1
-            ? "1 entrega"
+            ? '1 entrega'
             : `${ocupacao.entregas} entregas`}
         </p>
       )}
@@ -844,23 +844,23 @@ function CardReserva({
   compacto,
 }: CardReservaProps): React.ReactElement {
   const destino =
-    reserva.fornecedorNome?.trim() || reserva.cidade?.trim() || "";
+    reserva.fornecedorNome?.trim() || reserva.cidade?.trim() || '';
 
   return (
     <div
       className={`animate-sobe rounded-xl border border-dashed border-pedra bg-creme-50 ${
-        compacto ? "p-2" : "p-3.5"
+        compacto ? 'p-2' : 'p-3.5'
       }`}
     >
       <div className="flex items-start justify-between gap-2">
         <h4
           className={`flex min-w-0 items-center gap-1.5 font-display font-semibold leading-tight text-tinta ${
-            compacto ? "text-xs" : "text-[15px]"
+            compacto ? 'text-xs' : 'text-[15px]'
           }`}
         >
           {reserva.bloqueiaCaminhao && (
             <Lock
-              className={`${compacto ? "h-3 w-3" : "h-3.5 w-3.5"} shrink-0 text-terra-escuro`}
+              className={`${compacto ? 'h-3 w-3' : 'h-3.5 w-3.5'} shrink-0 text-terra-escuro`}
               aria-label="Caminhão indisponível neste período"
             />
           )}
@@ -874,7 +874,7 @@ function CardReserva({
       {reserva.motoristaNome && (
         <p
           className={`mt-1 flex items-center gap-1 font-medium text-tinta-suave ${
-            compacto ? "text-[11px]" : "text-xs"
+            compacto ? 'text-[11px]' : 'text-xs'
           }`}
         >
           <User
@@ -888,7 +888,7 @@ function CardReserva({
       {destino && (
         <p
           className={`mt-0.5 flex items-center gap-1 text-tinta-suave ${
-            compacto ? "text-[11px]" : "text-xs"
+            compacto ? 'text-[11px]' : 'text-xs'
           }`}
         >
           <MapPin
@@ -899,7 +899,7 @@ function CardReserva({
         </p>
       )}
 
-      {!compacto && reserva.produtos && reserva.produtos.trim() !== "" && (
+      {!compacto && reserva.produtos && reserva.produtos.trim() !== '' && (
         <p className="mt-1 line-clamp-2 text-xs text-tinta-suave">
           {reserva.produtos}
         </p>
@@ -907,7 +907,7 @@ function CardReserva({
 
       <div
         className={`mt-2 flex items-center justify-between gap-2 border-t border-linha/70 pt-2 ${
-          compacto ? "text-[11px]" : "text-xs"
+          compacto ? 'text-[11px]' : 'text-xs'
         }`}
       >
         <span className="flex min-w-0 items-center gap-1 text-tinta-suave">
@@ -915,7 +915,7 @@ function CardReserva({
             className="h-3.5 w-3.5 shrink-0 text-pedra"
             aria-hidden="true"
           />
-          <span className="truncate">{reserva.caminhaoNome || "—"}</span>
+          <span className="truncate">{reserva.caminhaoNome || '—'}</span>
         </span>
         {/* Sem peso a reserva ocupa o caminhão sem contar tonelagem — é o caso
             da oficina, contra o da coleta de adubo. Dizer isso no card evita a
@@ -957,23 +957,23 @@ function CardEntrega({
   const meta = STATUS_ENTREGA_META[entrega.status];
   const local = [entrega.bairro, entrega.cidade]
     .filter((p) => p && p.trim().length > 0)
-    .join(" · ");
+    .join(' · ');
 
   return (
     <button
       type="button"
       onClick={() => onAbrir(entrega.entregaId)}
-      aria-label={`Ver produtos de ${entrega.clienteNome || "cliente"}${
-        entrega.orixNumero ? `, pedido nº ${entrega.orixNumero}` : ""
+      aria-label={`Ver produtos de ${entrega.clienteNome || 'cliente'}${
+        entrega.orixNumero ? `, pedido nº ${entrega.orixNumero}` : ''
       }`}
       className={`animate-sobe block w-full cursor-pointer rounded-xl border border-linha bg-papel text-left shadow-carta transition duration-200 hover:-translate-y-0.5 hover:shadow-flutua focus:outline-none focus-visible:ring-2 focus-visible:ring-folha ${
-        compacto ? "p-2" : "p-3.5"
+        compacto ? 'p-2' : 'p-3.5'
       }`}
     >
       <div className="flex items-start justify-between gap-2">
         <h4
           className={`flex min-w-0 items-center gap-1.5 font-display font-semibold leading-tight text-tinta ${
-            compacto ? "text-xs" : "text-[15px]"
+            compacto ? 'text-xs' : 'text-[15px]'
           }`}
         >
           {/* No cartão compacto (mês/semana) não cabe a pílula do status, então
@@ -985,41 +985,41 @@ function CardEntrega({
               aria-label={meta.rotulo}
             />
           )}
-          <span className="truncate">{entrega.clienteNome || "Cliente"}</span>
+          <span className="truncate">{entrega.clienteNome || 'Cliente'}</span>
         </h4>
         {!compacto && (
           <span className="shrink-0 rounded-md bg-creme-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-tinta-suave">
-            nº {entrega.orixNumero || "—"}
+            nº {entrega.orixNumero || '—'}
           </span>
         )}
       </div>
 
       <p
         className={`mt-1 flex items-center gap-1 font-medium text-tinta-suave ${
-          compacto ? "text-[11px]" : "text-xs"
+          compacto ? 'text-[11px]' : 'text-xs'
         }`}
       >
         <User className="h-3.5 w-3.5 shrink-0 text-pedra" aria-hidden="true" />
         <span className="truncate">
-          {entrega.motoristaNome || "Sem motorista"}
+          {entrega.motoristaNome || 'Sem motorista'}
         </span>
       </p>
 
       <p
         className={`mt-0.5 flex items-center gap-1 text-tinta-suave ${
-          compacto ? "text-[11px]" : "text-xs"
+          compacto ? 'text-[11px]' : 'text-xs'
         }`}
       >
         <MapPin
           className="h-3.5 w-3.5 shrink-0 text-pedra"
           aria-hidden="true"
         />
-        <span className="truncate">{local || "—"}</span>
+        <span className="truncate">{local || '—'}</span>
       </p>
 
       <div
         className={`mt-2 flex items-center justify-between gap-2 border-t border-linha/70 pt-2 ${
-          compacto ? "text-[11px]" : "text-xs"
+          compacto ? 'text-[11px]' : 'text-xs'
         }`}
       >
         <span className="flex min-w-0 items-center gap-1 text-tinta-suave">
@@ -1027,7 +1027,7 @@ function CardEntrega({
             className="h-3.5 w-3.5 shrink-0 text-pedra"
             aria-hidden="true"
           />
-          <span className="truncate">{entrega.caminhaoNome || "—"}</span>
+          <span className="truncate">{entrega.caminhaoNome || '—'}</span>
         </span>
         {entrega.pesoTotalKg === null ? (
           <span

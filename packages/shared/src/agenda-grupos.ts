@@ -29,7 +29,7 @@ import type {
   AgendaOcupacao,
   AgendaReserva,
   AgendaSlot,
-} from "./types/domain.js";
+} from './types/domain.js';
 
 /**
  * Um caminhão do slot com as suas viagens.
@@ -69,14 +69,14 @@ function compararEntregas(a: AgendaEntrega, b: AgendaEntrega): number {
   const nomeA = a.clienteNome.trim();
   const nomeB = b.clienteNome.trim();
   if (nomeA !== nomeB) {
-    if (nomeA === "") return 1;
-    if (nomeB === "") return -1;
-    const porNome = nomeA.localeCompare(nomeB, "pt-BR", {
-      sensitivity: "base",
+    if (nomeA === '') return 1;
+    if (nomeB === '') return -1;
+    const porNome = nomeA.localeCompare(nomeB, 'pt-BR', {
+      sensitivity: 'base',
     });
     if (porNome !== 0) return porNome;
   }
-  const porNumero = a.orixNumero.localeCompare(b.orixNumero, "pt-BR", {
+  const porNumero = a.orixNumero.localeCompare(b.orixNumero, 'pt-BR', {
     numeric: true,
   });
   if (porNumero !== 0) return porNumero;
@@ -93,7 +93,7 @@ function compararEntregas(a: AgendaEntrega, b: AgendaEntrega): number {
 function compararReservas(a: AgendaReserva, b: AgendaReserva): number {
   const porServico = a.servico
     .trim()
-    .localeCompare(b.servico.trim(), "pt-BR", { sensitivity: "base" });
+    .localeCompare(b.servico.trim(), 'pt-BR', { sensitivity: 'base' });
   if (porServico !== 0) return porServico;
   return a.reservaId.localeCompare(b.reservaId);
 }
@@ -168,20 +168,20 @@ export function agruparSlotPorCaminhao(
       return {
         caminhaoId,
         caminhaoNome:
-          entregas[0]?.caminhaoNome ?? reservas[0]?.caminhaoNome ?? "",
+          entregas[0]?.caminhaoNome ?? reservas[0]?.caminhaoNome ?? '',
         ocupacao: null,
         reservas: [...reservas].sort(compararReservas),
         entregas: [...entregas].sort(compararEntregas),
       };
     })
-    .sort((a, b) => a.caminhaoNome.localeCompare(b.caminhaoNome, "pt-BR"));
+    .sort((a, b) => a.caminhaoNome.localeCompare(b.caminhaoNome, 'pt-BR'));
   grupos.push(...sobras);
 
   // 3) Sem caminhão, sempre por último. Nunca tem reserva: ela exige caminhão.
   if (semCaminhao.length > 0) {
     grupos.push({
       caminhaoId: null,
-      caminhaoNome: "",
+      caminhaoNome: '',
       ocupacao: null,
       reservas: [],
       entregas: [...semCaminhao].sort(compararEntregas),

@@ -22,11 +22,11 @@ import {
   type LimiteCaminhao,
   type OrigemPeso,
   type PeriodoEntrega,
-} from "@pastobom/shared";
+} from '@pastobom/shared';
 
-import { supabase } from "../db/supabase.js";
-import { log } from "../log.js";
-import { TransicaoError } from "./erros.js";
+import { supabase } from '../db/supabase.js';
+import { log } from '../log.js';
+import { TransicaoError } from './erros.js';
 
 // ---------------------------------------------------------------------------
 // Peso
@@ -53,9 +53,9 @@ export async function lerPesosDetalhados(
   if (unicos.length === 0) return new Map();
 
   const { data, error } = await supabase
-    .from("produtos_peso")
-    .select("produto_codigo, peso_kg, origem, atualizado_em")
-    .in("produto_codigo", unicos);
+    .from('produtos_peso')
+    .select('produto_codigo, peso_kg, origem, atualizado_em')
+    .in('produto_codigo', unicos);
 
   if (error) {
     log.warn(`[carga] Falha ao ler pesos de produtos: ${error.message}`);
@@ -68,7 +68,7 @@ export async function lerPesosDetalhados(
     if (!Number.isFinite(kg)) continue;
     mapa.set(r.produto_codigo as string, {
       kg,
-      origem: r.origem === "manual" ? "manual" : "auto",
+      origem: r.origem === 'manual' ? 'manual' : 'auto',
       atualizadoEm: (r.atualizado_em as string | null) ?? null,
     });
   }
@@ -106,7 +106,7 @@ export async function gravarPesosManuais(
       const linha: Record<string, unknown> = {
         produto_codigo: p.produtoCodigo,
         peso_kg: p.pesoKg,
-        origem: "manual",
+        origem: 'manual',
         atualizado_em: agora,
         atualizado_por: usuarioId,
       };
@@ -119,13 +119,13 @@ export async function gravarPesosManuais(
   if (linhas.length === 0) return;
 
   const { error } = await supabase
-    .from("produtos_peso")
-    .upsert(linhas, { onConflict: "produto_codigo" });
+    .from('produtos_peso')
+    .upsert(linhas, { onConflict: 'produto_codigo' });
 
   if (error) {
     throw new TransicaoError(
       500,
-      "erro_banco",
+      'erro_banco',
       `Falha ao gravar o peso do produto: ${error.message}`,
     );
   }
@@ -172,7 +172,7 @@ export async function semearPesosAuto(
     produto_codigo: string;
     nome_produto: string;
     peso_kg: number;
-    origem: "auto";
+    origem: 'auto';
   }[] = [];
 
   for (const [codigo, nome] of porCodigo) {
@@ -183,7 +183,7 @@ export async function semearPesosAuto(
       produto_codigo: codigo,
       nome_produto: nome,
       peso_kg: kg,
-      origem: "auto",
+      origem: 'auto',
     });
   }
 
@@ -192,8 +192,8 @@ export async function semearPesosAuto(
   // onConflict ignora: se outro tick já inseriu (ou a equipe já corrigiu à mão),
   // o registro existente prevalece.
   const { error } = await supabase
-    .from("produtos_peso")
-    .upsert(novos, { onConflict: "produto_codigo", ignoreDuplicates: true });
+    .from('produtos_peso')
+    .upsert(novos, { onConflict: 'produto_codigo', ignoreDuplicates: true });
 
   if (error) {
     log.warn(`[carga] Falha ao semear pesos automáticos: ${error.message}`);
@@ -253,13 +253,13 @@ async function lerReservasDoSlot(
   ignorarReservaId?: string,
 ): Promise<LinhaReserva[]> {
   const { data: linhas, error } = await supabase
-    .from("reservas")
+    .from('reservas')
     .select(
-      "id, servico, motorista_id, caminhao_id, peso_previsto_kg, bloqueia_caminhao",
+      'id, servico, motorista_id, caminhao_id, peso_previsto_kg, bloqueia_caminhao',
     )
-    .eq("data_agendada", data)
-    .eq("periodo", periodo)
-    .eq("status", "ativa");
+    .eq('data_agendada', data)
+    .eq('periodo', periodo)
+    .eq('status', 'ativa');
 
   if (error) {
     log.error(
@@ -326,16 +326,16 @@ export async function ocupacaoDoSlot(
   }
 
   const { data: linhas, error } = await supabase
-    .from("entregas")
-    .select("id, motorista_id, caminhao_id")
-    .eq("data_agendada", data)
-    .eq("periodo", periodo)
-    .in("status", ["agendada", "em_rota"]);
+    .from('entregas')
+    .select('id, motorista_id, caminhao_id')
+    .eq('data_agendada', data)
+    .eq('periodo', periodo)
+    .in('status', ['agendada', 'em_rota']);
 
   if (error) {
     throw new TransicaoError(
       500,
-      "erro_banco",
+      'erro_banco',
       `Falha ao ler a ocupação do dia: ${error.message}`,
     );
   }
@@ -349,25 +349,25 @@ export async function ocupacaoDoSlot(
   // Peso de cada entrega: soma dos itens DA VIAGEM × peso unitário do produto.
   const ids = relevantes.map((l) => l.id);
   const { data: itens, error: errItens } = await supabase
-    .from("entrega_itens")
-    .select("entrega_id, produto_codigo, qtd, peso_unit_kg")
-    .in("entrega_id", ids);
+    .from('entrega_itens')
+    .select('entrega_id, produto_codigo, qtd, peso_unit_kg')
+    .in('entrega_id', ids);
 
   if (errItens) {
     throw new TransicaoError(
       500,
-      "erro_banco",
+      'erro_banco',
       `Falha ao ler os itens do dia: ${errItens.message}`,
     );
   }
 
   const pesos = await lerPesosProdutos(
-    (itens ?? []).map((i) => (i.produto_codigo as string) ?? ""),
+    (itens ?? []).map((i) => (i.produto_codigo as string) ?? ''),
   );
 
   const pesoPorEntrega = new Map<string, number>();
   for (const item of itens ?? []) {
-    const codigo = (item.produto_codigo as string) ?? "";
+    const codigo = (item.produto_codigo as string) ?? '';
     // O peso CONGELADO da viagem manda (migração 0019). O cadastro é o fallback
     // das viagens agendadas antes dela. Sem nenhum dos dois, conta como 0 — a
     // trava de capacidade prefere subestimar a recusar uma viagem por um dado
@@ -407,9 +407,9 @@ export interface Caminhao {
 /** Carrega um caminhão pelo id; 422 se não existir ou estiver inativo. */
 export async function carregarCaminhao(id: string): Promise<Caminhao> {
   const { data, error } = await supabase
-    .from("caminhoes")
-    .select("id, nome, capacidade_kg, ativo")
-    .eq("id", id)
+    .from('caminhoes')
+    .select('id, nome, capacidade_kg, ativo')
+    .eq('id', id)
     .maybeSingle<{
       id: string;
       nome: string;
@@ -420,21 +420,21 @@ export async function carregarCaminhao(id: string): Promise<Caminhao> {
   if (error) {
     throw new TransicaoError(
       500,
-      "erro_banco",
+      'erro_banco',
       `Falha ao carregar o caminhão: ${error.message}`,
     );
   }
   if (!data) {
     throw new TransicaoError(
       422,
-      "caminhao_invalido",
-      "Caminhão não encontrado.",
+      'caminhao_invalido',
+      'Caminhão não encontrado.',
     );
   }
   if (!data.ativo) {
     throw new TransicaoError(
       422,
-      "caminhao_inativo",
+      'caminhao_inativo',
       `O caminhão ${data.nome} está inativo.`,
     );
   }
@@ -447,7 +447,7 @@ export async function carregarCaminhao(id: string): Promise<Caminhao> {
 }
 
 function formatarT(kg: number): string {
-  return `${(kg / 1000).toLocaleString("pt-BR", {
+  return `${(kg / 1000).toLocaleString('pt-BR', {
     minimumFractionDigits: 1,
     maximumFractionDigits: 2,
   })} t`;
@@ -478,7 +478,7 @@ export async function validarCargaDoAgendamento(args: {
    * entregas/dia (decisão do David em 24/08 — o teto é de entregas a cliente),
    * e só a RESERVA pode reclamar do caminhão que já tem viagem marcada.
    */
-  alvo?: "entrega" | "reserva";
+  alvo?: 'entrega' | 'reserva';
   data: string;
   periodo: PeriodoEntrega;
   /** Nulável porque reserva pode não ter motorista (o caminhão vai à oficina). */
@@ -492,7 +492,7 @@ export async function validarCargaDoAgendamento(args: {
   const {
     entregaId,
     reservaId,
-    alvo = "entrega",
+    alvo = 'entrega',
     data,
     periodo,
     motoristaId,
@@ -511,7 +511,7 @@ export async function validarCargaDoAgendamento(args: {
   if (noCaminhao?.bloqueadoPor) {
     throw new TransicaoError(
       422,
-      "caminhao_reservado",
+      'caminhao_reservado',
       `O ${caminhao.nome} está reservado para ${noCaminhao.bloqueadoPor} neste período. Cancele a reserva ou escolha outro caminhão, outro período ou outro dia.`,
     );
   }
@@ -520,18 +520,18 @@ export async function validarCargaDoAgendamento(args: {
   //    marcada. Recusar aqui é melhor que deixar a reserva entrar e o motorista
   //    descobrir na hora da carga que o caminhão foi para a oficina.
   if (
-    alvo === "reserva" &&
+    alvo === 'reserva' &&
     exigeExclusividade &&
     (noCaminhao?.entregas ?? 0) > 0
   ) {
     const n = noCaminhao?.entregas ?? 0;
     throw new TransicaoError(
       422,
-      "caminhao_com_entregas",
+      'caminhao_com_entregas',
       `O ${caminhao.nome} já tem ${n} ${
-        n === 1 ? "entrega marcada" : "entregas marcadas"
+        n === 1 ? 'entrega marcada' : 'entregas marcadas'
       } neste período. Reagende ${
-        n === 1 ? "ela" : "elas"
+        n === 1 ? 'ela' : 'elas'
       } antes de bloquear o caminhão, ou desmarque "caminhão indisponível" para dividir o período.`,
     );
   }
@@ -543,7 +543,7 @@ export async function validarCargaDoAgendamento(args: {
     const excedente = totalKg - caminhao.capacidadeKg;
     throw new TransicaoError(
       422,
-      "capacidade_excedida",
+      'capacidade_excedida',
       `A carga não cabe: o ${caminhao.nome} comporta ${formatarT(
         caminhao.capacidadeKg,
       )} e ficaria com ${formatarT(totalKg)} (excedeu ${formatarT(
@@ -563,7 +563,7 @@ export async function validarCargaDoAgendamento(args: {
   //    já bloqueia por outro caminho (trava 1 e tonelagem). Por isso
   //    `contarEntregasNoDia` continua olhando só a tabela `entregas`.
   const limites =
-    alvo === "entrega" ? await lerLimitesDoCaminhao(caminhaoId) : [];
+    alvo === 'entrega' ? await lerLimitesDoCaminhao(caminhaoId) : [];
   if (limites.length > 0) {
     const jaNoDia = await contarEntregasNoDia(data, caminhaoId, entregaId);
     const veredicto = avaliarLimiteEntregas({
@@ -574,9 +574,9 @@ export async function validarCargaDoAgendamento(args: {
     if (!veredicto.cabe) {
       throw new TransicaoError(
         422,
-        "limite_entregas_excedido",
+        'limite_entregas_excedido',
         `O ${caminhao.nome} já tem ${veredicto.entregasNoDia} ${
-          veredicto.entregasNoDia === 1 ? "entrega" : "entregas"
+          veredicto.entregasNoDia === 1 ? 'entrega' : 'entregas'
         } neste dia e o limite configurado é ${veredicto.maxEntregasDia} por dia. Escolha outro caminhão ou outro dia.`,
       );
     }
@@ -594,7 +594,7 @@ export async function validarCargaDoAgendamento(args: {
     const nome = await nomeDoMotorista(outrosMotoristas[0] as string);
     throw new TransicaoError(
       422,
-      "caminhao_ocupado",
+      'caminhao_ocupado',
       `O ${caminhao.nome} já está com ${nome} neste período. Um caminhão não sai com dois motoristas no mesmo turno.`,
     );
   }
@@ -606,9 +606,9 @@ export async function validarCargaDoAgendamento(args: {
       const outro = await carregarCaminhao(outroCaminhaoId).catch(() => null);
       throw new TransicaoError(
         422,
-        "motorista_ocupado",
+        'motorista_ocupado',
         `Este motorista já está no ${
-          outro?.nome ?? "outro caminhão"
+          outro?.nome ?? 'outro caminhão'
         } neste período. Ele não pode levar dois caminhões no mesmo turno.`,
       );
     }
@@ -628,9 +628,9 @@ export async function lerLimitesDoCaminhao(
   caminhaoId: string,
 ): Promise<LimiteCaminhao[]> {
   const { data, error } = await supabase
-    .from("caminhao_limites")
-    .select("valido_de, valido_ate, max_entregas_dia")
-    .eq("caminhao_id", caminhaoId);
+    .from('caminhao_limites')
+    .select('valido_de, valido_ate, max_entregas_dia')
+    .eq('caminhao_id', caminhaoId);
 
   if (error) {
     // Degrada em vez de derrubar: o limite de quantidade é uma regra a MAIS, e
@@ -661,16 +661,16 @@ async function contarEntregasNoDia(
   ignorarEntregaId?: string,
 ): Promise<number> {
   const { data: linhas, error } = await supabase
-    .from("entregas")
-    .select("id")
-    .eq("data_agendada", data)
-    .eq("caminhao_id", caminhaoId)
-    .in("status", ["agendada", "em_rota"]);
+    .from('entregas')
+    .select('id')
+    .eq('data_agendada', data)
+    .eq('caminhao_id', caminhaoId)
+    .in('status', ['agendada', 'em_rota']);
 
   if (error) {
     throw new TransicaoError(
       500,
-      "erro_banco",
+      'erro_banco',
       `Falha ao contar as entregas do dia: ${error.message}`,
     );
   }
@@ -681,10 +681,10 @@ async function contarEntregasNoDia(
 /** Nome do motorista (profiles) para compor a mensagem de erro. */
 async function nomeDoMotorista(id: string): Promise<string> {
   const { data } = await supabase
-    .from("profiles")
-    .select("nome")
-    .eq("id", id)
+    .from('profiles')
+    .select('nome')
+    .eq('id', id)
     .maybeSingle<{ nome: string | null }>();
   const nome = data?.nome?.trim();
-  return nome && nome.length > 0 ? nome : "outro motorista";
+  return nome && nome.length > 0 ? nome : 'outro motorista';
 }

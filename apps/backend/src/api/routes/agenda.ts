@@ -8,8 +8,8 @@
 //
 // O prefixo /api é aplicado no registro do plugin (server.ts).
 
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { z } from "zod";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { z } from 'zod';
 
 import type {
   AgendaEntrega,
@@ -20,11 +20,11 @@ import type {
   Caminhao,
   PeriodoEntrega,
   StatusEntrega,
-} from "@pastobom/shared";
+} from '@pastobom/shared';
 
-import { supabase } from "../../db/supabase.js";
-import { log } from "../../log.js";
-import { lerPesosProdutos } from "../../services/carga.js";
+import { supabase } from '../../db/supabase.js';
+import { log } from '../../log.js';
+import { lerPesosProdutos } from '../../services/carga.js';
 
 // ---------------------------------------------------------------------------
 // Schemas de validação (zod)
@@ -33,7 +33,7 @@ import { lerPesosProdutos } from "../../services/carga.js";
 const dataISO = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
-  .refine((v) => !Number.isNaN(Date.parse(v)), { message: "Data inválida." });
+  .refine((v) => !Number.isNaN(Date.parse(v)), { message: 'Data inválida.' });
 
 const querySchema = z.object({
   de: dataISO,
@@ -57,15 +57,15 @@ function exigirLeituraAgenda(
   const papel = req.usuario?.papel;
   if (
     !req.usuario ||
-    papel === "logistica" ||
-    papel === "almoxarifado" ||
-    papel === "vendedor"
+    papel === 'logistica' ||
+    papel === 'almoxarifado' ||
+    papel === 'vendedor'
   ) {
     return true;
   }
   reply.code(403).send({
-    error: "sem_permissao",
-    message: "Sem permissão para consultar a agenda.",
+    error: 'sem_permissao',
+    message: 'Sem permissão para consultar a agenda.',
   });
   return false;
 }
@@ -136,13 +136,13 @@ interface ReservasCarregadas {
 }
 
 const SELECT_RESERVA =
-  "id, servico, cidade, produtos, fornecedor_codigo, data_agendada, periodo, " +
-  "motorista_id, caminhao_id, peso_previsto_kg, bloqueia_caminhao";
+  'id, servico, cidade, produtos, fornecedor_codigo, data_agendada, periodo, ' +
+  'motorista_id, caminhao_id, peso_previsto_kg, bloqueia_caminhao';
 
 const SELECT_AGENDA =
-  "id, pedido_id, data_agendada, periodo, motorista_id, caminhao_id, status, " +
-  "entrega_itens(produto_codigo, qtd, peso_unit_kg), " +
-  "pedidos(orix_numero, cliente_codigo, cliente_nome, cidade_cliente)";
+  'id, pedido_id, data_agendada, periodo, motorista_id, caminhao_id, status, ' +
+  'entrega_itens(produto_codigo, qtd, peso_unit_kg), ' +
+  'pedidos(orix_numero, cliente_codigo, cliente_nome, cidade_cliente)';
 
 /** Peso da viagem: total agregado (desconhecido = 0) e o exibível (null se faltar peso). */
 interface PesoDoPedido {
@@ -155,14 +155,14 @@ interface PesoDoPedido {
 // ---------------------------------------------------------------------------
 
 export async function agendaRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/agenda", async (req, reply) => {
+  app.get('/agenda', async (req, reply) => {
     if (!exigirLeituraAgenda(req, reply)) return reply;
 
     const parsed = querySchema.safeParse(req.query);
     if (!parsed.success) {
       return reply.code(400).send({
-        error: "query_invalida",
-        message: "Informe de e ate no formato YYYY-MM-DD.",
+        error: 'query_invalida',
+        message: 'Informe de e ate no formato YYYY-MM-DD.',
         detalhes: parsed.error.issues,
       });
     }
@@ -171,7 +171,7 @@ export async function agendaRoutes(app: FastifyInstance): Promise<void> {
     const dias = (Date.parse(ate) - Date.parse(de)) / 86_400_000 + 1;
     if (dias < 1 || dias > MAX_DIAS) {
       return reply.code(422).send({
-        error: "janela_invalida",
+        error: 'janela_invalida',
         message: `A janela precisa começar antes do fim e ter no máximo ${MAX_DIAS} dias.`,
       });
     }
@@ -180,19 +180,19 @@ export async function agendaRoutes(app: FastifyInstance): Promise<void> {
       // A agenda mostra VIAGENS (Onda 2), não pedidos: dois caminhões levando o
       // mesmo pedido aparecem como dois cartões, cada um com sua carga.
       const { data, error } = await supabase
-        .from("entregas")
+        .from('entregas')
         .select(SELECT_AGENDA)
-        .gte("data_agendada", de)
-        .lte("data_agendada", ate)
-        .not("periodo", "is", null)
-        .in("status", ["agendada", "em_rota"])
-        .order("data_agendada", { ascending: true });
+        .gte('data_agendada', de)
+        .lte('data_agendada', ate)
+        .not('periodo', 'is', null)
+        .in('status', ['agendada', 'em_rota'])
+        .order('data_agendada', { ascending: true });
 
       if (error) {
         log.error(`[GET /agenda] erro: ${error.message}`);
         return reply
           .code(500)
-          .send({ error: "erro_banco", message: error.message });
+          .send({ error: 'erro_banco', message: error.message });
       }
 
       const linhas = (data ?? []) as unknown as EntregaAgendaRow[];
@@ -207,7 +207,7 @@ export async function agendaRoutes(app: FastifyInstance): Promise<void> {
         resolverClientes(linhas),
         lerPesosProdutos(
           linhas.flatMap((l) =>
-            (l.entrega_itens ?? []).map((i) => i.produto_codigo ?? ""),
+            (l.entrega_itens ?? []).map((i) => i.produto_codigo ?? ''),
           ),
         ),
         lerReservas(de, ate),
@@ -227,7 +227,7 @@ export async function agendaRoutes(app: FastifyInstance): Promise<void> {
       };
       return reply.send(resposta);
     } catch (err) {
-      return responderErro(reply, err, "[GET /agenda]");
+      return responderErro(reply, err, '[GET /agenda]');
     }
   });
 }
@@ -242,9 +242,9 @@ export async function agendaRoutes(app: FastifyInstance): Promise<void> {
  */
 async function lerFrota(): Promise<Map<string, Caminhao>> {
   const { data, error } = await supabase
-    .from("caminhoes")
-    .select("id, nome, placa, capacidade_kg, ativo")
-    .order("nome", { ascending: true });
+    .from('caminhoes')
+    .select('id, nome, placa, capacidade_kg, ativo')
+    .order('nome', { ascending: true });
 
   if (error) {
     log.warn(`[agenda] Falha ao ler a frota: ${error.message}`);
@@ -256,7 +256,7 @@ async function lerFrota(): Promise<Map<string, Caminhao>> {
     const kg = Number(row.capacidade_kg);
     mapa.set(row.id, {
       id: row.id,
-      nome: row.nome ?? "",
+      nome: row.nome ?? '',
       placa: row.placa ?? null,
       capacidadeKg: Number.isFinite(kg) ? kg : 0,
       ativo: row.ativo === true,
@@ -273,15 +273,15 @@ async function resolverNomesMotorista(
     ...new Set(
       linhas
         .map((l) => l.motorista_id)
-        .filter((v): v is string => typeof v === "string" && v.length > 0),
+        .filter((v): v is string => typeof v === 'string' && v.length > 0),
     ),
   ];
   if (ids.length === 0) return new Map();
 
   const { data, error } = await supabase
-    .from("profiles")
-    .select("id, nome")
-    .in("id", ids);
+    .from('profiles')
+    .select('id, nome')
+    .in('id', ids);
 
   if (error) {
     log.warn(`[agenda] Falha ao resolver nomes de motorista: ${error.message}`);
@@ -290,7 +290,7 @@ async function resolverNomesMotorista(
 
   const mapa = new Map<string, string>();
   for (const r of data ?? []) {
-    mapa.set(r.id as string, (r.nome as string) ?? "");
+    mapa.set(r.id as string, (r.nome as string) ?? '');
   }
   return mapa;
 }
@@ -314,12 +314,12 @@ async function lerReservas(
   };
 
   const { data, error } = await supabase
-    .from("reservas")
+    .from('reservas')
     .select(SELECT_RESERVA)
-    .gte("data_agendada", de)
-    .lte("data_agendada", ate)
-    .eq("status", "ativa")
-    .order("data_agendada", { ascending: true });
+    .gte('data_agendada', de)
+    .lte('data_agendada', ate)
+    .eq('status', 'ativa')
+    .order('data_agendada', { ascending: true });
 
   if (error) {
     log.error(`[agenda] Falha ao ler as reservas: ${error.message}`);
@@ -335,20 +335,20 @@ async function lerReservas(
     ...new Set(
       linhas
         .map((r) => r.motorista_id)
-        .filter((v): v is string => typeof v === "string" && v.length > 0),
+        .filter((v): v is string => typeof v === 'string' && v.length > 0),
     ),
   ];
   const codigosFornecedor = [
     ...new Set(
       linhas
         .map((r) => r.fornecedor_codigo)
-        .filter((v): v is string => typeof v === "string" && v.length > 0),
+        .filter((v): v is string => typeof v === 'string' && v.length > 0),
     ),
   ];
 
   const [motoristas, fornecedores] = await Promise.all([
-    nomesPorId("profiles", "id", idsMotorista),
-    nomesPorId("fornecedores", "codigo", codigosFornecedor),
+    nomesPorId('profiles', 'id', idsMotorista),
+    nomesPorId('fornecedores', 'codigo', codigosFornecedor),
   ]);
 
   return { linhas, motoristas, fornecedores };
@@ -360,15 +360,15 @@ async function lerReservas(
  * resolvedores próprios porque partem das linhas, não de uma lista de chaves.
  */
 async function nomesPorId(
-  tabela: "profiles" | "fornecedores",
-  coluna: "id" | "codigo",
+  tabela: 'profiles' | 'fornecedores',
+  coluna: 'id' | 'codigo',
   chaves: string[],
 ): Promise<Map<string, string>> {
   if (chaves.length === 0) return new Map();
 
   const { data, error } = await supabase
     .from(tabela)
-    .select(coluna === "id" ? "id, nome" : "codigo, nome")
+    .select(coluna === 'id' ? 'id, nome' : 'codigo, nome')
     .in(coluna, chaves);
 
   if (error) {
@@ -379,8 +379,8 @@ async function nomesPorId(
   const mapa = new Map<string, string>();
   for (const r of (data ?? []) as unknown as Record<string, unknown>[]) {
     const chave = r[coluna];
-    if (typeof chave !== "string") continue;
-    mapa.set(chave, ((r.nome as string | null) ?? "").trim());
+    if (typeof chave !== 'string') continue;
+    mapa.set(chave, ((r.nome as string | null) ?? '').trim());
   }
   return mapa;
 }
@@ -393,15 +393,15 @@ async function resolverClientes(
     ...new Set(
       linhas
         .map((l) => l.pedidos?.cliente_codigo ?? null)
-        .filter((v): v is string => typeof v === "string" && v.length > 0),
+        .filter((v): v is string => typeof v === 'string' && v.length > 0),
     ),
   ];
   if (codigos.length === 0) return new Map();
 
   const { data, error } = await supabase
-    .from("clientes")
-    .select("codigo, bairro, cidade")
-    .in("codigo", codigos);
+    .from('clientes')
+    .select('codigo, bairro, cidade')
+    .in('codigo', codigos);
 
   if (error) {
     log.warn(`[agenda] Falha ao resolver clientes: ${error.message}`);
@@ -445,7 +445,7 @@ function pesoDaLinha(
     const congelado = Number(item.peso_unit_kg);
     const unit = Number.isFinite(congelado)
       ? congelado
-      : pesos.get(item.produto_codigo ?? "");
+      : pesos.get(item.produto_codigo ?? '');
     const qtd = Number(item.qtd) || 0;
     if (unit === undefined) {
       completo = false;
@@ -507,17 +507,17 @@ function montarSlots(
       ? frota.get(linha.caminhao_id)
       : undefined;
     const motoristaNome = linha.motorista_id
-      ? (motoristas.get(linha.motorista_id) ?? "")
+      ? (motoristas.get(linha.motorista_id) ?? '')
       : null;
     const peso = pesoDaLinha(linha, pesos);
 
     slot.entregas.push({
       entregaId: linha.id,
       pedidoId: linha.pedido_id,
-      orixNumero: pedido?.orix_numero ?? "",
-      clienteNome: pedido?.cliente_nome ?? "",
+      orixNumero: pedido?.orix_numero ?? '',
+      clienteNome: pedido?.cliente_nome ?? '',
       bairro: cliente?.bairro ?? null,
-      cidade: cliente?.cidade ?? pedido?.cidade_cliente ?? "",
+      cidade: cliente?.cidade ?? pedido?.cidade_cliente ?? '',
       motoristaId: linha.motorista_id,
       motoristaNome,
       caminhaoId: linha.caminhao_id,
@@ -530,7 +530,7 @@ function montarSlots(
 
     const uso: AgendaOcupacao = slot.ocupacao.get(linha.caminhao_id) ?? {
       caminhaoId: linha.caminhao_id,
-      caminhaoNome: caminhao?.nome ?? "",
+      caminhaoNome: caminhao?.nome ?? '',
       capacidadeKg: caminhao?.capacidadeKg ?? 0,
       usadoKg: 0,
       motoristaId: null,
@@ -556,7 +556,7 @@ function montarSlots(
     const slot = pegarSlot(r.data_agendada, r.periodo);
     const caminhao = frota.get(r.caminhao_id);
     const motoristaNome = r.motorista_id
-      ? (reservas.motoristas.get(r.motorista_id) ?? "")
+      ? (reservas.motoristas.get(r.motorista_id) ?? '')
       : null;
     const pesoNum = Number(r.peso_previsto_kg);
     const pesoPrevistoKg =
@@ -583,7 +583,7 @@ function montarSlots(
     // caminhão está tomado), com peso ela desconta tonelagem.
     const uso: AgendaOcupacao = slot.ocupacao.get(r.caminhao_id) ?? {
       caminhaoId: r.caminhao_id,
-      caminhaoNome: caminhao?.nome ?? "",
+      caminhaoNome: caminhao?.nome ?? '',
       capacidadeKg: caminhao?.capacidadeKg ?? 0,
       usadoKg: 0,
       motoristaId: null,
@@ -607,7 +607,7 @@ function montarSlots(
       periodo: s.periodo,
       entregas: s.entregas,
       ocupacao: [...s.ocupacao.values()].sort((a, b) =>
-        a.caminhaoNome.localeCompare(b.caminhaoNome, "pt-BR"),
+        a.caminhaoNome.localeCompare(b.caminhaoNome, 'pt-BR'),
       ),
       reservas: s.reservas,
     }))
@@ -624,5 +624,5 @@ function montarSlots(
 function responderErro(reply: FastifyReply, err: unknown, contexto: string) {
   const mensagem = err instanceof Error ? err.message : String(err);
   log.error(`${contexto} erro inesperado: ${mensagem}`);
-  return reply.code(500).send({ error: "erro_interno", message: mensagem });
+  return reply.code(500).send({ error: 'erro_interno', message: mensagem });
 }

@@ -24,12 +24,12 @@
 // A reserva NÃO consome a cota de entregas/dia da 0020 (decisão do David,
 // 24/08/2026): o teto é de entregas a cliente.
 
-import type { PeriodoEntrega, Reserva, StatusReserva } from "@pastobom/shared";
+import type { PeriodoEntrega, Reserva, StatusReserva } from '@pastobom/shared';
 
-import { supabase } from "../db/supabase.js";
-import { log } from "../log.js";
-import { validarCargaDoAgendamento } from "./carga.js";
-import { TransicaoError } from "./erros.js";
+import { supabase } from '../db/supabase.js';
+import { log } from '../log.js';
+import { validarCargaDoAgendamento } from './carga.js';
+import { TransicaoError } from './erros.js';
 
 // ---------------------------------------------------------------------------
 // Linha do banco e mapeamento
@@ -38,7 +38,7 @@ import { TransicaoError } from "./erros.js";
 // String literal única de propósito: concatenar degrada o tipo de retorno do
 // supabase-js para GenericStringError[] e a linha vira `never`.
 const COLUNAS_RESERVA =
-  "id, status, servico, fornecedor_codigo, cidade, produtos, data_agendada, periodo, caminhao_id, motorista_id, peso_previsto_kg, bloqueia_caminhao, observacoes, criado_em";
+  'id, status, servico, fornecedor_codigo, cidade, produtos, data_agendada, periodo, caminhao_id, motorista_id, peso_previsto_kg, bloqueia_caminhao, observacoes, criado_em';
 
 interface ReservaRow {
   id: string;
@@ -117,36 +117,36 @@ async function resolverNomes(rows: ReservaRow[]): Promise<NomesResolvidos> {
     ...new Set(
       rows
         .map((r) => r.motorista_id)
-        .filter((v): v is string => typeof v === "string" && v.length > 0),
+        .filter((v): v is string => typeof v === 'string' && v.length > 0),
     ),
   ];
   const codigosFornecedor = [
     ...new Set(
       rows
         .map((r) => r.fornecedor_codigo)
-        .filter((v): v is string => typeof v === "string" && v.length > 0),
+        .filter((v): v is string => typeof v === 'string' && v.length > 0),
     ),
   ];
 
   const [caminhoes, motoristas, fornecedores] = await Promise.all([
-    lerNomes("caminhoes", "id", idsCaminhao),
-    lerNomes("profiles", "id", idsMotorista),
-    lerNomes("fornecedores", "codigo", codigosFornecedor),
+    lerNomes('caminhoes', 'id', idsCaminhao),
+    lerNomes('profiles', 'id', idsMotorista),
+    lerNomes('fornecedores', 'codigo', codigosFornecedor),
   ]);
 
   return { caminhoes, motoristas, fornecedores };
 }
 
 async function lerNomes(
-  tabela: "caminhoes" | "profiles" | "fornecedores",
-  coluna: "id" | "codigo",
+  tabela: 'caminhoes' | 'profiles' | 'fornecedores',
+  coluna: 'id' | 'codigo',
   chaves: string[],
 ): Promise<Map<string, string>> {
   if (chaves.length === 0) return new Map();
 
   const { data, error } = await supabase
     .from(tabela)
-    .select(coluna === "id" ? "id, nome" : "codigo, nome")
+    .select(coluna === 'id' ? 'id, nome' : 'codigo, nome')
     .in(coluna, chaves);
 
   if (error) {
@@ -159,8 +159,8 @@ async function lerNomes(
   const mapa = new Map<string, string>();
   for (const r of (data ?? []) as unknown as Record<string, unknown>[]) {
     const chave = r[coluna];
-    if (typeof chave !== "string") continue;
-    mapa.set(chave, ((r.nome as string | null) ?? "").trim());
+    if (typeof chave !== 'string') continue;
+    mapa.set(chave, ((r.nome as string | null) ?? '').trim());
   }
   return mapa;
 }
@@ -184,23 +184,23 @@ export async function listarReservas(
   filtro: FiltroReservas = {},
 ): Promise<Reserva[]> {
   let q = supabase
-    .from("reservas")
+    .from('reservas')
     .select(COLUNAS_RESERVA)
-    .eq("status", filtro.status ?? "ativa");
+    .eq('status', filtro.status ?? 'ativa');
 
-  if (filtro.de) q = q.gte("data_agendada", filtro.de);
-  if (filtro.ate) q = q.lte("data_agendada", filtro.ate);
-  if (filtro.caminhaoId) q = q.eq("caminhao_id", filtro.caminhaoId);
-  if (filtro.motoristaId) q = q.eq("motorista_id", filtro.motoristaId);
+  if (filtro.de) q = q.gte('data_agendada', filtro.de);
+  if (filtro.ate) q = q.lte('data_agendada', filtro.ate);
+  if (filtro.caminhaoId) q = q.eq('caminhao_id', filtro.caminhaoId);
+  if (filtro.motoristaId) q = q.eq('motorista_id', filtro.motoristaId);
 
   const { data, error } = await q
-    .order("data_agendada", { ascending: true })
-    .order("periodo", { ascending: true });
+    .order('data_agendada', { ascending: true })
+    .order('periodo', { ascending: true });
 
   if (error) {
     throw new TransicaoError(
       500,
-      "erro_banco",
+      'erro_banco',
       `Falha ao listar as reservas: ${error.message}`,
     );
   }
@@ -213,15 +213,15 @@ export async function listarReservas(
 /** Uma reserva pelo id, com os nomes resolvidos. 404 fica com a rota. */
 export async function carregarReserva(id: string): Promise<Reserva | null> {
   const { data, error } = await supabase
-    .from("reservas")
+    .from('reservas')
     .select(COLUNAS_RESERVA)
-    .eq("id", id)
+    .eq('id', id)
     .maybeSingle();
 
   if (error) {
     throw new TransicaoError(
       500,
-      "erro_banco",
+      'erro_banco',
       `Falha ao carregar a reserva: ${error.message}`,
     );
   }
@@ -265,7 +265,7 @@ export async function criarReserva(args: CriarReservaArgs): Promise<Reserva> {
   const cidade = await resolverCidade(args.fornecedorCodigo, args.cidade);
 
   await validarCargaDoAgendamento({
-    alvo: "reserva",
+    alvo: 'reserva',
     data: args.dataAgendada,
     periodo: args.periodo,
     motoristaId: args.motoristaId ?? null,
@@ -275,7 +275,7 @@ export async function criarReserva(args: CriarReservaArgs): Promise<Reserva> {
   });
 
   const { data, error } = await supabase
-    .from("reservas")
+    .from('reservas')
     .insert({
       servico: args.servico,
       data_agendada: args.dataAgendada,
@@ -294,8 +294,8 @@ export async function criarReserva(args: CriarReservaArgs): Promise<Reserva> {
     .single();
 
   if (error || !data) {
-    const mensagem = error?.message ?? "Falha ao criar a reserva.";
-    throw new TransicaoError(500, "erro_banco", mensagem);
+    const mensagem = error?.message ?? 'Falha ao criar a reserva.';
+    throw new TransicaoError(500, 'erro_banco', mensagem);
   }
 
   const row = data as unknown as ReservaRow;
@@ -303,7 +303,7 @@ export async function criarReserva(args: CriarReservaArgs): Promise<Reserva> {
   return mapearReserva(row, nomes);
 }
 
-export type AtualizarReservaArgs = Partial<Omit<CriarReservaArgs, "usuarioId">>;
+export type AtualizarReservaArgs = Partial<Omit<CriarReservaArgs, 'usuarioId'>>;
 
 /**
  * Atualiza a reserva revalidando o slot RESULTANTE, não o que veio no corpo.
@@ -321,11 +321,11 @@ export async function atualizarReserva(
   patch: AtualizarReservaArgs,
 ): Promise<Reserva> {
   const atual = await lerLinha(id);
-  if (atual.status !== "ativa") {
+  if (atual.status !== 'ativa') {
     throw new TransicaoError(
       409,
-      "reserva_cancelada",
-      "Esta reserva está cancelada. Crie uma nova em vez de editá-la.",
+      'reserva_cancelada',
+      'Esta reserva está cancelada. Crie uma nova em vez de editá-la.',
     );
   }
 
@@ -344,7 +344,7 @@ export async function atualizarReserva(
       : atual.bloqueia_caminhao === true;
 
   await validarCargaDoAgendamento({
-    alvo: "reserva",
+    alvo: 'reserva',
     reservaId: id,
     data: dataAgendada,
     periodo,
@@ -386,15 +386,15 @@ export async function atualizarReserva(
   }
 
   const { data, error } = await supabase
-    .from("reservas")
+    .from('reservas')
     .update(alteracoes)
-    .eq("id", id)
+    .eq('id', id)
     .select(COLUNAS_RESERVA)
     .single();
 
   if (error || !data) {
-    const mensagem = error?.message ?? "Falha ao atualizar a reserva.";
-    throw new TransicaoError(500, "erro_banco", mensagem);
+    const mensagem = error?.message ?? 'Falha ao atualizar a reserva.';
+    throw new TransicaoError(500, 'erro_banco', mensagem);
   }
 
   const row = data as unknown as ReservaRow;
@@ -409,7 +409,7 @@ export async function atualizarReserva(
  */
 export async function cancelarReserva(id: string): Promise<Reserva> {
   const atual = await lerLinha(id);
-  if (atual.status === "cancelada") {
+  if (atual.status === 'cancelada') {
     // Idempotente de propósito: dois cliques no botão não podem virar erro na
     // cara de quem já conseguiu o que queria.
     const nomes = await resolverNomes([atual]);
@@ -417,15 +417,15 @@ export async function cancelarReserva(id: string): Promise<Reserva> {
   }
 
   const { data, error } = await supabase
-    .from("reservas")
-    .update({ status: "cancelada", atualizado_em: new Date().toISOString() })
-    .eq("id", id)
+    .from('reservas')
+    .update({ status: 'cancelada', atualizado_em: new Date().toISOString() })
+    .eq('id', id)
     .select(COLUNAS_RESERVA)
     .single();
 
   if (error || !data) {
-    const mensagem = error?.message ?? "Falha ao cancelar a reserva.";
-    throw new TransicaoError(500, "erro_banco", mensagem);
+    const mensagem = error?.message ?? 'Falha ao cancelar a reserva.';
+    throw new TransicaoError(500, 'erro_banco', mensagem);
   }
 
   const row = data as unknown as ReservaRow;
@@ -435,20 +435,20 @@ export async function cancelarReserva(id: string): Promise<Reserva> {
 
 async function lerLinha(id: string): Promise<ReservaRow> {
   const { data, error } = await supabase
-    .from("reservas")
+    .from('reservas')
     .select(COLUNAS_RESERVA)
-    .eq("id", id)
+    .eq('id', id)
     .maybeSingle();
 
   if (error) {
     throw new TransicaoError(
       500,
-      "erro_banco",
+      'erro_banco',
       `Falha ao carregar a reserva: ${error.message}`,
     );
   }
   if (!data) {
-    throw new TransicaoError(404, "nao_encontrado", "Reserva não encontrada.");
+    throw new TransicaoError(404, 'nao_encontrado', 'Reserva não encontrada.');
   }
   return data as unknown as ReservaRow;
 }
@@ -469,9 +469,9 @@ async function resolverCidade(
   if (!fornecedorCodigo) return null;
 
   const { data, error } = await supabase
-    .from("fornecedores")
-    .select("cidade")
-    .eq("codigo", fornecedorCodigo)
+    .from('fornecedores')
+    .select('cidade')
+    .eq('codigo', fornecedorCodigo)
     .maybeSingle<{ cidade: string | null }>();
 
   if (error) {
