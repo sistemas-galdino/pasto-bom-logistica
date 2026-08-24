@@ -30,6 +30,7 @@ import {
   definirSeparacaoEntrega,
   definirSeparacaoItemEntrega,
   listarEntregas,
+  reagendarEntrega,
   reverterEntrega,
   saldoDoPedido,
   transicionarEntrega,
@@ -73,6 +74,32 @@ const criarSchema = z.object({
    */
   pesos: z.record(z.string(), z.number().finite().positive()).optional(),
 });
+
+/**
+ * Reagendamento: tudo opcional, mas ao menos um campo.
+ *
+ * O que NÃO está aqui não pode ser reinterpretado depois: quantidades, pesos,
+ * propriedade e status ficam fora de propósito — mudar carga ou destino é uma
+ * viagem nova, não a mesma noutro dia.
+ */
+const reagendarSchema = z
+  .object({
+    dataAgendada: z.string().regex(DATA_ISO, 'Use o formato YYYY-MM-DD.').optional(),
+    periodo: z.enum(['manha', 'tarde']).optional(),
+    motoristaId: z.string().uuid().optional(),
+    caminhaoId: z.string().uuid().optional(),
+    motivo: z.string().trim().min(3).max(500).optional(),
+    /** Reenviar o aviso ao cliente. Falso por padrão: ver reagendarEntrega. */
+    avisarCliente: z.boolean().optional(),
+  })
+  .refine(
+    (o) =>
+      o.dataAgendada !== undefined ||
+      o.periodo !== undefined ||
+      o.motoristaId !== undefined ||
+      o.caminhaoId !== undefined,
+    { message: 'Informe ao menos um campo a alterar.' },
+  );
 
 const transicaoSchema = z.object({
   para: statusEnum,
@@ -165,6 +192,35 @@ export async function entregasRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(201).send(entrega);
     } catch (err) {
       return responderErro(reply, err, '[POST /entregas]');
+    }
+  });
+
+  // PATCH /entregas/:id/agendamento — reagendar sem voltar o card. Só logística.
+  //
+  // Rota com nome próprio, e não um PATCH /entregas/:id genérico: aquilo viraria
+  // porta de entrada para editar status, itens e o que mais aparecesse.
+  app.patch('/entregas/:id/agendamento', async (req, reply) => {
+    if (!exigirLogistica(req, reply)) return reply;
+    const { id } = req.params as { id: string };
+    const parsed = reagendarSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'body_invalido',
+        message:
+          'Informe ao menos um de: dataAgendada, periodo, motoristaId, caminhaoId.',
+        detalhes: parsed.error.issues,
+      });
+    }
+
+    try {
+      const entrega = await reagendarEntrega({
+        entregaId: id,
+        ...parsed.data,
+        atorUserId: req.usuario?.id ?? undefined,
+      });
+      return reply.send(entrega);
+    } catch (err) {
+      return responderErro(reply, err, `[PATCH /entregas/${id}/agendamento]`);
     }
   });
 

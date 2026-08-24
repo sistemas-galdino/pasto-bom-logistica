@@ -27,6 +27,8 @@ interface Props {
   onSeparar: (entrega: Entrega) => void;
   /** Volta uma etapa (em rota -> agendada) — só logística. */
   onReverter?: (entrega: Entrega, para: StatusEntrega) => void;
+  /** Muda data/período/motorista/caminhão sem desfazer o agendamento. */
+  onReagendar?: (entrega: Entrega) => void;
   /** Marca a viagem como não realizada (cartões em rota) — só logística. */
   onNaoRealizado?: (entrega: Entrega) => void;
   clima?: PrevisaoClima | null;
@@ -61,6 +63,7 @@ export function EntregaCard({
   onTransicionar,
   onSeparar,
   onReverter,
+  onReagendar,
   onNaoRealizado,
   clima,
 }: Props): React.ReactElement {
@@ -235,6 +238,20 @@ export function EntregaCard({
               className="rounded-lg border border-brasa/40 px-2.5 py-1.5 text-xs font-semibold text-brasa transition hover:bg-brasa-claro"
             >
               {rotuloAcaoEntrega(entrega.status, 'nao_realizado')}
+            </button>
+          )}
+
+          {/* Reagendar antes de Desfazer: remarcar é o caminho comum, desfazer é
+              o excepcional. A separação conferida sobrevive ao reagendamento —
+              foi o motivo do pedido. */}
+          {entrega.status === 'agendada' && onReagendar && (
+            <button
+              type="button"
+              onClick={() => onReagendar(entrega)}
+              title="Muda data, período, motorista ou caminhão. A separação é mantida."
+              className="rounded-lg border border-linha px-2.5 py-1.5 text-xs font-semibold text-tinta-suave transition hover:border-mata/30 hover:text-mata"
+            >
+              Reagendar
             </button>
           )}
 

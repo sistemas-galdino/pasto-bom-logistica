@@ -146,6 +146,20 @@ export interface CriarEntregaBody {
   pesos?: Record<string, number>;
 }
 
+/**
+ * Corpo do reagendamento. Todos opcionais: manda-se só o que mudou, e o backend
+ * exige ao menos um dos quatro primeiros.
+ */
+export interface ReagendarEntregaBody {
+  dataAgendada?: string;
+  periodo?: PeriodoEntrega;
+  motoristaId?: string;
+  caminhaoId?: string;
+  motivo?: string;
+  /** Reenvia o aviso ao cliente. Só faz efeito quando a data/período muda. */
+  avisarCliente?: boolean;
+}
+
 /** Filtros server-side da lista de PEDIDOS (todos opcionais). */
 export interface FiltrosPedidos {
   /** Data de ENTRADA do pedido (data_pedido), 'YYYY-MM-DD'. */
@@ -216,6 +230,22 @@ export const api = {
     }
     const qs = params.toString();
     return request<Entrega[]>(`/api/entregas${qs ? `?${qs}` : ''}`, { signal });
+  },
+
+  /**
+   * Reagenda uma viagem AGENDADA: data, período, motorista, caminhão.
+   *
+   * Manda só o que mudou. Quantidades, peso e destino não passam por aqui de
+   * propósito — mudar carga é uma viagem nova, não a mesma noutro dia.
+   */
+  async reagendarEntrega(
+    entregaId: string,
+    body: ReagendarEntregaBody,
+  ): Promise<Entrega> {
+    return request<Entrega>(
+      `/api/entregas/${encodeURIComponent(entregaId)}/agendamento`,
+      { method: 'PATCH', body },
+    );
   },
 
   /** Uma viagem só, com itens e quantidades — o detalhe do card da agenda. */

@@ -37,6 +37,7 @@ import { PedidoCard } from '../components/PedidoCard';
 import { AgendarEntregaModal } from '../components/AgendarEntregaModal';
 import { ConfirmacaoModal } from '../components/ConfirmacaoModal';
 import { SeparacaoModal } from '../components/SeparacaoModal';
+import { ReagendarEntregaModal } from '../components/ReagendarEntregaModal';
 import { NaoRealizadoModal } from '../components/NaoRealizadoModal';
 import {
   COLUNAS_ENTREGA,
@@ -86,6 +87,8 @@ export function Board(): React.ReactElement {
   // Transições de entrega (confirmação simples)
   const [alvoEntrega, setAlvoEntrega] = useState<AlvoEntrega | null>(null);
   const [erroEntrega, setErroEntrega] = useState<string | null>(null);
+  const [reagendando, setReagendando] = useState<Entrega | null>(null);
+  const [erroReagendar, setErroReagendar] = useState<string | null>(null);
 
   // Descarte/restauração do pedido
   const [alvoPedido, setAlvoPedido] = useState<{
@@ -166,6 +169,23 @@ export function Board(): React.ReactElement {
     },
     onError: (err) =>
       setErroEntrega(mensagemDeErro(err, 'Falha ao atualizar a entrega.')),
+  });
+
+  const reagendarMutacao = useMutation({
+    mutationFn: ({
+      id,
+      body,
+    }: {
+      id: string;
+      body: Parameters<typeof api.reagendarEntrega>[1];
+    }) => api.reagendarEntrega(id, body),
+    onSuccess: () => {
+      invalidarTudo();
+      setReagendando(null);
+      setErroReagendar(null);
+    },
+    onError: (err) =>
+      setErroReagendar(mensagemDeErro(err, 'Falha ao reagendar a entrega.')),
   });
 
   const pedidoMutacao = useMutation({
@@ -746,6 +766,10 @@ export function Board(): React.ReactElement {
                       setSeparandoId(entrega.id);
                     }}
                     onReverter={abrirReversaoEntrega}
+                    onReagendar={(entrega) => {
+                      setErroReagendar(null);
+                      setReagendando(entrega);
+                    }}
                     onNaoRealizado={(entrega) => {
                       setErroNaoRealizado(null);
                       setAlvoNaoRealizado(entrega);
@@ -772,6 +796,23 @@ export function Board(): React.ReactElement {
           }}
           onConfirmar={(dados) =>
             agendarMutacao.mutate({ pedidoId: agendando.pedido.id, ...dados })
+          }
+        />
+      )}
+
+      {reagendando && (
+        <ReagendarEntregaModal
+          entrega={reagendando}
+          enviando={reagendarMutacao.isPending}
+          erro={erroReagendar}
+          onFechar={() => {
+            if (!reagendarMutacao.isPending) {
+              setReagendando(null);
+              setErroReagendar(null);
+            }
+          }}
+          onConfirmar={(body) =>
+            reagendarMutacao.mutate({ id: reagendando.id, body })
           }
         />
       )}

@@ -21,6 +21,7 @@ import {
   pesoDaCarga,
   podeReverterEntrega,
   podeTransicionarEntrega,
+  ROTULO_STATUS_ENTREGA,
   templateDaTransicaoEntrega,
   validarQuantidades,
   type Entrega,
@@ -738,6 +739,199 @@ export async function criarEntrega(args: CriarEntregaArgs): Promise<Entrega> {
   const entrega = await carregarEntrega(criada.id);
   await dispararWhatsappEntrega(entrega, 'agendamento');
   return entrega;
+}
+
+// ---------------------------------------------------------------------------
+// Reagendamento
+// ---------------------------------------------------------------------------
+
+export interface ReagendarEntregaArgs {
+  entregaId: string;
+  dataAgendada?: string;
+  periodo?: PeriodoEntrega;
+  motoristaId?: string;
+  caminhaoId?: string;
+  /** Registrado na auditoria e no histórico da viagem. */
+  motivo?: string;
+  /** Reenvia o template de agendamento ao cliente. Só quando a DATA mudou. */
+  avisarCliente?: boolean;
+  atorUserId?: string;
+}
+
+/**
+ * Muda data, período, motorista ou caminhão de uma viagem JÁ AGENDADA.
+ *
+ * Pedido da Natália, textual: "na etapa agendamento ter a opção de reagendar a
+ * data sem voltar o Card, pois a separação já está pronta (independente se está
+ * separado ou não)". Antes disto, remarcar exigia desfazer o agendamento e
+ * criar outro — e a separação conferida ia junto.
+ *
+ * O QUE NÃO MUDA AQUI, de propósito:
+ *
+ *   - quantidades e itens. Mudar o que vai no caminhão é outra viagem, não a
+ *     mesma noutro dia.
+ *   - `entrega_itens.peso_unit_kg` (o peso congelado da 0019). É a MESMA carga
+ *     física, os mesmos sacos; só mudou o dia. Recongelar pelo cadastro atual
+ *     faria a ocupação do slot antigo e a do novo discordarem.
+ *   - `propriedade_codigo`. Trocar o destino muda o clima e o link do mapa: é
+ *     agendamento novo.
+ *   - as marcas de separação. Elas moram em `entrega_itens` e este UPDATE toca
+ *     SÓ a tabela `entregas` — a separação sobrevive por construção. Não
+ *     reaproveite o insert de itens do criarEntrega aqui: seria exatamente o
+ *     jeito de perder o que ela pediu para preservar.
+ *
+ * Só vale em 'agendada'. Em 'em_rota' o caminhão está na estrada, e reagendar
+ * criaria viagem com data anterior ao próprio despacho; o caminho é reverter
+ * para agendada primeiro.
+ */
+export async function reagendarEntrega(
+  args: ReagendarEntregaArgs,
+): Promise<Entrega> {
+  const {
+    entregaId,
+    dataAgendada,
+    periodo,
+    motoristaId,
+    caminhaoId,
+    motivo,
+    avisarCliente = false,
+    atorUserId,
+  } = args;
+
+  const entrega = await carregarEntrega(entregaId);
+
+  if (entrega.status !== 'agendada') {
+    const rotulo = ROTULO_STATUS_ENTREGA[entrega.status];
+    throw new TransicaoError(
+      409,
+      'reagendamento_invalido',
+      entrega.status === 'em_rota'
+        ? 'Esta viagem já saiu. Volte-a para agendada antes de mudar a data.'
+        : `Esta viagem está ${rotulo.toLowerCase()} e não pode ser reagendada. Agende uma nova entrega pelo pedido.`,
+    );
+  }
+
+  const novaData = dataAgendada ?? entrega.dataAgendada;
+  const novoPeriodo = periodo ?? entrega.periodo;
+  const novoMotorista = motoristaId ?? entrega.motoristaId;
+  const novoCaminhao = caminhaoId ?? entrega.caminhaoId;
+
+  // Viagem antiga sem slot completo não tem como ser revalidada: a trava de
+  // carga precisa dos quatro. Melhor recusar com o motivo do que agendar às
+  // cegas por cima de outro caminhão.
+  if (!novoPeriodo || !novoMotorista || !novoCaminhao) {
+    throw new TransicaoError(
+      422,
+      'agendamento_incompleto',
+      'Informe período, motorista e caminhão para reagendar esta viagem.',
+    );
+  }
+
+  const peso = pesoDaCarga(
+    entrega.itens.map((i) => ({ qtd: i.qtd, pesoUnitKg: i.pesoUnitKg })),
+  );
+  if (peso === null) {
+    throw new TransicaoError(
+      422,
+      'peso_pendente',
+      'Algum produto desta viagem está sem peso. Informe o peso antes de reagendar.',
+    );
+  }
+
+  // `entregaId` aqui é o que faz a viagem não competir consigo mesma pela
+  // capacidade — sem ele, trocar só o motorista no mesmo slot daria
+  // "capacidade excedida" por causa da própria carga.
+  await validarCargaDoAgendamento({
+    entregaId,
+    data: novaData,
+    periodo: novoPeriodo,
+    motoristaId: novoMotorista,
+    caminhaoId: novoCaminhao,
+    pesoDaCargaKg: peso,
+  });
+
+  const mudouData =
+    novaData !== entrega.dataAgendada || novoPeriodo !== entrega.periodo;
+
+  const agora = new Date().toISOString();
+  const patch: Record<string, unknown> = {
+    data_agendada: novaData,
+    periodo: novoPeriodo,
+    motorista_id: novoMotorista,
+    caminhao_id: novoCaminhao,
+    atualizado_em: agora,
+    observacoes: historicoReagendamento(entrega, {
+      novaData,
+      novoPeriodo,
+      motivo,
+    }),
+  };
+
+  const { error } = await supabase
+    .from('entregas')
+    .update(patch)
+    .eq('id', entregaId);
+  if (error) {
+    throw new TransicaoError(
+      500,
+      'erro_banco',
+      `Falha ao reagendar a entrega: ${error.message}`,
+    );
+  }
+
+  // A auditoria registra o ATO, não o antes/depois: `eventos_status` não tem
+  // coluna de detalhe, e um 'agendada' -> 'agendada' carimba quem e quando. O
+  // "de 12/08 manhã para 14/08 tarde" fica no histórico em observacoes, que a
+  // tela mostra. Relatório de reagendamentos exigiria uma coluna nova.
+  await registrarEvento({
+    pedidoId: entrega.pedidoId,
+    entregaId,
+    de: 'agendada',
+    para: 'agendada',
+    atorUserId,
+  });
+
+  const atualizada = await carregarEntrega(entregaId);
+
+  // Silencioso por padrão: trocar o caminhão sem mexer na data é ajuste interno
+  // e não justifica uma segunda mensagem ao cliente. Quem decide é a tela.
+  if (avisarCliente && mudouData) {
+    await dispararWhatsappEntrega(atualizada, 'agendamento');
+  }
+
+  return atualizada;
+}
+
+/** Linha de histórico do reagendamento, anexada a `entregas.observacoes`. */
+function historicoReagendamento(
+  entrega: Entrega,
+  novo: { novaData: string; novoPeriodo: PeriodoEntrega; motivo?: string },
+): string {
+  const antes = descreverSlot(entrega.dataAgendada, entrega.periodo);
+  const depois = descreverSlot(novo.novaData, novo.novoPeriodo);
+  const razao = novo.motivo?.trim() ? ` — ${novo.motivo.trim()}` : '';
+  const linha = `[${dataHoraCurta()}] Reagendada de ${antes} para ${depois}${razao}`;
+  const anterior = entrega.observacoes?.trim();
+  return anterior ? `${anterior}\n${linha}` : linha;
+}
+
+function descreverSlot(
+  data: string,
+  periodo: PeriodoEntrega | null,
+): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(data);
+  const dia = m ? `${m[3]}/${m[2]}` : data;
+  if (!periodo) return dia;
+  return `${dia} ${periodo === 'manha' ? 'manhã' : 'tarde'}`;
+}
+
+function dataHoraCurta(): string {
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${dd}/${mm} ${hh}:${mi}`;
 }
 
 // ---------------------------------------------------------------------------
