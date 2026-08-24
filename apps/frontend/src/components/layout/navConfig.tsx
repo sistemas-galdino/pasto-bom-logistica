@@ -31,25 +31,34 @@ export interface NavSection {
   itens: NavItem[];
 }
 
+// Os RÓTULOS seguem o vocabulário da operação, pedido pela Natália: Principal
+// fica só com o painel e a agenda, e o quadro desce para Operações com o nome
+// que a equipe usa, "Expedição". Os PATHS não mudam: /entregas e /rotas seguem
+// valendo (e /expedicao redireciona para /entregas), para não invalidar link
+// salvo de ninguém.
 export const NAV_SECTIONS: NavSection[] = [
   {
     titulo: 'Principal',
     itens: [
-      { rotulo: 'Dashboard', to: '/dashboard', icone: LayoutDashboard },
-      { rotulo: 'Entregas', to: '/entregas', icone: Package },
+      { rotulo: 'Dash', to: '/dashboard', icone: LayoutDashboard },
       { rotulo: 'Agenda', to: '/agenda', icone: CalendarDays },
     ],
   },
   {
     titulo: 'Operações',
+    // Ordem do fluxo físico: o pedido entra na expedição, é separado, e sai em
+    // rota.
     itens: [
+      // Sem `papeis` DE PROPÓSITO: o quadro é a tela que todos os papéis de
+      // equipe abrem, vendedor incluído. Não restrinja aqui.
+      { rotulo: 'Expedição', to: '/entregas', icone: Package },
       {
         rotulo: 'Separação',
         to: '/separacao',
         icone: PackageCheck,
         papeis: ['logistica', 'almoxarifado'],
       },
-      { rotulo: 'Rotas', to: '/rotas', icone: Route, papeis: ['logistica', 'vendedor'] },
+      { rotulo: 'Rota', to: '/rotas', icone: Route, papeis: ['logistica', 'vendedor'] },
       { rotulo: 'Motoristas', to: '/motoristas', icone: Users, papeis: ['logistica'] },
       { rotulo: 'Caminhões', to: '/caminhoes', icone: Truck, papeis: ['logistica'] },
     ],
@@ -71,13 +80,13 @@ export interface RotaMeta {
 
 export const ROTAS_META: Record<string, RotaMeta> = {
   '/dashboard': { titulo: 'Dashboard', subtitulo: 'Visão geral da operação' },
-  '/entregas': { titulo: 'Entregas', subtitulo: 'Quadro de pedidos por status' },
+  '/entregas': { titulo: 'Expedição', subtitulo: 'Quadro de pedidos por status' },
   '/agenda': { titulo: 'Agenda', subtitulo: 'Entregas por dia e período' },
   '/separacao': {
     titulo: 'Separação',
     subtitulo: 'O que separar no dia, por período',
   },
-  '/rotas': { titulo: 'Rotas', subtitulo: 'Pedidos em rota por motorista' },
+  '/rotas': { titulo: 'Rota', subtitulo: 'Pedidos em rota por motorista' },
   '/motoristas': { titulo: 'Motoristas', subtitulo: 'Equipe e cargas em rota' },
   '/caminhoes': { titulo: 'Caminhões', subtitulo: 'Frota e capacidade de carga' },
   '/usuarios': { titulo: 'Usuários', subtitulo: 'Acessos e papéis da equipe' },

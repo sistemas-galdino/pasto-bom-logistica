@@ -405,7 +405,7 @@ export function Board(): React.ReactElement {
       <div className="flex items-center justify-between gap-3 border-b border-linha bg-creme-50/70 px-4 py-2.5 backdrop-blur sm:px-6">
         <div className="flex items-baseline gap-2 text-sm">
           <h2 className="font-display text-base font-semibold text-mata-escuro">
-            Quadro de entregas
+            Quadro de expedição
           </h2>
           <span className="text-pedra">·</span>
           <span className="text-tinta-suave">
