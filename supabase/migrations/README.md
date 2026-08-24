@@ -29,11 +29,16 @@ abaixo) e contra o ledger `supabase_migrations.schema_migrations`.
 
 | Migração | Aplicada em produção? |
 |---|---|
-| 0001 – 0006 | sim |
-| **0007** | **NÃO** — pulada por engano; ver abaixo |
-| 0008 – 0022 | sim |
+| 0001 – 0022 | sim |
 
-### A 0007 nunca rodou, e isso quebrou o espelho de clientes
+A **0007 rodou em 24/08/2026**, com autorização do David, depois de dois meses
+pulada — ele aplicou pelo SQL Editor. Conferido após aplicar: as duas colunas
+existem e o índice parcial saiu idêntico ao do arquivo
+(`CREATE INDEX idx_clientes_numero_whatsapp ON clientes (numero_whatsapp) WHERE
+numero_whatsapp IS NOT NULL`). O relato abaixo fica porque a forma de falhar é
+mais instrutiva que a correção.
+
+### Como a 0007 ficou dois meses pulada sem ninguém ver
 
 Descoberto em 24/08/2026 lendo o log de produção: centenas de
 `[ingest] upsert cliente XXXX falhou: Could not find the 'numero_whatsapp'
@@ -56,9 +61,12 @@ de `clientes`, e 252 dos 288 não estão lá — entrega rural se orienta por ba
 porque o MODO TESTE redireciona todo envio para um número fixo, mas **no dia em
 que o modo teste for desligado, nenhum cliente recebe WhatsApp**.
 
-A correção é rodar a 0007 como está: aditiva, `add column if not exists`, sem
-backfill. Assim que as colunas existirem, o primeiro tick de ingestão regrava os
-clientes e a varredura profunda (365 dias) completa o resto.
+A correção foi rodar a 0007 como estava: aditiva, `add column if not exists`,
+sem backfill. **Não há backfill a fazer**: o primeiro tick de ingestão regrava os
+clientes que tocar, e a varredura profunda (365 dias) completa o resto. Em
+24/08, logo após aplicar, o espelho seguia em 36 de 288 — porque o Órix estava
+inalcançável (`fetch failed` no `POST /Login`) desde sexta 21/08. O repovoamento
+acontece no primeiro tick que conseguir falar com o ERP.
 
 **Por que o README dizia "0001 – 0022 | sim":** a conferência de 12/08 olhou a
 lista de arquivos, não o banco. O ledger do Supabase é a fonte da verdade — e
