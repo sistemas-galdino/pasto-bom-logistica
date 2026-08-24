@@ -8,8 +8,14 @@
 // motoristas que aparecem são só os que TÊM pedido em rota agora, então não há
 // chamada extra de API.
 
+// A ORDEM DAS PARADAS (item 11 da Natália) aparece aqui SOMENTE LEITURA: quem
+// informa é o motorista, na Rota do dia, porque é ele que acabou de descarregar
+// e conhece a estrada. Esta tela é o outro lado do pedido — a logística ver, ao
+// ligar para o cliente, em que posição da rota ele está.
+
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { ordenarParadas } from '@pastobom/shared';
 import type { Entrega } from '@pastobom/shared';
 import { api } from '../lib/api';
 import { EntregaCard } from '../components/EntregaCard';
@@ -32,7 +38,8 @@ export function Rotas(): React.ReactElement {
   // duas rotas, cada uma com a sua parte da carga.
   const pedidosQuery = useQuery({
     queryKey: ['entregas', 'em-rota'],
-    queryFn: ({ signal }) => api.listarEntregas({ status: ['em_rota'] }, signal),
+    queryFn: ({ signal }) =>
+      api.listarEntregas({ status: ['em_rota'] }, signal),
     refetchInterval: 60_000,
   });
 
@@ -47,7 +54,10 @@ export function Rotas(): React.ReactElement {
     }
     return Array.from(mapa, ([chave, pedidos]) => ({
       chave,
-      pedidos,
+      // Mesma função da tela do motorista: a logística lê a rota na sequência
+      // que ELE informou, não em ordem de banco — senão as duas telas
+      // divergiriam e a pergunta "onde ele está?" teria duas respostas.
+      pedidos: ordenarParadas(pedidos),
       // Peso, não dinheiro: a viagem carrega parte do pedido, e o que importa
       // para quem olha a rota é quanto o caminhão está levando.
       total: pedidos.reduce((s, p) => s + (p.pesoTotalKg ?? 0), 0),
@@ -161,38 +171,83 @@ export function Rotas(): React.ReactElement {
               })}
             </div>
 
-            {gruposVisiveis.map((grupo) => (
-              <section key={grupo.chave}>
-                <div className="flex items-baseline justify-between gap-3 border-b border-linha pb-2">
-                  <h2 className="font-display text-lg font-semibold text-mata-escuro">
-                    {grupo.chave}
-                  </h2>
-                  <span className="shrink-0 text-sm text-tinta-suave">
-                    {grupo.pedidos.length === 1
-                      ? '1 entrega'
-                      : `${grupo.pedidos.length} entregas`}{' '}
-                    ·{' '}
-                    {(grupo.total / 1000).toLocaleString('pt-BR', {
-                      minimumFractionDigits: 1,
-                      maximumFractionDigits: 1,
-                    })}{' '}
-                    t
-                  </span>
-                </div>
-                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {grupo.pedidos.map((p) => (
-                    <EntregaCard
-                      key={p.id}
-                      entrega={p}
-                      podeEscrever={false}
-                      podeSeparar={false}
-                      onTransicionar={() => {}}
-                      onSeparar={() => {}}
-                    />
-                  ))}
-                </div>
-              </section>
-            ))}
+            {gruposVisiveis.map((grupo) => {
+              // Nenhuma parada sequenciada: o recado vai UMA vez, no cabeçalho,
+              // e os cartões não repetem "sem sequência" n vezes. Rota mista
+              // (algumas informadas) é o oposto: aí cada cartão precisa dizer
+              // se está na fila ou não.
+              const semSequencia = grupo.pedidos.every(
+                (p) => p.ordemRota === null,
+              );
+              return (
+                <section key={grupo.chave}>
+                  <div className="flex items-baseline justify-between gap-3 border-b border-linha pb-2">
+                    <h2 className="font-display text-lg font-semibold text-mata-escuro">
+                      {grupo.chave}
+                    </h2>
+                    <span className="shrink-0 text-sm text-tinta-suave">
+                      {grupo.pedidos.length === 1
+                        ? '1 entrega'
+                        : `${grupo.pedidos.length} entregas`}{' '}
+                      ·{' '}
+                      {(grupo.total / 1000).toLocaleString('pt-BR', {
+                        minimumFractionDigits: 1,
+                        maximumFractionDigits: 1,
+                      })}{' '}
+                      t
+                    </span>
+                  </div>
+                  {/*
+                  Aviso neutro no cabeçalho do grupo quando NINGUÉM sequenciou:
+                  não é falha nem pendência da logística — é só o motorista que
+                  ainda não informou.
+                */}
+                  {semSequencia && (
+                    <p className="mt-2 text-xs text-pedra">
+                      Sem sequência definida — o motorista ainda não informou a
+                      ordem das paradas.
+                    </p>
+                  )}
+
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {grupo.pedidos.map((p) => (
+                      <div key={p.id} className="flex flex-col">
+                        {/*
+                        A posição vem ACIMA do cartão em vez de dentro dele: o
+                        EntregaCard é compartilhado com o quadro e com a agenda,
+                        onde "parada 2" não significa nada.
+                      */}
+                        {!semSequencia && (
+                          <div className="mb-1.5 flex items-center gap-2">
+                            {p.ordemRota !== null ? (
+                              <>
+                                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-mata font-display text-xs font-bold text-creme-50">
+                                  {p.ordemRota}
+                                </span>
+                                <span className="text-xs font-semibold text-tinta-suave">
+                                  {p.ordemRota}ª parada
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-xs text-pedra">
+                                Sem sequência definida
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        <EntregaCard
+                          entrega={p}
+                          podeEscrever={false}
+                          podeSeparar={false}
+                          onTransicionar={() => {}}
+                          onSeparar={() => {}}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
           </>
         )}
       </div>

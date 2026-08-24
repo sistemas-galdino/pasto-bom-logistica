@@ -4,8 +4,17 @@
 // navegação (Abrir no Maps) e a confirmação de entrega (com observação
 // opcional). Mobile-first, no visual "Campo Claro". O backend é a fonte de
 // verdade: a confirmação só vale para os próprios pedidos do motorista.
+//
+// ORDEM DAS PARADAS (item 11 da Natália)
+// ---------------------------------------------------------------------------
+// Quem sabe qual é a próxima parada é o motorista — ele acabou de descarregar e
+// conhece a estrada. Então a tela dele é o lugar onde a sequência é INFORMADA
+// (um toque, nunca um formulário de ordenação) e a logística apenas lê.
+// A ordenação em si vem de `ordenarParadas` (@pastobom/shared, com teste); aqui
+// não se escreve comparação nenhuma.
 
 import React, { useMemo, useState } from 'react';
+import { ordenarParadas } from '@pastobom/shared';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Entrega, PeriodoEntrega, Reserva } from '@pastobom/shared';
 import { api, ApiError } from '../lib/api';
@@ -96,6 +105,17 @@ export function RotaDoDia(): React.ReactElement {
   const [confirmando, setConfirmando] = useState<Entrega | null>(null);
   const [observacao, setObservacao] = useState('');
   const [erroModal, setErroModal] = useState<string | null>(null);
+  // Id da entrega que ACABOU de ser confirmada. Guardar o id (e não a lista de
+  // candidatas) é de propósito: a pergunta "qual é a próxima?" precisa ler a
+  // lista viva depois do refetch, senão o motorista escolheria numa foto velha.
+  // null = ninguém está sendo perguntado.
+  const [perguntandoDepoisDe, setPerguntandoDepoisDe] = useState<string | null>(
+    null,
+  );
+  // Erro de gravação da ORDEM, separado do erro da confirmação: a entrega já
+  // está persistida no servidor quando isto aparece, então é aviso, não falha
+  // de tela — e por isso vive fora do modal, num banner que se dispensa.
+  const [erroOrdem, setErroOrdem] = useState<string | null>(null);
 
   // A rota do motorista lista VIAGENS (Onda 2): se o mesmo pedido sair em dois
   // caminhões, cada motorista vê só a sua carga, com a quantidade dele.
@@ -122,24 +142,60 @@ export function RotaDoDia(): React.ReactElement {
         para: 'entregue',
         observacao: obs || undefined,
       }),
-    onSuccess: () => {
+    onSuccess: (_entregue, variaveis) => {
       void queryClient.invalidateQueries({ queryKey: ['minhas-entregas'] });
       setConfirmando(null);
       setObservacao('');
       setErroModal(null);
+      // Momento exato do pedido da Natália: acabou de descarregar, sabe para
+      // onde vai. A pergunta vem AQUI, e não num menu escondido.
+      setPerguntandoDepoisDe(variaveis.id);
     },
     onError: (err) => {
       setErroModal(mensagemDeErro(err, 'Falha ao confirmar a entrega.'));
     },
   });
 
-  const entregas = rotaQuery.data ?? [];
+  // Gravação da ordem da parada. Sem mudança otimista de propósito: a ordem é
+  // atribuída pelo SERVIDOR (incremental e idempotente), então adivinhar o
+  // número na tela só criaria número piscando errado. O invalidate na mesma
+  // queryKey da lista é o que faz o número aparecer sem recarregar a página.
+  const proximaMutacao = useMutation({
+    mutationFn: (id: string) => api.definirProximaEntrega(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['minhas-entregas'] });
+      setErroOrdem(null);
+      setPerguntandoDepoisDe(null);
+    },
+    onError: (err) => {
+      // NÃO fecha nada e NÃO desfaz a confirmação: a entrega já foi para o
+      // servidor; a ordem é acessório e pode ser tentada de novo depois.
+      setErroOrdem(
+        mensagemDeErro(err, 'Não foi possível gravar a ordem da parada.'),
+      );
+    },
+  });
+
+  // A lista já sai na ordem das paradas: sequenciadas primeiro, na sequência
+  // que o motorista informou; as demais depois, por período e cliente.
+  const entregas = useMemo(
+    () => ordenarParadas(rotaQuery.data ?? []),
+    [rotaQuery.data],
+  );
+
+  // Candidatas à próxima parada: o que sobrou do dia, menos a que acabou de ser
+  // entregue (ela pode ainda estar no cache até o refetch chegar) e menos as que
+  // JÁ estão na fila — apontar uma parada já sequenciada seria um toque sem
+  // efeito, porque o servidor é idempotente.
+  const candidatasProxima = useMemo(() => {
+    if (perguntandoDepoisDe === null) return [];
+    return entregas.filter(
+      (e) => e.id !== perguntandoDepoisDe && e.ordemRota === null,
+    );
+  }, [entregas, perguntandoDepoisDe]);
 
   // Clima por parada da rota (entregas em rota têm data agendada).
-  const idsClima = useMemo(
-    () => entregas.map((e) => e.pedidoId),
-    [entregas],
-  );
+  const idsClima = useMemo(() => entregas.map((e) => e.pedidoId), [entregas]);
   const idsClimaKey = useMemo(
     () => idsClima.slice().sort().join(','),
     [idsClima],
@@ -188,6 +244,31 @@ export function RotaDoDia(): React.ReactElement {
             Sem reserva (ou com erro na consulta) o bloco simplesmente não
             existe — nada de "nenhuma reserva" gastando tela de celular.
           */}
+          {/*
+            Erro de ORDEM: banner dispensável, no fluxo da página, nunca modal.
+            A entrega que ele acabou de confirmar já está gravada — derrubar a
+            tela ou reabrir o modal aqui faria o motorista achar que perdeu a
+            entrega.
+          */}
+          {erroOrdem !== null && (
+            <div
+              role="alert"
+              className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-terra/30 bg-terra-claro px-3 py-2 text-sm text-terra-escuro"
+            >
+              <span>
+                {erroOrdem} A entrega já foi confirmada — você pode marcar a
+                próxima parada quando quiser.
+              </span>
+              <button
+                type="button"
+                onClick={() => setErroOrdem(null)}
+                className="shrink-0 text-xs font-bold uppercase tracking-wide underline"
+              >
+                ok
+              </button>
+            </div>
+          )}
+
           <ReservasDoCaminhao reservas={reservasQuery.data ?? []} />
 
           {rotaQuery.isLoading ? (
@@ -215,7 +296,8 @@ export function RotaDoDia(): React.ReactElement {
                 Nenhuma entrega para hoje.
               </p>
               <p className="mt-1 text-sm text-tinta-suave">
-                Quando a logística despachar um pedido para você, ele aparece aqui.
+                Quando a logística despachar um pedido para você, ele aparece
+                aqui.
               </p>
             </div>
           ) : (
@@ -226,9 +308,26 @@ export function RotaDoDia(): React.ReactElement {
                   className="animate-sobe rounded-xl border border-linha bg-papel p-4 shadow-carta"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-display text-base font-semibold leading-tight text-tinta">
-                      {p.clienteNome || p.clienteCodigo || 'Cliente'}
-                    </h3>
+                    <div className="flex min-w-0 items-start gap-2.5">
+                      {/*
+                        A POSIÇÃO da parada, grande, à esquerda do nome: é o que
+                        o motorista procura de relance com o caminhão parado.
+                        Sem ordem, nenhum número aparece — e nada de "?" ou de
+                        cor de alerta, porque não sequenciado é o estado NORMAL
+                        antes de alguém sequenciar, não pendência.
+                      */}
+                      {p.ordemRota !== null && (
+                        <span
+                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-mata font-display text-lg font-bold text-creme-50"
+                          aria-label={`Parada ${p.ordemRota}`}
+                        >
+                          {p.ordemRota}
+                        </span>
+                      )}
+                      <h3 className="font-display text-base font-semibold leading-tight text-tinta">
+                        {p.clienteNome || p.clienteCodigo || 'Cliente'}
+                      </h3>
+                    </div>
                     <span className="shrink-0 rounded-md bg-creme-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-tinta-suave">
                       nº {p.orixNumero || '—'}
                     </span>
@@ -241,7 +340,10 @@ export function RotaDoDia(): React.ReactElement {
 
                   {climaPorPedido[p.pedidoId]?.disponivel && (
                     <div className="mt-1.5 pl-5">
-                      <ClimaResumo variant="badge" previsao={climaPorPedido[p.pedidoId]} />
+                      <ClimaResumo
+                        variant="badge"
+                        previsao={climaPorPedido[p.pedidoId]}
+                      />
                     </div>
                   )}
 
@@ -257,6 +359,28 @@ export function RotaDoDia(): React.ReactElement {
                       </span>
                     )}
                   </div>
+
+                  {/*
+                    Segunda porta para sequenciar, fora do pós-confirmação: o
+                    motorista pode querer marcar a próxima parada a qualquer
+                    momento (na fila da balança, antes de sair). Botão explícito
+                    em vez de "cartão inteiro clicável": o cartão já tem o Maps e
+                    o Confirmar, e um toque errado no volante não pode mexer na
+                    rota sem o cara ter pedido.
+                  */}
+                  {p.ordemRota === null && (
+                    <button
+                      type="button"
+                      onClick={() => proximaMutacao.mutate(p.id)}
+                      disabled={proximaMutacao.isPending}
+                      className="mt-3 w-full rounded-lg border border-dashed border-pedra/70 px-3 py-2 text-xs font-semibold text-tinta-suave transition hover:border-mata/40 hover:text-mata disabled:opacity-60"
+                    >
+                      {proximaMutacao.isPending &&
+                      proximaMutacao.variables === p.id
+                        ? 'Marcando…'
+                        : 'Marcar como próxima parada'}
+                    </button>
+                  )}
 
                   <div className="mt-3 flex flex-col gap-2 border-t border-linha/70 pt-3 sm:flex-row">
                     <a
@@ -302,6 +426,109 @@ export function RotaDoDia(): React.ReactElement {
           }}
         />
       )}
+
+      {/*
+        Só pergunta se ainda houver parada sem sequência para apontar: se tudo o
+        que sobrou já está na fila, a resposta já é conhecida e a pergunta seria
+        um obstáculo entre o motorista e a estrada.
+      */}
+      {perguntandoDepoisDe !== null && candidatasProxima.length > 0 && (
+        <ProximaParadaSheet
+          candidatas={candidatasProxima}
+          gravandoId={
+            proximaMutacao.isPending ? (proximaMutacao.variables ?? null) : null
+          }
+          erro={erroOrdem}
+          onEscolher={(id) => proximaMutacao.mutate(id)}
+          onDepois={() => setPerguntandoDepoisDe(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * "Qual é a próxima?" — logo depois de confirmar uma entrega.
+ *
+ * Regras que vêm do uso real (motorista no celular, às vezes sem sinal):
+ *  - UM TOQUE por opção; nada de escolher e depois confirmar;
+ *  - dá para sair sem escolher ("Depois"), inclusive tocando fora — ninguém
+ *    fica preso num modal na beira da estrada;
+ *  - o erro aparece dentro do painel E fica no banner da página, para o caso de
+ *    ele fechar o painel antes de ler.
+ */
+function ProximaParadaSheet({
+  candidatas,
+  gravandoId,
+  erro,
+  onEscolher,
+  onDepois,
+}: {
+  candidatas: Entrega[];
+  gravandoId: string | null;
+  erro: string | null;
+  onEscolher: (id: string) => void;
+  onDepois: () => void;
+}): React.ReactElement {
+  const gravando = gravandoId !== null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-mata-escuro/30 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Qual é a próxima parada"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !gravando) onDepois();
+      }}
+    >
+      <div className="max-h-[85vh] w-full max-w-md animate-sobe overflow-y-auto rounded-t-xl2 bg-papel p-5 shadow-flutua sm:rounded-xl2">
+        <h2 className="font-display text-lg font-semibold text-mata-escuro">
+          Qual é a próxima parada?
+        </h2>
+        <p className="mt-0.5 text-sm text-tinta-suave">
+          Toque no cliente para onde você vai agora. A logística passa a ver a
+          sua sequência.
+        </p>
+
+        {erro !== null && (
+          <div
+            role="alert"
+            className="mt-4 rounded-lg border border-terra/30 bg-terra-claro px-3 py-2 text-sm text-terra-escuro"
+          >
+            {erro}
+          </div>
+        )}
+
+        <ul className="mt-4 space-y-2">
+          {candidatas.map((c) => (
+            <li key={c.id}>
+              <button
+                type="button"
+                onClick={() => onEscolher(c.id)}
+                disabled={gravando}
+                className="w-full rounded-lg border border-linha bg-creme-50 px-3 py-3 text-left transition hover:border-mata/40 hover:bg-folha-claro disabled:opacity-60"
+              >
+                <span className="block font-display text-base font-semibold text-tinta">
+                  {c.clienteNome || c.clienteCodigo || 'Cliente'}
+                </span>
+                <span className="mt-0.5 block text-sm text-tinta-suave">
+                  {gravandoId === c.id ? 'Marcando…' : enderecoDaEntrega(c)}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+
+        <button
+          type="button"
+          onClick={onDepois}
+          disabled={gravando}
+          className="mt-4 w-full rounded-lg border border-linha px-4 py-2.5 text-sm font-semibold text-tinta-suave transition hover:bg-creme-50 disabled:opacity-60"
+        >
+          Depois
+        </button>
+      </div>
     </div>
   );
 }
