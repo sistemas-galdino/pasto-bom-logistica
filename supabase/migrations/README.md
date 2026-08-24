@@ -29,6 +29,14 @@ Conferido contra o banco em 12/08/2026.
 | Migração | Aplicada em produção? |
 |---|---|
 | 0001 – 0021 | sim |
+| 0022 | **NÃO** — escrita, aguardando autorização do David |
+
+A 0022 acrescenta `entregas.ordem_rota` (integer nulável) — a ordem das paradas
+que o motorista informa ao concluir cada entrega (item 11 da Natália). Aditiva e
+nulável: entrega sem ordem é o estado normal, não dado faltando. **Não tem
+UNIQUE de propósito** — dois motoristas sequenciando o mesmo dia tomariam erro de
+banco na estrada, sem ter o que fazer com o erro; empate se desempata na leitura.
+Como a 0020 e a 0021, a ordem é migration ANTES do deploy.
 
 A 0021 rodou em 24/08/2026, com autorização do David. Ela cria `fornecedores`
 (espelho somente-leitura do cadastro do Órix) e `reservas` (o card avulso que
