@@ -28,7 +28,17 @@ Conferido contra o banco em 12/08/2026.
 
 | Migração | Aplicada em produção? |
 |---|---|
-| 0001 – 0020 | sim |
+| 0001 – 0021 | sim |
+
+A 0021 rodou em 24/08/2026, com autorização do David. Ela cria `fornecedores`
+(espelho somente-leitura do cadastro do Órix) e `reservas` (o card avulso que
+RESERVA um caminhão num slot — oficina, coleta de adubo). Puramente aditiva:
+duas tabelas novas, nada destrutivo, sem backfill. Conferido após aplicar: RLS
+ativa nas duas, 2 políticas cada, 5 índices em `reservas` e 3 em `fornecedores`.
+
+Mesma ordem da 0020: **migration antes do deploy**, porque o código passa a
+consultar `reservas` no caminho do agendamento. Enquanto o código da Onda C não
+subir, as tabelas ficam vazias e ninguém as lê — aplicar antes não tem efeito.
 
 A 0020 rodou em 24/08/2026, com autorização do David. Ela cria
 `caminhao_limites` — o teto de entregas por dia de cada caminhão, por janela de
