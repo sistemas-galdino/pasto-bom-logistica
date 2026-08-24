@@ -62,3 +62,52 @@
     background-clip: content-box;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   IMPRESSÃO — a lista de separação em papel (pages/SeparacaoImprimir.tsx).
+   Fora dos @layer de propósito: estas regras não devem competir com as
+   utilitárias do Tailwind, elas anulam o tema da tela.
+
+   As três primeiras não são cosméticas; sem elas a impressão sai errada:
+   - `body` tem background-image com attachment:fixed, que o Chrome imprime
+     como faixas cinza no meio da folha;
+   - `html, body, #root` têm height:100%, que TRUNCA a impressão na primeira
+     folha e engole o resto da lista;
+   - a quebra vai no IRMÃO seguinte (.folha + .folha), não em break-after da
+     última — senão sai uma folha em branco no fim do maço.
+--------------------------------------------------------------------------- */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
+  html,
+  body,
+  #root {
+    height: auto;
+  }
+
+  body {
+    background: none !important;
+    background-image: none !important;
+  }
+
+  .nao-imprimir {
+    display: none !important;
+  }
+
+  /* Uma folha por viagem: a regra da Natália é não misturar pedido de um
+     caminhão com o de outro na mesma folha. */
+  .folha {
+    break-inside: avoid;
+  }
+
+  .folha + .folha {
+    break-before: page;
+  }
+
+  * {
+    box-shadow: none !important;
+  }
+}

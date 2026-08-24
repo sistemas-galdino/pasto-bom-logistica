@@ -23,6 +23,7 @@ import Agenda from './pages/Agenda';
 import Caminhoes from './pages/Caminhoes';
 import { Rotas } from './pages/Rotas';
 import Separacao from './pages/Separacao';
+import SeparacaoImprimir from './pages/SeparacaoImprimir';
 import { Motoristas } from './pages/Motoristas';
 import { Usuarios } from './pages/Usuarios';
 import Motivos from './pages/Motivos';
@@ -180,6 +181,19 @@ export function App(): React.ReactElement {
                   <SomenteMotorista>
                     <RotaDoDia />
                   </SomenteMotorista>
+                </RotaProtegida>
+              }
+            />
+            {/* Lista de separação em papel. FORA do AppShell de propósito: sem
+                sidebar nem topbar não há nada a esconder na impressão, e a aba
+                nova não faz a tela de Separação perder o filtro. */}
+            <Route
+              path="/separacao/imprimir"
+              element={
+                <RotaProtegida>
+                  <SomenteEquipe>
+                    <SeparacaoImprimir />
+                  </SomenteEquipe>
                 </RotaProtegida>
               }
             />

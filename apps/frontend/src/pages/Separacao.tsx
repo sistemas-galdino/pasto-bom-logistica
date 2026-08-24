@@ -29,6 +29,7 @@ import {
   Check,
   MapPin,
   PackageCheck,
+  Printer,
   Truck,
   User,
   Undo2,
@@ -344,6 +345,25 @@ export default function Separacao(): React.ReactElement {
         </div>
 
         <div className="flex items-center gap-2 text-xs font-semibold">
+          {/* O galpão ainda separa no papel (áudio da Natália). Leva o filtro
+              da tela: usa caminhaoAtivo, e não `caminhao`, para não gerar link
+              de um filtro que já caiu. */}
+          <button
+            type="button"
+            onClick={() => {
+              const p = new URLSearchParams();
+              if (selecao.tipo === 'atrasados') p.set('modo', 'atrasados');
+              else p.set('dia', selecao.iso);
+              if (caminhaoAtivo !== null) p.set('caminhao', caminhaoAtivo);
+              window.open(`/separacao/imprimir?${p.toString()}`, '_blank');
+            }}
+            disabled={total === 0}
+            title="Abre a lista em papel numa aba nova. O PDF sai pelo diálogo de impressão (Salvar como PDF)."
+            className="inline-flex items-center gap-1.5 rounded-lg border border-linha bg-papel px-2.5 py-1 text-tinta-suave transition hover:border-mata/30 hover:text-mata disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Printer className="h-3.5 w-3.5" aria-hidden="true" />
+            Imprimir lista
+          </button>
           <span className="rounded-full bg-creme-100 px-2.5 py-1 text-tinta-suave">
             {total === 1 ? '1 pedido' : `${total} pedidos`}
           </span>
