@@ -3,7 +3,12 @@ import {
   agruparSlotPorCaminhao,
   filtrarSlotsPorCaminhao,
 } from './agenda-grupos.js';
-import type { AgendaEntrega, AgendaOcupacao, AgendaSlot } from './types/domain.js';
+import type {
+  AgendaEntrega,
+  AgendaOcupacao,
+  AgendaReserva,
+  AgendaSlot,
+} from './types/domain.js';
 
 function entrega(over: Partial<AgendaEntrega> = {}): AgendaEntrega {
   return {
@@ -36,12 +41,31 @@ function ocupacao(over: Partial<AgendaOcupacao> = {}): AgendaOcupacao {
   };
 }
 
+function reserva(over: Partial<AgendaReserva> = {}): AgendaReserva {
+  return {
+    reservaId: 'r1',
+    servico: 'oficina',
+    cidade: null,
+    fornecedorNome: null,
+    produtos: null,
+    motoristaId: null,
+    motoristaNome: null,
+    caminhaoId: 'c1',
+    // Mesmo nome do ocupacao(): reserva e barra têm de falar do mesmo caminhão.
+    caminhaoNome: 'Stradinha',
+    pesoPrevistoKg: null,
+    bloqueiaCaminhao: true,
+    ...over,
+  };
+}
+
 function slot(over: Partial<AgendaSlot> = {}): AgendaSlot {
   return {
     data: '2026-08-19',
     periodo: 'manha',
     entregas: [],
     ocupacao: [],
+    reservas: [],
     ...over,
   };
 }
@@ -196,6 +220,95 @@ describe('agruparSlotPorCaminhao', () => {
     const total = agruparSlotPorCaminhao(s).reduce((n, g) => n + g.entregas.length, 0);
     expect(total).toBe(4);
   });
+
+  it('cria o grupo do caminhão que só tem reserva, sem entrega nenhuma', () => {
+    // A armadilha central das reservas: antes, grupo sem entrega era descartado,
+    // e o caminhão parado na oficina desaparecia da tela justamente no dia em
+    // que a logística mais precisa vê-lo.
+    const s = slot({
+      ocupacao: [ocupacao()],
+      entregas: [],
+      reservas: [reserva({ reservaId: 'r-oficina' })],
+    });
+    const grupos = agruparSlotPorCaminhao(s);
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0]!.caminhaoId).toBe('c1');
+    expect(grupos[0]!.ocupacao).not.toBeNull();
+    expect(grupos[0]!.reservas.map((r) => r.reservaId)).toEqual(['r-oficina']);
+    expect(grupos[0]!.entregas).toEqual([]);
+  });
+
+  it('reserva e viagens convivem no mesmo grupo, com as viagens ainda ordenadas', () => {
+    const s = slot({
+      ocupacao: [ocupacao()],
+      entregas: [
+        entrega({ entregaId: 'z', clienteNome: 'ZEZE' }),
+        entrega({ entregaId: 'a', clienteNome: 'ANA' }),
+      ],
+      reservas: [reserva({ reservaId: 'r-adubo', servico: 'buscar adubo' })],
+    });
+    const [grupo] = agruparSlotPorCaminhao(s);
+    expect(grupo!.reservas.map((r) => r.reservaId)).toEqual(['r-adubo']);
+    expect(grupo!.entregas.map((e) => e.entregaId)).toEqual(['a', 'z']);
+  });
+
+  it('ordena as reservas por serviço ignorando acento e caixa, id desempata', () => {
+    const s = slot({
+      ocupacao: [ocupacao()],
+      reservas: [
+        reserva({ reservaId: 'r2', servico: 'OFICINA' }),
+        reserva({ reservaId: 'r1', servico: 'Óficina' }),
+        reserva({ reservaId: 'r0', servico: 'buscar adubo' }),
+      ],
+    });
+    const [grupo] = agruparSlotPorCaminhao(s);
+    // 'buscar adubo' < 'oficina'; as duas "oficina" empatam por serviço (mesma
+    // base, sensitivity: 'base') e só então o id decide.
+    expect(grupo!.reservas.map((r) => r.reservaId)).toEqual(['r0', 'r1', 'r2']);
+  });
+
+  it('não perde a reserva de um caminhão que não veio na ocupação', () => {
+    const s = slot({
+      ocupacao: [],
+      reservas: [
+        reserva({ reservaId: 'orfa', caminhaoId: 'cX', caminhaoNome: 'Fantasma' }),
+      ],
+    });
+    const grupos = agruparSlotPorCaminhao(s);
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0]!.caminhaoId).toBe('cX');
+    // Sem barra, o único nome disponível é o que a própria reserva carrega.
+    expect(grupos[0]!.caminhaoNome).toBe('Fantasma');
+    expect(grupos[0]!.ocupacao).toBeNull();
+    expect(grupos[0]!.reservas.map((r) => r.reservaId)).toEqual(['orfa']);
+    expect(grupos[0]!.entregas).toEqual([]);
+  });
+
+  it('o grupo sem caminhão nunca recebe reserva', () => {
+    const s = slot({
+      ocupacao: [ocupacao()],
+      entregas: [entrega({ entregaId: 'sem', caminhaoId: null, caminhaoNome: null })],
+      reservas: [reserva()],
+    });
+    const grupos = agruparSlotPorCaminhao(s);
+    const semCaminhao = grupos.find((g) => g.caminhaoId === null);
+    expect(semCaminhao!.reservas).toEqual([]);
+  });
+
+  it('a soma das reservas dos grupos é a do slot (nenhuma reserva se perde)', () => {
+    const s = slot({
+      ocupacao: [ocupacao({ caminhaoId: 'c1' }), ocupacao({ caminhaoId: 'c2' })],
+      entregas: [entrega({ entregaId: '1', caminhaoId: 'c1' })],
+      reservas: [
+        reserva({ reservaId: 'r1', caminhaoId: 'c1' }),
+        reserva({ reservaId: 'r2', caminhaoId: 'c2' }),
+        reserva({ reservaId: 'r3', caminhaoId: 'cX', caminhaoNome: 'Fora' }),
+      ],
+    });
+    const grupos = agruparSlotPorCaminhao(s);
+    const ids = grupos.flatMap((g) => g.reservas.map((r) => r.reservaId)).sort();
+    expect(ids).toEqual(['r1', 'r2', 'r3']);
+  });
 });
 
 describe('filtrarSlotsPorCaminhao', () => {
@@ -239,5 +352,39 @@ describe('filtrarSlotsPorCaminhao', () => {
     filtrarSlotsPorCaminhao([s], 'c1');
     expect(s.entregas).toHaveLength(2);
     expect(s.ocupacao).toHaveLength(2);
+  });
+
+  it('mantém o slot em que o caminhão só tem reserva', () => {
+    // Dia ocupado do caminhão é dia da agenda dele, mesmo sem levar nada.
+    const s = slot({
+      ocupacao: [ocupacao({ caminhaoId: 'c1' })],
+      entregas: [],
+      reservas: [reserva({ reservaId: 'r-oficina', caminhaoId: 'c1' })],
+    });
+    const [filtrado] = filtrarSlotsPorCaminhao([s], 'c1');
+    expect(filtrado!.entregas).toEqual([]);
+    expect(filtrado!.reservas.map((r) => r.reservaId)).toEqual(['r-oficina']);
+  });
+
+  it('tira do slot as reservas dos outros caminhões', () => {
+    const s = slot({
+      ocupacao: [ocupacao({ caminhaoId: 'c1' }), ocupacao({ caminhaoId: 'c2' })],
+      entregas: [entrega({ entregaId: '1', caminhaoId: 'c1' })],
+      reservas: [
+        reserva({ reservaId: 'minha', caminhaoId: 'c1' }),
+        reserva({ reservaId: 'alheia', caminhaoId: 'c2' }),
+      ],
+    });
+    const [filtrado] = filtrarSlotsPorCaminhao([s], 'c1');
+    expect(filtrado!.reservas.map((r) => r.reservaId)).toEqual(['minha']);
+  });
+
+  it('descarta o slot sem viagem NEM reserva do caminhão pedido', () => {
+    const s = slot({
+      ocupacao: [ocupacao({ caminhaoId: 'c2' })],
+      entregas: [entrega({ caminhaoId: 'c2' })],
+      reservas: [reserva({ caminhaoId: 'c2' })],
+    });
+    expect(filtrarSlotsPorCaminhao([s], 'c1')).toEqual([]);
   });
 });

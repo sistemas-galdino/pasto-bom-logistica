@@ -24,7 +24,12 @@
 // borda (entrega sem caminhão, cliente sem nome, acentuação) e o frontend não
 // tem test runner. Em lib/ do frontend isto ficaria sem teste.
 
-import type { AgendaEntrega, AgendaOcupacao, AgendaSlot } from './types/domain.js';
+import type {
+  AgendaEntrega,
+  AgendaOcupacao,
+  AgendaReserva,
+  AgendaSlot,
+} from "./types/domain.js";
 
 /**
  * Um caminhão do slot com as suas viagens.
@@ -40,6 +45,12 @@ export interface GrupoCaminhaoAgenda {
   caminhaoNome: string;
   /** null no grupo sem caminhão: não há capacidade a medir. */
   ocupacao: AgendaOcupacao | null;
+  /**
+   * Reservas do caminhão no slot. Sempre vazia no grupo sem caminhão: reserva
+   * exige caminhão (é o caminhão que ela existe para ocupar). Um grupo pode ter
+   * reserva e NENHUMA entrega — é o caminhão que foi para a oficina.
+   */
+  reservas: AgendaReserva[];
   entregas: AgendaEntrega[];
 }
 
@@ -58,12 +69,14 @@ function compararEntregas(a: AgendaEntrega, b: AgendaEntrega): number {
   const nomeA = a.clienteNome.trim();
   const nomeB = b.clienteNome.trim();
   if (nomeA !== nomeB) {
-    if (nomeA === '') return 1;
-    if (nomeB === '') return -1;
-    const porNome = nomeA.localeCompare(nomeB, 'pt-BR', { sensitivity: 'base' });
+    if (nomeA === "") return 1;
+    if (nomeB === "") return -1;
+    const porNome = nomeA.localeCompare(nomeB, "pt-BR", {
+      sensitivity: "base",
+    });
     if (porNome !== 0) return porNome;
   }
-  const porNumero = a.orixNumero.localeCompare(b.orixNumero, 'pt-BR', {
+  const porNumero = a.orixNumero.localeCompare(b.orixNumero, "pt-BR", {
     numeric: true,
   });
   if (porNumero !== 0) return porNumero;
@@ -72,16 +85,38 @@ function compararEntregas(a: AgendaEntrega, b: AgendaEntrega): number {
 }
 
 /**
+ * Ordena as reservas de um caminhão: serviço, depois id.
+ *
+ * Por serviço porque é o título do card (o que a pessoa lê), e por id só para a
+ * ordem não depender da ordem de chegada do banco.
+ */
+function compararReservas(a: AgendaReserva, b: AgendaReserva): number {
+  const porServico = a.servico
+    .trim()
+    .localeCompare(b.servico.trim(), "pt-BR", { sensitivity: "base" });
+  if (porServico !== 0) return porServico;
+  return a.reservaId.localeCompare(b.reservaId);
+}
+
+/**
  * Agrupa as viagens de um slot por caminhão, cada grupo já ordenado.
  *
  * A ordem dos grupos segue `slot.ocupacao`, que o backend já devolve ordenada
  * por nome de caminhão — assim a agenda e a lista de barras contam a mesma
  * história. Um caminhão citado numa viagem mas ausente da ocupação não deveria
- * acontecer (a ocupação nasce das viagens), mas se acontecer ele entra depois,
- * por nome, em vez de a viagem desaparecer da tela.
+ * acontecer (a ocupação nasce das viagens e das reservas), mas se acontecer ele
+ * entra depois, por nome, em vez de a viagem desaparecer da tela.
+ *
+ * As RESERVAS entram no grupo do caminhão delas e podem CRIAR um grupo que
+ * nenhuma entrega criaria — o caminhão que passa a manhã na oficina. Ficam antes
+ * das entregas no grupo porque são o contexto do caminhão naquele período: quem
+ * lê precisa saber que ele está tomado antes de ler o que ele leva.
  */
-export function agruparSlotPorCaminhao(slot: AgendaSlot): GrupoCaminhaoAgenda[] {
+export function agruparSlotPorCaminhao(
+  slot: AgendaSlot,
+): GrupoCaminhaoAgenda[] {
   const porCaminhao = new Map<string, AgendaEntrega[]>();
+  const reservasPorCaminhao = new Map<string, AgendaReserva[]>();
   const semCaminhao: AgendaEntrega[] = [];
 
   for (const entrega of slot.entregas) {
@@ -94,38 +129,61 @@ export function agruparSlotPorCaminhao(slot: AgendaSlot): GrupoCaminhaoAgenda[] 
     else porCaminhao.set(entrega.caminhaoId, [entrega]);
   }
 
+  for (const reserva of slot.reservas ?? []) {
+    const atual = reservasPorCaminhao.get(reserva.caminhaoId);
+    if (atual) atual.push(reserva);
+    else reservasPorCaminhao.set(reserva.caminhaoId, [reserva]);
+  }
+
   const grupos: GrupoCaminhaoAgenda[] = [];
 
   // 1) Na ordem das barras de ocupação.
   for (const ocupacao of slot.ocupacao) {
-    const entregas = porCaminhao.get(ocupacao.caminhaoId);
-    if (!entregas) continue;
+    const entregas = porCaminhao.get(ocupacao.caminhaoId) ?? [];
+    const reservas = reservasPorCaminhao.get(ocupacao.caminhaoId) ?? [];
+    // Uma reserva sozinha JÁ é motivo para o grupo existir: é o caminhão que
+    // está tomado sem levar nada. Sair daqui por falta de entrega apagaria da
+    // tela exatamente a informação que a reserva existe para dar.
+    if (entregas.length === 0 && reservas.length === 0) continue;
     porCaminhao.delete(ocupacao.caminhaoId);
+    reservasPorCaminhao.delete(ocupacao.caminhaoId);
     grupos.push({
       caminhaoId: ocupacao.caminhaoId,
       caminhaoNome: ocupacao.caminhaoNome,
       ocupacao,
+      reservas: [...reservas].sort(compararReservas),
       entregas: [...entregas].sort(compararEntregas),
     });
   }
 
-  // 2) Sobras sem barra (defensivo), por nome.
-  const sobras = [...porCaminhao.entries()]
-    .map(([caminhaoId, entregas]) => ({
-      caminhaoId,
-      caminhaoNome: entregas[0]?.caminhaoNome ?? '',
-      ocupacao: null,
-      entregas: [...entregas].sort(compararEntregas),
-    }))
-    .sort((a, b) => a.caminhaoNome.localeCompare(b.caminhaoNome, 'pt-BR'));
+  // 2) Sobras sem barra (defensivo), por nome — de entrega ou de reserva.
+  const idsSobrando = new Set([
+    ...porCaminhao.keys(),
+    ...reservasPorCaminhao.keys(),
+  ]);
+  const sobras = [...idsSobrando]
+    .map((caminhaoId) => {
+      const entregas = porCaminhao.get(caminhaoId) ?? [];
+      const reservas = reservasPorCaminhao.get(caminhaoId) ?? [];
+      return {
+        caminhaoId,
+        caminhaoNome:
+          entregas[0]?.caminhaoNome ?? reservas[0]?.caminhaoNome ?? "",
+        ocupacao: null,
+        reservas: [...reservas].sort(compararReservas),
+        entregas: [...entregas].sort(compararEntregas),
+      };
+    })
+    .sort((a, b) => a.caminhaoNome.localeCompare(b.caminhaoNome, "pt-BR"));
   grupos.push(...sobras);
 
-  // 3) Sem caminhão, sempre por último.
+  // 3) Sem caminhão, sempre por último. Nunca tem reserva: ela exige caminhão.
   if (semCaminhao.length > 0) {
     grupos.push({
       caminhaoId: null,
-      caminhaoNome: '',
+      caminhaoNome: "",
       ocupacao: null,
+      reservas: [],
       entregas: [...semCaminhao].sort(compararEntregas),
     });
   }
@@ -136,10 +194,11 @@ export function agruparSlotPorCaminhao(slot: AgendaSlot): GrupoCaminhaoAgenda[] 
 /**
  * Recorta os slots para um caminhão só — a "agenda do caminhão" da tela de Rota.
  *
- * Filtra `entregas` E `ocupacao`: deixar a ocupação inteira faria a barra
- * continuar mostrando os outros caminhões do dia, que é justamente a confusão
- * que este arquivo existe para desfazer. Slots que ficam sem viagem nenhuma
- * saem do resultado.
+ * Filtra `entregas`, `reservas` E `ocupacao`: deixar a ocupação inteira faria a
+ * barra continuar mostrando os outros caminhões do dia, que é justamente a
+ * confusão que este arquivo existe para desfazer. Slots que ficam sem viagem
+ * NEM reserva saem do resultado — um slot em que o caminhão só tem reserva
+ * FICA, porque é dia ocupado dele.
  */
 export function filtrarSlotsPorCaminhao(
   slots: readonly AgendaSlot[],
@@ -148,10 +207,14 @@ export function filtrarSlotsPorCaminhao(
   const resultado: AgendaSlot[] = [];
   for (const slot of slots) {
     const entregas = slot.entregas.filter((e) => e.caminhaoId === caminhaoId);
-    if (entregas.length === 0) continue;
+    const reservas = (slot.reservas ?? []).filter(
+      (r) => r.caminhaoId === caminhaoId,
+    );
+    if (entregas.length === 0 && reservas.length === 0) continue;
     resultado.push({
       ...slot,
       entregas,
+      reservas,
       ocupacao: slot.ocupacao.filter((o) => o.caminhaoId === caminhaoId),
     });
   }

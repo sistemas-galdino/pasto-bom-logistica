@@ -1,13 +1,13 @@
 // Tipos de domínio (camelCase) usados por backend e frontend.
 
 export type StatusLogistico =
-  | 'pendente'
-  | 'agendada'
-  | 'em_rota'
-  | 'entregue'
+  | "pendente"
+  | "agendada"
+  | "em_rota"
+  | "entregue"
   /** Saiu para entrega e não deu: cliente ausente, porteira fechada, chuva… */
-  | 'nao_realizado'
-  | 'cancelada';
+  | "nao_realizado"
+  | "cancelada";
 
 /**
  * Status de uma ENTREGA (uma viagem), diferente do status do PEDIDO.
@@ -21,14 +21,10 @@ export type StatusLogistico =
  * nova — o registro da que falhou fica no histórico.
  */
 export type StatusEntrega =
-  | 'agendada'
-  | 'em_rota'
-  | 'entregue'
-  | 'nao_realizado'
-  | 'cancelada';
+  "agendada" | "em_rota" | "entregue" | "nao_realizado" | "cancelada";
 
 /** Período de entrega. A reunião decidiu planejar por turno, não por horário. */
-export type PeriodoEntrega = 'manha' | 'tarde';
+export type PeriodoEntrega = "manha" | "tarde";
 
 export interface ItemPedido {
   id: string;
@@ -241,7 +237,7 @@ export interface Caminhao {
 }
 
 /** De onde veio o peso: 'auto' = parser do nome; 'manual' = digitado pela equipe. */
-export type OrigemPeso = 'auto' | 'manual';
+export type OrigemPeso = "auto" | "manual";
 
 /** Peso unitário conhecido de um produto (tabela produtos_peso). */
 export interface PesoProduto {
@@ -304,6 +300,38 @@ export interface AgendaOcupacao {
   entregas: number;
 }
 
+/**
+ * Uma RESERVA de caminhão vista pela agenda.
+ *
+ * Não é entrega e não é coleta: é o caminhão ocupado por outra coisa (oficina,
+ * buscar adubo na fábrica). O propósito, nas palavras do Johnny, é o dia não
+ * PARECER vago — se a agenda mostra a manhã livre, alguém promete uma entrega
+ * que depois tem de ser refeita. Por isso a reserva aparece no calendário como
+ * cidadã de primeira classe, e não como observação escondida.
+ *
+ * No lugar do cliente vem o `servico` (texto livre), e o destino pode ser um
+ * fornecedor do Órix ou uma cidade digitada à mão.
+ */
+export interface AgendaReserva {
+  reservaId: string;
+  /** Título do card: o que o caminhão vai fazer ("oficina", "buscar adubo"). */
+  servico: string;
+  /** Cidade em texto — congelada na reserva, não relida do cadastro. */
+  cidade: string | null;
+  /** Nome do fornecedor, quando a reserva foi vinculada a um. */
+  fornecedorNome: string | null;
+  /** O que se vai buscar/levar, em texto livre. */
+  produtos: string | null;
+  motoristaId: string | null;
+  motoristaNome: string | null;
+  caminhaoId: string;
+  caminhaoNome: string | null;
+  /** Null quando a reserva ocupa o caminhão sem contar tonelagem. */
+  pesoPrevistoKg: number | null;
+  /** true = o caminhão não sai para entrega nenhuma neste período. */
+  bloqueiaCaminhao: boolean;
+}
+
 /** Um slot da agenda: um período (manhã ou tarde) de um dia. */
 export interface AgendaSlot {
   /** Data ISO (YYYY-MM-DD). */
@@ -311,9 +339,14 @@ export interface AgendaSlot {
   periodo: PeriodoEntrega;
   entregas: AgendaEntrega[];
   ocupacao: AgendaOcupacao[];
+  /** Reservas ativas do slot. Um slot pode ter reserva e nenhuma entrega. */
+  reservas: AgendaReserva[];
 }
 
-/** Resposta de GET /api/agenda?de=&ate= — só os slots com alguma entrega. */
+/**
+ * Resposta de GET /api/agenda?de=&ate= — os slots que têm alguma entrega OU
+ * alguma reserva ativa. Slot sem nenhuma das duas não é emitido.
+ */
 export interface AgendaResposta {
   slots: AgendaSlot[];
   /** Frota ativa, para a tela mostrar capacidade total mesmo em slot vazio. */
@@ -347,16 +380,13 @@ export interface MotivoNaoEntrega {
 
 /** Papel/setor de um usuário do sistema (espelha profiles.papel). */
 export type PapelUsuario =
-  | 'logistica'
-  | 'almoxarifado'
-  | 'vendedor'
-  | 'motorista';
+  "logistica" | "almoxarifado" | "vendedor" | "motorista";
 
 /** Situação de acesso de um usuário no diretório administrativo. */
 export type StatusUsuario =
-  | 'ativo' // login habilitado e e-mail confirmado
-  | 'pendente' // convidado; ainda não definiu a senha / confirmou
-  | 'inativo'; // acesso bloqueado (banido)
+  | "ativo" // login habilitado e e-mail confirmado
+  | "pendente" // convidado; ainda não definiu a senha / confirmou
+  | "inativo"; // acesso bloqueado (banido)
 
 /** Usuário do sistema na visão do console de administração (logística). */
 export interface UsuarioAdmin {
@@ -410,7 +440,7 @@ export interface EstadoLinkAcesso {
   /** Primeiro nome de quem vai criar a senha, para a página cumprimentar. */
   nome?: string;
   /** Por que não vale. Ausente quando `valido`. */
-  motivo?: 'expirado' | 'invalido';
+  motivo?: "expirado" | "invalido";
 }
 
 /** Resposta ao confirmar o link: para onde o navegador deve ir. */
