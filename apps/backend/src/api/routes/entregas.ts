@@ -8,7 +8,8 @@
 //   POST  /api/entregas/:id/reverter         -> Entrega
 //   PATCH /api/entregas/:id/separacao        -> Entrega     ("dar OK" na viagem)
 //   PATCH /api/entregas/:id/itens/:itemId/separacao -> Entrega
-//   GET   /api/minhas-entregas               -> Entrega[]   (app do motorista)
+//   POST  /api/entregas/:id/proxima          -> Entrega     (a próxima parada)
+//   GET   /api/minhas-entregas?dias=          -> Entrega[]   (app do motorista)
 //
 // A autorização "grossa" (leitura x escrita por papel) é do porteiro global
 // (auth.ts). Aqui ficam as guardas finas: só logística agenda e reverte; o
@@ -30,6 +31,7 @@ import {
   definirSeparacaoEntrega,
   definirSeparacaoItemEntrega,
   listarEntregas,
+  definirProximaEntrega,
   reagendarEntrega,
   reverterEntrega,
   saldoDoPedido,
@@ -84,7 +86,10 @@ const criarSchema = z.object({
  */
 const reagendarSchema = z
   .object({
-    dataAgendada: z.string().regex(DATA_ISO, 'Use o formato YYYY-MM-DD.').optional(),
+    dataAgendada: z
+      .string()
+      .regex(DATA_ISO, 'Use o formato YYYY-MM-DD.')
+      .optional(),
     periodo: z.enum(['manha', 'tarde']).optional(),
     motoristaId: z.string().uuid().optional(),
     caminhaoId: z.string().uuid().optional(),
@@ -110,6 +115,14 @@ const transicaoSchema = z.object({
 const reverterSchema = z.object({ para: statusEnum });
 
 const separacaoSchema = z.object({ separado: z.boolean() });
+
+/**
+ * Janela da rota do motorista. Teto de 30 dias: a tela é do DIA, e uma janela
+ * grande aqui traria de volta o problema que o corte por data resolveu.
+ */
+const minhasEntregasSchema = z.object({
+  dias: z.coerce.number().int().min(1).max(30).optional(),
+});
 
 /** CSV de status ('agendada,em_rota') -> lista validada. */
 function parseStatus(bruto: unknown): StatusEntrega[] | undefined {
@@ -333,6 +346,21 @@ export async function entregasRoutes(app: FastifyInstance): Promise<void> {
   //
   // O motorista NUNCA escolhe de quem é a viagem: o filtro é o próprio uid,
   // vindo do token. É a mesma garantia que a rota antiga /minha-rota dava.
+  //
+  // A ROTA DO DIA PASSOU A SER DO DIA (Onda C). Antes, esta rota trazia TODAS
+  // as agendada+em_rota do motorista, de qualquer data — uma tela chamada "Rota
+  // do Dia" mostrando a semana inteira. Ficou tolerável enquanto a lista era só
+  // uma lista; deixou de ser quando o motorista passou a SEQUENCIAR as paradas
+  // (item 11 da Natália): ordenar "o dia" sobre uma lista que não é do dia não
+  // significa nada.
+  //
+  // Duas exceções deliberadas ao corte por data, porque esconder trabalho a
+  // fazer é pior que mostrar demais:
+  //   - `em_rota` de QUALQUER data continua aparecendo: caminhão na estrada com
+  //     data de ontem é viagem em curso, e ela não pode sumir da tela de quem
+  //     está dirigindo;
+  //   - `?dias=N` estende a janela para frente (o padrão é 1, só hoje), para a
+  //     tela poder mostrar "amanhã" sem outra rota.
   app.get('/minhas-entregas', async (req, reply) => {
     const usuario = req.usuario;
     if (!usuario) {
@@ -340,16 +368,78 @@ export async function entregasRoutes(app: FastifyInstance): Promise<void> {
       return reply.send([]);
     }
 
+    const parsed = minhasEntregasSchema.safeParse(req.query);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'query_invalida',
+        message: 'dias precisa ser um inteiro de 1 a 30.',
+        detalhes: parsed.error.issues,
+      });
+    }
+
+    const motoristaId = usuario.id ?? undefined;
+    const dias = parsed.data.dias ?? 1;
+
     try {
-      const entregas = await listarEntregas(
-        { motoristaId: usuario.id ?? undefined, status: ['agendada', 'em_rota'] },
-        true, // com destino: é o link do Maps do motorista
-      );
-      return reply.send(entregas);
+      const [doDia, naEstrada] = await Promise.all([
+        listarEntregas(
+          {
+            motoristaId,
+            status: ['agendada', 'em_rota'],
+            de: hojeISO(),
+            ate: hojeMaisDias(dias - 1),
+          },
+          true, // com destino: é o link do Maps do motorista
+        ),
+        listarEntregas({ motoristaId, status: ['em_rota'] }, true),
+      ]);
+
+      // União por id: a viagem em rota de hoje aparece nas duas consultas.
+      const porId = new Map(doDia.map((e) => [e.id, e]));
+      for (const e of naEstrada) porId.set(e.id, e);
+      return reply.send([...porId.values()]);
     } catch (err) {
       return responderErro(reply, err, '[GET /minhas-entregas]');
     }
   });
+
+  // POST /entregas/:id/proxima — o motorista aponta a próxima parada.
+  //
+  // Passa pelo portão global por uma exceção explícita em auth.ts (a mesma da
+  // transição); a regra fina — só as próprias viagens, só agendada/em_rota — é
+  // do serviço. A logística também pode chamar, para corrigir a sequência de
+  // fora da estrada.
+  app.post('/entregas/:id/proxima', async (req, reply) => {
+    const { id } = req.params as { id: string };
+
+    try {
+      const entrega = await definirProximaEntrega({
+        entregaId: id,
+        usuarioId: req.usuario?.id ?? null,
+        papel: req.usuario?.papel ?? null,
+      });
+      return reply.send(entrega);
+    } catch (err) {
+      return responderErro(reply, err, `[POST /entregas/${id}/proxima]`);
+    }
+  });
+}
+
+/** Data de hoje em ISO local — `toISOString()` viraria UTC e adiantaria o dia. */
+function hojeISO(): string {
+  return isoDeData(new Date());
+}
+
+function hojeMaisDias(dias: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + dias);
+  return isoDeData(d);
+}
+
+function isoDeData(d: Date): string {
+  const mes = String(d.getMonth() + 1).padStart(2, '0');
+  const dia = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mes}-${dia}`;
 }
 
 // ---------------------------------------------------------------------------

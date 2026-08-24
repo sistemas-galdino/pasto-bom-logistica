@@ -107,9 +107,10 @@ export const autenticar: preHandlerHookHandler = async (
   // Valida o JWT do Supabase resolvendo o usuário a partir do token.
   const { data, error } = await supabase.auth.getUser(token);
   if (error || !data?.user) {
-    return reply
-      .code(401)
-      .send({ error: 'token_invalido', message: 'Token inválido ou expirado.' });
+    return reply.code(401).send({
+      error: 'token_invalido',
+      message: 'Token inválido ou expirado.',
+    });
   }
 
   const papel = await resolverPapel(data.user.id);
@@ -127,11 +128,18 @@ export const autenticar: preHandlerHookHandler = async (
   // para a rota antiga de PEDIDOS, então todo "Confirmar entrega" morria em 403
   // antes de chegar ao serviço. Enquanto a rota de pedidos existir, as duas
   // valem; quando ela sair, sai daqui também.
+  //
+  // `/proxima` entra pela mesma porta (Onda C, item 11 da Natália): quem sabe
+  // qual é a próxima parada é o motorista que acabou de descarregar. A regra
+  // fina — só as PRÓPRIAS viagens, só agendada/em_rota — está em
+  // definirProximaEntrega, no serviço, junto da de transicionarEntrega.
   const ehEscrita = !METODOS_LEITURA.has(req.method);
   const ehEntregaMotorista =
     papel === 'motorista' &&
     req.method === 'POST' &&
-    /^\/api\/(?:pedidos|entregas)\/[^/]+\/transicao(?:\?.*)?$/.test(req.url);
+    /^\/api\/(?:pedidos|entregas)\/[^/]+\/(?:transicao|proxima)(?:\?.*)?$/.test(
+      req.url,
+    );
   if (
     ehEscrita &&
     papel !== 'logistica' &&

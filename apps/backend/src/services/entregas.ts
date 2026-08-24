@@ -27,6 +27,7 @@ import {
   type Entrega,
   type DestinoEntrega,
   type EntregaItem,
+  type PapelUsuario,
   type PeriodoEntrega,
   type SaldoItem,
   type StatusEntrega,
@@ -42,7 +43,10 @@ import {
   lerPesosProdutos,
   validarCargaDoAgendamento,
 } from './carga.js';
-import { dispararWhatsappEntrega, exigirMotivoCadastrado } from './transitions.js';
+import {
+  dispararWhatsappEntrega,
+  exigirMotivoCadastrado,
+} from './transitions.js';
 
 // ---------------------------------------------------------------------------
 // Linhas cruas
@@ -57,6 +61,8 @@ interface EntregaRow {
   motorista_id: string | null;
   caminhao_id: string | null;
   propriedade_codigo: string | null;
+  /** Ordem da parada no dia do motorista (0022); null = não sequenciada. */
+  ordem_rota: number | string | null;
   data_entregue: string | null;
   motivo_nao_entrega: string | null;
   observacoes: string | null;
@@ -88,11 +94,22 @@ interface PedidoDaEntregaRow {
 
 const COLUNAS_ENTREGA =
   'id, pedido_id, status, data_agendada, periodo, motorista_id, caminhao_id, ' +
-  'propriedade_codigo, data_entregue, motivo_nao_entrega, observacoes, ' +
-  'criado_em, atualizado_em';
+  'propriedade_codigo, ordem_rota, data_entregue, motivo_nao_entrega, ' +
+  'observacoes, criado_em, atualizado_em';
 
 const COLUNAS_ENTREGA_ITEM =
   'id, entrega_id, produto_codigo, nome_produto, qtd, separado, separado_em, peso_unit_kg';
+
+/**
+ * Ordem da parada, ou null. Zero e negativo caem para null: o banco tem check de
+ * `> 0`, então um valor fora disso é dado corrompido — melhor tratar como "não
+ * sequenciada" do que mandar 0 para a tela ordenar.
+ */
+function ordemOuNulo(v: number | string | null | undefined): number | null {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+}
 
 function num(v: number | string | null | undefined): number {
   if (v === null || v === undefined) return 0;
@@ -101,8 +118,11 @@ function num(v: number | string | null | undefined): number {
 }
 
 /** Peso congelado do item da viagem, ou null se a viagem é anterior à 0019. */
-function pesoCongelado(item: { peso_unit_kg: number | string | null }): number | null {
-  if (item.peso_unit_kg === null || item.peso_unit_kg === undefined) return null;
+function pesoCongelado(item: {
+  peso_unit_kg: number | string | null;
+}): number | null {
+  if (item.peso_unit_kg === null || item.peso_unit_kg === undefined)
+    return null;
   const n = Number(item.peso_unit_kg);
   return Number.isFinite(n) ? n : null;
 }
@@ -316,7 +336,9 @@ async function montarEntregas(
       .in('entrega_id', idsEntrega),
     supabase
       .from('pedidos')
-      .select('id, orix_numero, cliente_codigo, cliente_nome, cidade_cliente, data_pedido')
+      .select(
+        'id, orix_numero, cliente_codigo, cliente_nome, cidade_cliente, data_pedido',
+      )
       .in('id', idsPedido),
   ]);
 
@@ -350,9 +372,7 @@ async function montarEntregas(
   const [motoristas, caminhoes, bairros, pesos] = await Promise.all([
     nomesDeMotorista(linhas.map((l) => l.motorista_id ?? '')),
     nomesDeCaminhao(linhas.map((l) => l.caminhao_id ?? '')),
-    bairrosDeCliente(
-      [...pedidos.values()].map((p) => p.cliente_codigo ?? ''),
-    ),
+    bairrosDeCliente([...pedidos.values()].map((p) => p.cliente_codigo ?? '')),
     lerPesosProdutos(itens.map((i) => i.produto_codigo)),
   ]);
 
@@ -388,8 +408,11 @@ async function montarEntregas(
         ? (motoristas.get(l.motorista_id) ?? '')
         : null,
       caminhaoId: l.caminhao_id,
-      caminhaoNome: l.caminhao_id ? (caminhoes.get(l.caminhao_id) ?? null) : null,
+      caminhaoNome: l.caminhao_id
+        ? (caminhoes.get(l.caminhao_id) ?? null)
+        : null,
       propriedadeCodigo: l.propriedade_codigo,
+      ordemRota: ordemOuNulo(l.ordem_rota),
       dataEntregue: l.data_entregue,
       motivoNaoEntrega: l.motivo_nao_entrega,
       observacoes: l.observacoes,
@@ -674,7 +697,10 @@ export async function criarEntrega(args: CriarEntregaArgs): Promise<Entrega> {
   // se mexe. Se der erro aqui, o agendamento não acontece — o peso é parte da
   // mesma decisão, não um efeito colateral dela.
   const novosPesos = [...mapaPesos]
-    .filter(([codigo, kg]) => Number.isFinite(kg) && kg > 0 && (mapa.get(codigo) ?? 0) > 0)
+    .filter(
+      ([codigo, kg]) =>
+        Number.isFinite(kg) && kg > 0 && (mapa.get(codigo) ?? 0) > 0,
+    )
     .map(([codigo, kg]) => ({
       produtoCodigo: codigo,
       nomeProduto:
@@ -915,10 +941,7 @@ function historicoReagendamento(
   return anterior ? `${anterior}\n${linha}` : linha;
 }
 
-function descreverSlot(
-  data: string,
-  periodo: PeriodoEntrega | null,
-): string {
+function descreverSlot(data: string, periodo: PeriodoEntrega | null): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(data);
   const dia = m ? `${m[3]}/${m[2]}` : data;
   if (!periodo) return dia;
@@ -1251,4 +1274,129 @@ async function registrarEvento(args: {
       `[entregas] Falha ao registrar evento da entrega ${entregaId}: ${error.message}`,
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Ordem das paradas (a "próxima entrega" do motorista) — migração 0022
+// ---------------------------------------------------------------------------
+
+export interface DefinirProximaEntregaArgs {
+  /** A entrega que o motorista aponta como a PRÓXIMA parada dele. */
+  entregaId: string;
+  /** uid de quem chamou (do token, nunca do corpo). */
+  usuarioId: string | null;
+  papel: PapelUsuario | null;
+}
+
+/**
+ * Marca uma entrega como a próxima parada da rota do dia.
+ *
+ * Pedido da Natália, item 11: "informar qual será o próximo cliente/entrega após
+ * a conclusão da entrega atual". Quem sabe é o motorista, que acabou de
+ * descarregar e conhece a estrada — então é ele quem aponta, e a logística lê.
+ *
+ * A ordem é atribuída INCREMENTALMENTE: a próxima recebe `max + 1` entre as
+ * paradas já sequenciadas do mesmo motorista no mesmo dia. Não renumeramos nada
+ * e não pedimos a lista inteira de uma vez, por dois motivos:
+ *
+ *   1. o motorista está na estrada, muitas vezes com o caminhão carregado — a
+ *      interação tem de ser um toque, não um formulário de ordenação;
+ *   2. renumerar significaria reescrever paradas JÁ FEITAS quando ele mudasse de
+ *      ideia no meio do dia, e o que já foi entregue não se reordena.
+ *
+ * As entregas já ENTREGUES contam no `max`: elas ocuparam posição na rota, e a
+ * próxima tem de vir depois delas.
+ *
+ * Idempotente: se a entrega já tem ordem, devolve como está. Dois toques no
+ * mesmo cartão não podem embaralhar a rota nem virar erro na cara de quem já
+ * conseguiu o que queria.
+ */
+export async function definirProximaEntrega(
+  args: DefinirProximaEntregaArgs,
+): Promise<Entrega> {
+  const { entregaId, usuarioId, papel } = args;
+
+  const { data: linha, error } = await supabase
+    .from('entregas')
+    .select('id, status, data_agendada, motorista_id, ordem_rota')
+    .eq('id', entregaId)
+    .maybeSingle<{
+      id: string;
+      status: StatusEntrega;
+      data_agendada: string;
+      motorista_id: string | null;
+      ordem_rota: number | string | null;
+    }>();
+
+  if (error) {
+    throw new TransicaoError(
+      500,
+      'erro_banco',
+      `Falha ao carregar a entrega: ${error.message}`,
+    );
+  }
+  if (!linha) {
+    throw new TransicaoError(404, 'nao_encontrado', 'Entrega não encontrada.');
+  }
+
+  // O motorista só sequencia as PRÓPRIAS viagens. Mesma garantia de
+  // transicionarEntrega: o dono vem do token, nunca do corpo da requisição.
+  if (papel === 'motorista' && linha.motorista_id !== usuarioId) {
+    throw new TransicaoError(403, 'sem_permissao', 'Esta viagem não é sua.');
+  }
+
+  if (linha.status !== 'agendada' && linha.status !== 'em_rota') {
+    throw new TransicaoError(
+      409,
+      'ordem_invalida',
+      `Só uma viagem agendada ou em rota pode ser a próxima parada; esta está ${ROTULO_STATUS_ENTREGA[linha.status].toLowerCase()}.`,
+    );
+  }
+
+  if (!linha.motorista_id) {
+    throw new TransicaoError(
+      422,
+      'sem_motorista',
+      'Esta viagem ainda não tem motorista, então não há rota para ordenar.',
+    );
+  }
+
+  const jaTem = ordemOuNulo(linha.ordem_rota);
+  if (jaTem !== null) return carregarEntrega(entregaId);
+
+  const { data: doDia, error: erroDia } = await supabase
+    .from('entregas')
+    .select('ordem_rota')
+    .eq('motorista_id', linha.motorista_id)
+    .eq('data_agendada', linha.data_agendada)
+    .in('status', ['agendada', 'em_rota', 'entregue']);
+
+  if (erroDia) {
+    throw new TransicaoError(
+      500,
+      'erro_banco',
+      `Falha ao ler a ordem das paradas do dia: ${erroDia.message}`,
+    );
+  }
+
+  let maior = 0;
+  for (const l of doDia ?? []) {
+    const ordem = ordemOuNulo(l.ordem_rota as number | string | null);
+    if (ordem !== null && ordem > maior) maior = ordem;
+  }
+
+  const { error: erroUpdate } = await supabase
+    .from('entregas')
+    .update({ ordem_rota: maior + 1, atualizado_em: new Date().toISOString() })
+    .eq('id', entregaId);
+
+  if (erroUpdate) {
+    throw new TransicaoError(
+      500,
+      'erro_banco',
+      `Falha ao gravar a ordem da parada: ${erroUpdate.message}`,
+    );
+  }
+
+  return carregarEntrega(entregaId);
 }

@@ -1,13 +1,13 @@
 // Tipos de domínio (camelCase) usados por backend e frontend.
 
 export type StatusLogistico =
-  | "pendente"
-  | "agendada"
-  | "em_rota"
-  | "entregue"
+  | 'pendente'
+  | 'agendada'
+  | 'em_rota'
+  | 'entregue'
   /** Saiu para entrega e não deu: cliente ausente, porteira fechada, chuva… */
-  | "nao_realizado"
-  | "cancelada";
+  | 'nao_realizado'
+  | 'cancelada';
 
 /**
  * Status de uma ENTREGA (uma viagem), diferente do status do PEDIDO.
@@ -21,10 +21,10 @@ export type StatusLogistico =
  * nova — o registro da que falhou fica no histórico.
  */
 export type StatusEntrega =
-  "agendada" | "em_rota" | "entregue" | "nao_realizado" | "cancelada";
+  'agendada' | 'em_rota' | 'entregue' | 'nao_realizado' | 'cancelada';
 
 /** Período de entrega. A reunião decidiu planejar por turno, não por horário. */
-export type PeriodoEntrega = "manha" | "tarde";
+export type PeriodoEntrega = 'manha' | 'tarde';
 
 export interface ItemPedido {
   id: string;
@@ -134,6 +134,18 @@ export interface Entrega {
   caminhaoId: string | null;
   caminhaoNome: string | null;
   propriedadeCodigo: string | null;
+  /**
+   * Ordem desta parada dentro do dia do motorista (1 = primeira); null enquanto
+   * ninguém sequenciou (migração 0022).
+   *
+   * Quem informa é o MOTORISTA, ao concluir a parada anterior — pedido da
+   * Natália, item 11: "informar qual será o próximo cliente/entrega após a
+   * conclusão da entrega atual". A logística lê; nesta rodada não edita.
+   *
+   * Não há unicidade no banco: empate é desempatado na leitura, para não travar
+   * a rota na estrada por erro de banco.
+   */
+  ordemRota: number | null;
 
   dataEntregue: string | null;
   motivoNaoEntrega: string | null;
@@ -237,7 +249,7 @@ export interface Caminhao {
 }
 
 /** De onde veio o peso: 'auto' = parser do nome; 'manual' = digitado pela equipe. */
-export type OrigemPeso = "auto" | "manual";
+export type OrigemPeso = 'auto' | 'manual';
 
 /** Peso unitário conhecido de um produto (tabela produtos_peso). */
 export interface PesoProduto {
@@ -464,13 +476,13 @@ export interface MotivoNaoEntrega {
 
 /** Papel/setor de um usuário do sistema (espelha profiles.papel). */
 export type PapelUsuario =
-  "logistica" | "almoxarifado" | "vendedor" | "motorista";
+  'logistica' | 'almoxarifado' | 'vendedor' | 'motorista';
 
 /** Situação de acesso de um usuário no diretório administrativo. */
 export type StatusUsuario =
-  | "ativo" // login habilitado e e-mail confirmado
-  | "pendente" // convidado; ainda não definiu a senha / confirmou
-  | "inativo"; // acesso bloqueado (banido)
+  | 'ativo' // login habilitado e e-mail confirmado
+  | 'pendente' // convidado; ainda não definiu a senha / confirmou
+  | 'inativo'; // acesso bloqueado (banido)
 
 /** Usuário do sistema na visão do console de administração (logística). */
 export interface UsuarioAdmin {
@@ -524,7 +536,7 @@ export interface EstadoLinkAcesso {
   /** Primeiro nome de quem vai criar a senha, para a página cumprimentar. */
   nome?: string;
   /** Por que não vale. Ausente quando `valido`. */
-  motivo?: "expirado" | "invalido";
+  motivo?: 'expirado' | 'invalido';
 }
 
 /** Resposta ao confirmar o link: para onde o navegador deve ir. */
