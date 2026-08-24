@@ -22,11 +22,11 @@ import {
   type LimiteCaminhao,
   type OrigemPeso,
   type PeriodoEntrega,
-} from '@pastobom/shared';
+} from "@pastobom/shared";
 
-import { supabase } from '../db/supabase.js';
-import { log } from '../log.js';
-import { TransicaoError } from './erros.js';
+import { supabase } from "../db/supabase.js";
+import { log } from "../log.js";
+import { TransicaoError } from "./erros.js";
 
 // ---------------------------------------------------------------------------
 // Peso
@@ -53,9 +53,9 @@ export async function lerPesosDetalhados(
   if (unicos.length === 0) return new Map();
 
   const { data, error } = await supabase
-    .from('produtos_peso')
-    .select('produto_codigo, peso_kg, origem, atualizado_em')
-    .in('produto_codigo', unicos);
+    .from("produtos_peso")
+    .select("produto_codigo, peso_kg, origem, atualizado_em")
+    .in("produto_codigo", unicos);
 
   if (error) {
     log.warn(`[carga] Falha ao ler pesos de produtos: ${error.message}`);
@@ -68,7 +68,7 @@ export async function lerPesosDetalhados(
     if (!Number.isFinite(kg)) continue;
     mapa.set(r.produto_codigo as string, {
       kg,
-      origem: r.origem === 'manual' ? 'manual' : 'auto',
+      origem: r.origem === "manual" ? "manual" : "auto",
       atualizadoEm: (r.atualizado_em as string | null) ?? null,
     });
   }
@@ -92,7 +92,11 @@ export async function lerPesosProdutos(
  * sugerir no próximo pedido. Nenhuma entrega já feita se mexe.
  */
 export async function gravarPesosManuais(
-  pesos: { produtoCodigo: string; nomeProduto?: string | null; pesoKg: number }[],
+  pesos: {
+    produtoCodigo: string;
+    nomeProduto?: string | null;
+    pesoKg: number;
+  }[],
   usuarioId: string | null,
 ): Promise<void> {
   const agora = new Date().toISOString();
@@ -102,7 +106,7 @@ export async function gravarPesosManuais(
       const linha: Record<string, unknown> = {
         produto_codigo: p.produtoCodigo,
         peso_kg: p.pesoKg,
-        origem: 'manual',
+        origem: "manual",
         atualizado_em: agora,
         atualizado_por: usuarioId,
       };
@@ -115,13 +119,13 @@ export async function gravarPesosManuais(
   if (linhas.length === 0) return;
 
   const { error } = await supabase
-    .from('produtos_peso')
-    .upsert(linhas, { onConflict: 'produto_codigo' });
+    .from("produtos_peso")
+    .upsert(linhas, { onConflict: "produto_codigo" });
 
   if (error) {
     throw new TransicaoError(
       500,
-      'erro_banco',
+      "erro_banco",
       `Falha ao gravar o peso do produto: ${error.message}`,
     );
   }
@@ -168,7 +172,7 @@ export async function semearPesosAuto(
     produto_codigo: string;
     nome_produto: string;
     peso_kg: number;
-    origem: 'auto';
+    origem: "auto";
   }[] = [];
 
   for (const [codigo, nome] of porCodigo) {
@@ -179,7 +183,7 @@ export async function semearPesosAuto(
       produto_codigo: codigo,
       nome_produto: nome,
       peso_kg: kg,
-      origem: 'auto',
+      origem: "auto",
     });
   }
 
@@ -188,8 +192,8 @@ export async function semearPesosAuto(
   // onConflict ignora: se outro tick já inseriu (ou a equipe já corrigiu à mão),
   // o registro existente prevalece.
   const { error } = await supabase
-    .from('produtos_peso')
-    .upsert(novos, { onConflict: 'produto_codigo', ignoreDuplicates: true });
+    .from("produtos_peso")
+    .upsert(novos, { onConflict: "produto_codigo", ignoreDuplicates: true });
 
   if (error) {
     log.warn(`[carga] Falha ao semear pesos automáticos: ${error.message}`);
@@ -209,13 +213,80 @@ export interface UsoCaminhao {
   caminhaoId: string;
   usadoKg: number;
   motoristaIds: Set<string>;
+  /** Viagens a cliente. RESERVA não entra aqui: ela não é entrega. */
   entregas: number;
+  /**
+   * Serviço da reserva que pediu o caminhão inteiro neste slot (ex.: "oficina"),
+   * ou null. É o que faz a mensagem de erro dizer POR QUE o caminhão não pode
+   * sair, em vez de um "indisponível" que ninguém sabe resolver.
+   */
+  bloqueadoPor: string | null;
 }
 
 interface LinhaSlot {
   id: string;
   motorista_id: string | null;
   caminhao_id: string | null;
+}
+
+interface LinhaReserva {
+  id: string;
+  servico: string;
+  motorista_id: string | null;
+  caminhao_id: string;
+  peso_previsto_kg: number | string | null;
+  bloqueia_caminhao: boolean;
+}
+
+/**
+ * Reservas de caminhão vivas num slot (migração 0021).
+ *
+ * Degrada em vez de derrubar, no mesmo padrão de `lerLimitesDoCaminhao`: a
+ * migração vai ao ar ANTES do deploy, então entre um e outro esta consulta pode
+ * falhar — e uma falha aqui não pode impedir a equipe de agendar cliente, que é
+ * a operação principal. O preço da degradação é uma reserva que deixa de
+ * bloquear, e não o quadro parado.
+ */
+async function lerReservasDoSlot(
+  data: string,
+  periodo: PeriodoEntrega,
+  ignorarReservaId?: string,
+): Promise<LinhaReserva[]> {
+  const { data: linhas, error } = await supabase
+    .from("reservas")
+    .select(
+      "id, servico, motorista_id, caminhao_id, peso_previsto_kg, bloqueia_caminhao",
+    )
+    .eq("data_agendada", data)
+    .eq("periodo", periodo)
+    .eq("status", "ativa");
+
+  if (error) {
+    log.error(
+      `[carga] Falha ao ler as reservas de ${data}/${periodo}: ${error.message}`,
+    );
+    return [];
+  }
+
+  return ((linhas ?? []) as LinhaReserva[]).filter(
+    (r) => r.id !== ignorarReservaId && r.caminhao_id,
+  );
+}
+
+/** Entrada do mapa de ocupação, criando-a zerada na primeira vez. */
+function pegarUso(
+  uso: Map<string, UsoCaminhao>,
+  caminhaoId: string,
+): UsoCaminhao {
+  const atual: UsoCaminhao = uso.get(caminhaoId) ?? {
+    caminhaoId,
+    usadoKg: 0,
+    motoristaIds: new Set<string>(),
+    entregas: 0,
+    bloqueadoPor: null,
+  };
+  uso.set(caminhaoId, atual);
+  return atual;
 }
 
 /**
@@ -227,59 +298,76 @@ interface LinhaSlot {
  * toneladas deixa de ser impossível de agendar, porque cada viagem pesa só o
  * que leva.
  *
- * `ignorarEntregaId` exclui a própria entrega do cálculo (reagendar não pode
- * competir consigo mesmo pela capacidade).
+ * `ignorar` exclui do cálculo a própria entrega OU a própria reserva que está
+ * sendo editada — sem isso, reagendar competiria consigo mesmo pela capacidade.
  *
  * Só contam viagens vivas: 'agendada' e 'em_rota'. Entregue já saiu do caminhão;
- * nao_realizado voltou; cancelada nunca ocupou.
+ * nao_realizado voltou; cancelada nunca ocupou. Do lado das reservas, só 'ativa'.
  */
 export async function ocupacaoDoSlot(
   data: string,
   periodo: PeriodoEntrega,
-  ignorarEntregaId?: string,
+  ignorar?: { entregaId?: string; reservaId?: string },
 ): Promise<Map<string, UsoCaminhao>> {
+  const uso = new Map<string, UsoCaminhao>();
+
+  // As RESERVAS entram antes de tudo, de propósito: mais abaixo há um
+  // early-return para o slot sem entrega nenhuma, e é justamente esse o caso da
+  // manhã reservada para a oficina. Somar as reservas depois dele devolveria
+  // mapa vazio e a reserva não bloquearia nada — a falha exata que esta feature
+  // existe para evitar, e silenciosa.
+  for (const r of await lerReservasDoSlot(data, periodo, ignorar?.reservaId)) {
+    const atual = pegarUso(uso, r.caminhao_id);
+    // Reserva sem peso ocupa o caminhão e o motorista, mas não desconta
+    // tonelagem — é o caso da oficina, contra o da coleta de adubo.
+    atual.usadoKg += Number(r.peso_previsto_kg) || 0;
+    if (r.motorista_id) atual.motoristaIds.add(r.motorista_id);
+    if (r.bloqueia_caminhao) atual.bloqueadoPor = r.servico;
+  }
+
   const { data: linhas, error } = await supabase
-    .from('entregas')
-    .select('id, motorista_id, caminhao_id')
-    .eq('data_agendada', data)
-    .eq('periodo', periodo)
-    .in('status', ['agendada', 'em_rota']);
+    .from("entregas")
+    .select("id, motorista_id, caminhao_id")
+    .eq("data_agendada", data)
+    .eq("periodo", periodo)
+    .in("status", ["agendada", "em_rota"]);
 
   if (error) {
     throw new TransicaoError(
       500,
-      'erro_banco',
+      "erro_banco",
       `Falha ao ler a ocupação do dia: ${error.message}`,
     );
   }
 
   const relevantes = ((linhas ?? []) as LinhaSlot[]).filter(
-    (l) => l.id !== ignorarEntregaId && l.caminhao_id,
+    (l) => l.id !== ignorar?.entregaId && l.caminhao_id,
   );
-  if (relevantes.length === 0) return new Map();
+  // Devolve o que as reservas já acumularam, NÃO um mapa novo.
+  if (relevantes.length === 0) return uso;
 
   // Peso de cada entrega: soma dos itens DA VIAGEM × peso unitário do produto.
   const ids = relevantes.map((l) => l.id);
   const { data: itens, error: errItens } = await supabase
-    .from('entrega_itens')
-    .select('entrega_id, produto_codigo, qtd, peso_unit_kg')
-    .in('entrega_id', ids);
+    .from("entrega_itens")
+    .select("entrega_id, produto_codigo, qtd, peso_unit_kg")
+    .in("entrega_id", ids);
 
   if (errItens) {
     throw new TransicaoError(
       500,
-      'erro_banco',
+      "erro_banco",
       `Falha ao ler os itens do dia: ${errItens.message}`,
     );
   }
 
   const pesos = await lerPesosProdutos(
-    (itens ?? []).map((i) => (i.produto_codigo as string) ?? ''),
+    (itens ?? []).map((i) => (i.produto_codigo as string) ?? ""),
   );
 
   const pesoPorEntrega = new Map<string, number>();
   for (const item of itens ?? []) {
-    const codigo = (item.produto_codigo as string) ?? '';
+    const codigo = (item.produto_codigo as string) ?? "";
     // O peso CONGELADO da viagem manda (migração 0019). O cadastro é o fallback
     // das viagens agendadas antes dela. Sem nenhum dos dois, conta como 0 — a
     // trava de capacidade prefere subestimar a recusar uma viagem por um dado
@@ -296,19 +384,11 @@ export async function ocupacaoDoSlot(
     );
   }
 
-  const uso = new Map<string, UsoCaminhao>();
   for (const l of relevantes) {
-    const caminhaoId = l.caminhao_id as string;
-    const atual: UsoCaminhao = uso.get(caminhaoId) ?? {
-      caminhaoId,
-      usadoKg: 0,
-      motoristaIds: new Set<string>(),
-      entregas: 0,
-    };
+    const atual = pegarUso(uso, l.caminhao_id as string);
     atual.usadoKg += pesoPorEntrega.get(l.id) ?? 0;
     atual.entregas += 1;
     if (l.motorista_id) atual.motoristaIds.add(l.motorista_id);
-    uso.set(caminhaoId, atual);
   }
   return uso;
 }
@@ -327,9 +407,9 @@ export interface Caminhao {
 /** Carrega um caminhão pelo id; 422 se não existir ou estiver inativo. */
 export async function carregarCaminhao(id: string): Promise<Caminhao> {
   const { data, error } = await supabase
-    .from('caminhoes')
-    .select('id, nome, capacidade_kg, ativo')
-    .eq('id', id)
+    .from("caminhoes")
+    .select("id, nome, capacidade_kg, ativo")
+    .eq("id", id)
     .maybeSingle<{
       id: string;
       nome: string;
@@ -340,21 +420,21 @@ export async function carregarCaminhao(id: string): Promise<Caminhao> {
   if (error) {
     throw new TransicaoError(
       500,
-      'erro_banco',
+      "erro_banco",
       `Falha ao carregar o caminhão: ${error.message}`,
     );
   }
   if (!data) {
     throw new TransicaoError(
       422,
-      'caminhao_invalido',
-      'Caminhão não encontrado.',
+      "caminhao_invalido",
+      "Caminhão não encontrado.",
     );
   }
   if (!data.ativo) {
     throw new TransicaoError(
       422,
-      'caminhao_inativo',
+      "caminhao_inativo",
       `O caminhão ${data.nome} está inativo.`,
     );
   }
@@ -367,49 +447,103 @@ export async function carregarCaminhao(id: string): Promise<Caminhao> {
 }
 
 function formatarT(kg: number): string {
-  return `${(kg / 1000).toLocaleString('pt-BR', {
+  return `${(kg / 1000).toLocaleString("pt-BR", {
     minimumFractionDigits: 1,
     maximumFractionDigits: 2,
   })} t`;
 }
 
 /**
- * Valida as três travas do agendamento. Lança TransicaoError 422 com mensagem
- * pronta para a tela.
+ * Valida as travas de quem ocupa um caminhão num slot. Lança TransicaoError 422
+ * com mensagem pronta para a tela.
  *
- *   1) capacidade do caminhão no slot (a carga do dia não pode estourar);
- *   2) número de entregas do caminhão no DIA, quando há limite configurado;
- *   3) o caminhão não pode sair com dois motoristas no mesmo slot;
- *   4) o motorista não pode levar dois caminhões no mesmo slot.
+ *   1) o caminhão não pode estar reservado para outro serviço (oficina etc.);
+ *   2) uma reserva exclusiva não pode cair sobre um caminhão que já tem viagem;
+ *   3) capacidade do caminhão no slot (a carga do dia não pode estourar);
+ *   4) número de entregas do caminhão no DIA, quando há limite configurado;
+ *   5) o caminhão não pode sair com dois motoristas no mesmo slot;
+ *   6) o motorista não pode levar dois caminhões no mesmo slot.
  *
- * Ponto único: todo mundo que agenda ou reagenda passa por aqui. Se você criar
- * outro caminho de escrita de `entregas`, chame esta função — não copie as
- * travas.
+ * Ponto único: agendar, reagendar e reservar passam todos por aqui. Se você
+ * criar outro caminho de escrita de `entregas` ou de `reservas`, chame esta
+ * função — não copie as travas.
  */
 export async function validarCargaDoAgendamento(args: {
   /** Entrega que está sendo criada/reagendada (excluída da ocupação). */
   entregaId?: string;
+  /** Reserva que está sendo criada/editada (excluída da ocupação). */
+  reservaId?: string;
+  /**
+   * Quem ocupa o caminhão. Muda duas travas: só a ENTREGA consome a cota de
+   * entregas/dia (decisão do David em 24/08 — o teto é de entregas a cliente),
+   * e só a RESERVA pode reclamar do caminhão que já tem viagem marcada.
+   */
+  alvo?: "entrega" | "reserva";
   data: string;
   periodo: PeriodoEntrega;
-  motoristaId: string;
+  /** Nulável porque reserva pode não ter motorista (o caminhão vai à oficina). */
+  motoristaId: string | null;
   caminhaoId: string;
   /** Peso das quantidades DESTA viagem, não o do pedido inteiro. */
   pesoDaCargaKg: number;
+  /** Reserva que pede o caminhão inteiro no período (`bloqueia_caminhao`). */
+  exigeExclusividade?: boolean;
 }): Promise<void> {
-  const { entregaId, data, periodo, motoristaId, caminhaoId, pesoDaCargaKg } =
-    args;
+  const {
+    entregaId,
+    reservaId,
+    alvo = "entrega",
+    data,
+    periodo,
+    motoristaId,
+    caminhaoId,
+    pesoDaCargaKg,
+    exigeExclusividade = false,
+  } = args;
 
   const caminhao = await carregarCaminhao(caminhaoId);
-  const uso = await ocupacaoDoSlot(data, periodo, entregaId);
+  const uso = await ocupacaoDoSlot(data, periodo, { entregaId, reservaId });
+  const noCaminhao = uso.get(caminhaoId);
 
-  // 1) Capacidade.
-  const jaUsado = uso.get(caminhaoId)?.usadoKg ?? 0;
+  // 1) O caminhão está reservado para outro serviço? É a trava mais forte: vale
+  //    para entrega E para outra reserva, porque duas coisas não podem tomar o
+  //    mesmo caminhão no mesmo turno.
+  if (noCaminhao?.bloqueadoPor) {
+    throw new TransicaoError(
+      422,
+      "caminhao_reservado",
+      `O ${caminhao.nome} está reservado para ${noCaminhao.bloqueadoPor} neste período. Cancele a reserva ou escolha outro caminhão, outro período ou outro dia.`,
+    );
+  }
+
+  // 2) O simétrico: a reserva quer o caminhão inteiro, mas ele já tem viagem
+  //    marcada. Recusar aqui é melhor que deixar a reserva entrar e o motorista
+  //    descobrir na hora da carga que o caminhão foi para a oficina.
+  if (
+    alvo === "reserva" &&
+    exigeExclusividade &&
+    (noCaminhao?.entregas ?? 0) > 0
+  ) {
+    const n = noCaminhao?.entregas ?? 0;
+    throw new TransicaoError(
+      422,
+      "caminhao_com_entregas",
+      `O ${caminhao.nome} já tem ${n} ${
+        n === 1 ? "entrega marcada" : "entregas marcadas"
+      } neste período. Reagende ${
+        n === 1 ? "ela" : "elas"
+      } antes de bloquear o caminhão, ou desmarque "caminhão indisponível" para dividir o período.`,
+    );
+  }
+
+  // 3) Capacidade.
+  const jaUsado = noCaminhao?.usadoKg ?? 0;
   const totalKg = jaUsado + pesoDaCargaKg;
   if (totalKg > caminhao.capacidadeKg) {
     const excedente = totalKg - caminhao.capacidadeKg;
     throw new TransicaoError(
       422,
-      'capacidade_excedida',
+      "capacidade_excedida",
       `A carga não cabe: o ${caminhao.nome} comporta ${formatarT(
         caminhao.capacidadeKg,
       )} e ficaria com ${formatarT(totalKg)} (excedeu ${formatarT(
@@ -418,13 +552,18 @@ export async function validarCargaDoAgendamento(args: {
     );
   }
 
-  // 2) Quantidade de entregas no DIA (as duas regras valem juntas, como ela
+  // 4) Quantidade de entregas no DIA (as duas regras valem juntas, como ela
   //    pediu: tonelagem E número de entregas).
   //
   //    Atenção ao escopo: o teto é por DIA e o slot é dia x turno, então a
   //    contagem soma manhã e tarde. Contar só o slot deixaria o caminhão levar
   //    5 de manhã e 5 à tarde com teto de 5.
-  const limites = await lerLimitesDoCaminhao(caminhaoId);
+  //
+  //    RESERVA não passa por aqui: o teto é de entregas a cliente, e a reserva
+  //    já bloqueia por outro caminho (trava 1 e tonelagem). Por isso
+  //    `contarEntregasNoDia` continua olhando só a tabela `entregas`.
+  const limites =
+    alvo === "entrega" ? await lerLimitesDoCaminhao(caminhaoId) : [];
   if (limites.length > 0) {
     const jaNoDia = await contarEntregasNoDia(data, caminhaoId, entregaId);
     const veredicto = avaliarLimiteEntregas({
@@ -435,37 +574,41 @@ export async function validarCargaDoAgendamento(args: {
     if (!veredicto.cabe) {
       throw new TransicaoError(
         422,
-        'limite_entregas_excedido',
+        "limite_entregas_excedido",
         `O ${caminhao.nome} já tem ${veredicto.entregasNoDia} ${
-          veredicto.entregasNoDia === 1 ? 'entrega' : 'entregas'
+          veredicto.entregasNoDia === 1 ? "entrega" : "entregas"
         } neste dia e o limite configurado é ${veredicto.maxEntregasDia} por dia. Escolha outro caminhão ou outro dia.`,
       );
     }
   }
 
-  // 3) O caminhão já está com OUTRO motorista neste período?
-  const outrosMotoristas = [...(uso.get(caminhaoId)?.motoristaIds ?? [])].filter(
+  // Sem motorista escolhido (só reserva chega aqui assim), as duas travas de
+  // motorista não têm o que comparar.
+  if (motoristaId === null) return;
+
+  // 5) O caminhão já está com OUTRO motorista neste período?
+  const outrosMotoristas = [...(noCaminhao?.motoristaIds ?? [])].filter(
     (id) => id !== motoristaId,
   );
   if (outrosMotoristas.length > 0) {
     const nome = await nomeDoMotorista(outrosMotoristas[0] as string);
     throw new TransicaoError(
       422,
-      'caminhao_ocupado',
+      "caminhao_ocupado",
       `O ${caminhao.nome} já está com ${nome} neste período. Um caminhão não sai com dois motoristas no mesmo turno.`,
     );
   }
 
-  // 4) O motorista já está em OUTRO caminhão neste período?
+  // 6) O motorista já está em OUTRO caminhão neste período?
   for (const [outroCaminhaoId, u] of uso) {
     if (outroCaminhaoId === caminhaoId) continue;
     if (u.motoristaIds.has(motoristaId)) {
       const outro = await carregarCaminhao(outroCaminhaoId).catch(() => null);
       throw new TransicaoError(
         422,
-        'motorista_ocupado',
+        "motorista_ocupado",
         `Este motorista já está no ${
-          outro?.nome ?? 'outro caminhão'
+          outro?.nome ?? "outro caminhão"
         } neste período. Ele não pode levar dois caminhões no mesmo turno.`,
       );
     }
@@ -485,9 +628,9 @@ export async function lerLimitesDoCaminhao(
   caminhaoId: string,
 ): Promise<LimiteCaminhao[]> {
   const { data, error } = await supabase
-    .from('caminhao_limites')
-    .select('valido_de, valido_ate, max_entregas_dia')
-    .eq('caminhao_id', caminhaoId);
+    .from("caminhao_limites")
+    .select("valido_de, valido_ate, max_entregas_dia")
+    .eq("caminhao_id", caminhaoId);
 
   if (error) {
     // Degrada em vez de derrubar: o limite de quantidade é uma regra a MAIS, e
@@ -518,16 +661,16 @@ async function contarEntregasNoDia(
   ignorarEntregaId?: string,
 ): Promise<number> {
   const { data: linhas, error } = await supabase
-    .from('entregas')
-    .select('id')
-    .eq('data_agendada', data)
-    .eq('caminhao_id', caminhaoId)
-    .in('status', ['agendada', 'em_rota']);
+    .from("entregas")
+    .select("id")
+    .eq("data_agendada", data)
+    .eq("caminhao_id", caminhaoId)
+    .in("status", ["agendada", "em_rota"]);
 
   if (error) {
     throw new TransicaoError(
       500,
-      'erro_banco',
+      "erro_banco",
       `Falha ao contar as entregas do dia: ${error.message}`,
     );
   }
@@ -538,10 +681,10 @@ async function contarEntregasNoDia(
 /** Nome do motorista (profiles) para compor a mensagem de erro. */
 async function nomeDoMotorista(id: string): Promise<string> {
   const { data } = await supabase
-    .from('profiles')
-    .select('nome')
-    .eq('id', id)
+    .from("profiles")
+    .select("nome")
+    .eq("id", id)
     .maybeSingle<{ nome: string | null }>();
   const nome = data?.nome?.trim();
-  return nome && nome.length > 0 ? nome : 'outro motorista';
+  return nome && nome.length > 0 ? nome : "outro motorista";
 }
