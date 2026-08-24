@@ -117,15 +117,21 @@ export const autenticar: preHandlerHookHandler = async (
 
   // Autorização por método: papéis com escrita = logística e almoxarifado.
   // A restrição fina (só logística aplica a maioria das transições) é feita
-  // nas rotas. Exceção (Fase 3): o motorista pode CHAMAR a rota de transição
-  // (POST /api/pedidos/:id/transicao) — a regra fina (só 'entregue' do próprio
-  // pedido) é validada no serviço. As demais rotas de escrita (separação,
+  // nas rotas. Exceção: o motorista pode CHAMAR a rota de transição — a regra
+  // fina (só 'entregue'/'nao_realizado', e só das PRÓPRIAS viagens) é validada
+  // no serviço, em transicionarEntrega. As demais rotas de escrita (separação,
   // reenvio, atribuição de motorista) continuam bloqueadas aqui.
+  //
+  // As DUAS rotas entram no padrão de propósito: a Onda 2 moveu a tela do
+  // motorista para /api/entregas/:id/transicao e esta regex ficou apontando só
+  // para a rota antiga de PEDIDOS, então todo "Confirmar entrega" morria em 403
+  // antes de chegar ao serviço. Enquanto a rota de pedidos existir, as duas
+  // valem; quando ela sair, sai daqui também.
   const ehEscrita = !METODOS_LEITURA.has(req.method);
   const ehEntregaMotorista =
     papel === 'motorista' &&
     req.method === 'POST' &&
-    /^\/api\/pedidos\/[^/]+\/transicao(?:\?.*)?$/.test(req.url);
+    /^\/api\/(?:pedidos|entregas)\/[^/]+\/transicao(?:\?.*)?$/.test(req.url);
   if (
     ehEscrita &&
     papel !== 'logistica' &&
