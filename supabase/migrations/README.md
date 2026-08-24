@@ -24,11 +24,67 @@ dependências entre si (o da 0013 derruba tabelas que o da 0014 usa).
 
 ## Estado
 
-Conferido contra o banco em 12/08/2026.
+Conferido contra o banco em 24/08/2026, objeto por objeto (ver "Como conferir"
+abaixo) e contra o ledger `supabase_migrations.schema_migrations`.
 
 | Migração | Aplicada em produção? |
 |---|---|
-| 0001 – 0022 | sim |
+| 0001 – 0006 | sim |
+| **0007** | **NÃO** — pulada por engano; ver abaixo |
+| 0008 – 0022 | sim |
+
+### A 0007 nunca rodou, e isso quebrou o espelho de clientes
+
+Descoberto em 24/08/2026 lendo o log de produção: centenas de
+`[ingest] upsert cliente XXXX falhou: Could not find the 'numero_whatsapp'
+column of 'clientes' in the schema cache`, em todo tick, desde junho.
+
+O `worker/ingest.ts:548-549` grava `numero_whatsapp` e `whatsapp_tipo` na mesma
+linha do cliente. Sem as colunas, o PostgREST rejeita **a linha inteira** — não
+só os dois campos. Consequência medida no banco:
+
+| | |
+|---|---|
+| clientes citados em `pedidos` | 288 |
+| clientes no espelho | 36 |
+| espelho congelado desde | 16/06/2026 |
+
+Duas consequências. A **visível**: os cartões e a agenda tiram bairro e cidade
+de `clientes`, e 252 dos 288 não estão lá — entrega rural se orienta por bairro
++ cidade. A **latente**: `lerContatoCliente` (`services/transitions.ts:383`) faz
+`select` da coluna inexistente e devolve `null` sempre; hoje isso não aparece
+porque o MODO TESTE redireciona todo envio para um número fixo, mas **no dia em
+que o modo teste for desligado, nenhum cliente recebe WhatsApp**.
+
+A correção é rodar a 0007 como está: aditiva, `add column if not exists`, sem
+backfill. Assim que as colunas existirem, o primeiro tick de ingestão regrava os
+clientes e a varredura profunda (365 dias) completa o resto.
+
+**Por que o README dizia "0001 – 0022 | sim":** a conferência de 12/08 olhou a
+lista de arquivos, não o banco. O ledger do Supabase é a fonte da verdade — e
+nem ele basta, porque migration rodada pelo SQL Editor não entra nele (foi o
+caso das 0008–0012, que ESTÃO no banco e não no ledger). A única conferência que
+vale é procurar o OBJETO.
+
+### Como conferir (não confie nesta tabela; refaça)
+
+```sql
+-- o que o ledger conhece
+select version, name from supabase_migrations.schema_migrations order by version;
+
+-- o objeto de cada migration existe? (exemplos; o nome tem de sair do .sql)
+select
+  (select count(*) from information_schema.columns
+    where table_name='clientes' and column_name='numero_whatsapp')    as m0007,
+  (select count(*) from information_schema.columns
+    where table_name='pedidos'  and column_name='ausente_orix_desde') as m0016,
+  (select count(*) from information_schema.columns
+    where table_name='profiles' and column_name='acesso_token_hash')  as m0018;
+```
+
+Aviso de quem já errou nisso hoje: **leia o nome real do objeto no `.sql` antes
+de conferir.** Chutar o nome produz falso alarme — foi o que aconteceu comigo
+com a 0016 e a 0018, que estão aplicadas.
 
 A 0022 rodou em 24/08/2026, com autorização do David. Acrescenta
 `entregas.ordem_rota` (integer nulável) — a ordem das paradas que o motorista
