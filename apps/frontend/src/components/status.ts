@@ -9,8 +9,6 @@ export interface StatusMeta {
   badge: string;
   /** Classe de cor da faixa/ponto de acento da coluna e do cartão. */
   faixa: string;
-  /** Texto do botão primário da transição. */
-  acao: string;
 }
 
 export const STATUS_META: Record<StatusLogistico, StatusMeta> = {
@@ -18,38 +16,31 @@ export const STATUS_META: Record<StatusLogistico, StatusMeta> = {
     rotulo: 'Pendente',
     badge: 'bg-creme-100 text-tinta-suave',
     faixa: 'bg-pedra',
-    acao: 'Agendar',
   },
   agendada: {
     rotulo: 'Agendada',
     badge: 'bg-folha-claro text-mata',
     faixa: 'bg-folha',
-    acao: 'Pôr em rota',
   },
   em_rota: {
     rotulo: 'Em rota',
     badge: 'bg-trigo-claro text-trigo-escuro',
     faixa: 'bg-trigo',
-    acao: 'Marcar entregue',
   },
   entregue: {
     rotulo: 'Entregue',
     badge: 'bg-mata-claro text-mata-escuro',
     faixa: 'bg-mata',
-    acao: 'Concluído',
   },
   nao_realizado: {
     rotulo: 'Não realizado',
     badge: 'bg-brasa-claro text-brasa-escuro',
     faixa: 'bg-brasa',
-    // Sem ação de avanço: sai daqui pela REVERSÃO ("Reagendar" -> pendente).
-    acao: '',
   },
   cancelada: {
     rotulo: 'Cancelada',
     badge: 'bg-terra-claro text-terra-escuro',
     faixa: 'bg-terra',
-    acao: '',
   },
 };
 
@@ -96,6 +87,50 @@ export const STATUS_ENTREGA_META: Record<StatusEntrega, StatusMeta> = {
   nao_realizado: STATUS_META.nao_realizado,
   cancelada: STATUS_META.cancelada,
 };
+
+/**
+ * Texto do botão que EXECUTA uma transição, indexado pelo par (de -> para).
+ *
+ * Por que um mapa por par, e não um campo `acao` no metadado do status: o campo
+ * antigo carregava uma ambiguidade que virou bug em produção. As strings foram
+ * escritas com a semântica de ORIGEM ("como se sai deste estado"), e o cartão
+ * as lia pelo DESTINO — então um cartão em Agendada mostrava "Marcar entregue",
+ * que é a ação de quem já está EM ROTA. A Natália reclamou disso; ela estava
+ * certa. Indexar por origem consertaria hoje e voltaria a quebrar no dia em que
+ * um estado tivesse dois avanços na tela.
+ *
+ * Aqui o par é explícito: não há como ler errado, e os botões que antes tinham
+ * texto fixo no componente ("Desfazer", "Não realizado") passam a ter uma fonte
+ * só. Fica no frontend, junto das classes Tailwind, porque é texto de botão da
+ * casca web — o vocabulário que o backend usa em mensagens de erro é o
+ * ROTULO_STATUS_ENTREGA de @pastobom/shared.
+ */
+export const ACAO_ENTREGA: Record<
+  StatusEntrega,
+  Partial<Record<StatusEntrega, string>>
+> = {
+  agendada: { em_rota: 'Pôr em rota', cancelada: 'Desfazer' },
+  em_rota: { entregue: 'Marcar entregue', nao_realizado: 'Não realizado' },
+  // Terminais: não se sai deles por avanço (de nao_realizado, agenda-se outra
+  // viagem; de entregue e cancelada, não se sai).
+  entregue: {},
+  nao_realizado: {},
+  cancelada: {},
+};
+
+/**
+ * Rótulo do botão da transição `de -> para`.
+ *
+ * O fallback para o nome do estado de destino existe só para não quebrar a tela
+ * se alguém acrescentar uma transição na máquina de estados e esquecer o texto
+ * aqui — nesse caso o botão diz o nome do estado, que é feio mas verdadeiro.
+ */
+export function rotuloAcaoEntrega(
+  de: StatusEntrega,
+  para: StatusEntrega,
+): string {
+  return ACAO_ENTREGA[de][para] ?? STATUS_ENTREGA_META[para].rotulo;
+}
 
 /** Colunas de VIAGEM no quadro. A coluna Pendente mostra pedidos com saldo. */
 export const COLUNAS_ENTREGA: StatusEntrega[] = [

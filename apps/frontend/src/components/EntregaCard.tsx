@@ -15,7 +15,7 @@ import {
   REVERSOES_ENTREGA,
 } from '@pastobom/shared';
 import { formatarData } from '../lib/format';
-import { STATUS_ENTREGA_META } from './status';
+import { STATUS_ENTREGA_META, rotuloAcaoEntrega } from './status';
 import { ClimaResumo } from './ClimaResumo';
 import type { PrevisaoClima } from '@pastobom/shared';
 
@@ -223,7 +223,7 @@ export function EntregaCard({
                 onClick={() => onTransicionar(entrega, para)}
                 className="rounded-lg bg-mata px-2.5 py-1.5 text-xs font-bold text-creme-50 transition hover:bg-mata-escuro disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {STATUS_ENTREGA_META[para].acao || STATUS_ENTREGA_META[para].rotulo}
+                {rotuloAcaoEntrega(entrega.status, para)}
               </button>
             );
           })}
@@ -234,7 +234,7 @@ export function EntregaCard({
               onClick={() => onNaoRealizado(entrega)}
               className="rounded-lg border border-brasa/40 px-2.5 py-1.5 text-xs font-semibold text-brasa transition hover:bg-brasa-claro"
             >
-              Não realizado
+              {rotuloAcaoEntrega(entrega.status, 'nao_realizado')}
             </button>
           )}
 
@@ -245,7 +245,7 @@ export function EntregaCard({
               title="Desfaz o agendamento: a carga volta para a fila e a vaga do caminhão é liberada."
               className="rounded-lg border border-linha px-2.5 py-1.5 text-xs font-semibold text-tinta-suave transition hover:border-terra/40 hover:text-terra-escuro"
             >
-              Desfazer
+              {rotuloAcaoEntrega(entrega.status, 'cancelada')}
             </button>
           )}
 
