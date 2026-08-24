@@ -28,15 +28,22 @@ Conferido contra o banco em 12/08/2026.
 
 | Migração | Aplicada em produção? |
 |---|---|
-| 0001 – 0021 | sim |
-| 0022 | **NÃO** — escrita, aguardando autorização do David |
+| 0001 – 0022 | sim |
 
-A 0022 acrescenta `entregas.ordem_rota` (integer nulável) — a ordem das paradas
-que o motorista informa ao concluir cada entrega (item 11 da Natália). Aditiva e
-nulável: entrega sem ordem é o estado normal, não dado faltando. **Não tem
-UNIQUE de propósito** — dois motoristas sequenciando o mesmo dia tomariam erro de
-banco na estrada, sem ter o que fazer com o erro; empate se desempata na leitura.
-Como a 0020 e a 0021, a ordem é migration ANTES do deploy.
+A 0022 rodou em 24/08/2026, com autorização do David. Acrescenta
+`entregas.ordem_rota` (integer nulável) — a ordem das paradas que o motorista
+informa ao concluir cada entrega (item 11 da Natália). Aditiva e nulável: entrega
+sem ordem é o estado normal, não dado faltando. **Não tem UNIQUE de propósito** —
+dois motoristas sequenciando o mesmo dia tomariam erro de banco na estrada, sem
+ter o que fazer com o erro; empate se desempata na leitura (`rota-ordem.ts` no
+shared). Conferido após aplicar: coluna integer nulável, 1 check
+(`ordem_rota IS NULL OR ordem_rota > 0`), índice parcial
+`idx_entregas_ordem_rota (motorista_id, data_agendada, ordem_rota)` nas viagens
+agendada/em_rota, e as 98 entregas existentes com `ordem_rota` nulo — nenhuma foi
+tocada.
+
+Como a 0020 e a 0021, a ordem é migration ANTES do deploy: o código do C2 já
+consulta `ordem_rota` no select de `entregas`.
 
 A 0021 rodou em 24/08/2026, com autorização do David. Ela cria `fornecedores`
 (espelho somente-leitura do cadastro do Órix) e `reservas` (o card avulso que
