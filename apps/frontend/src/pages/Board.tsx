@@ -30,6 +30,7 @@ import {
   pedidosComSaldo,
   type PedidoComSaldo,
 } from '../lib/saldo-pedidos';
+import { formatarData } from '../lib/format';
 import { useAuth } from '../auth/AuthProvider';
 import { EntregaCard } from '../components/EntregaCard';
 import { PedidoCard } from '../components/PedidoCard';
@@ -104,6 +105,12 @@ export function Board(): React.ReactElement {
   const [ate, setAte] = useState('');
   const [statusOrix, setStatusOrix] = useState<string[]>([]);
   const [busca, setBusca] = useState('');
+
+  // Filtro por DATA DA ENTREGA (entregas.data_agendada). Fica FORA do `filtros`
+  // abaixo de propósito: aquele objeto é a queryKey dos pedidos, e este filtro
+  // não vai ao servidor. Ver o comentário em entregasPorStatus.
+  const [entregaDe, setEntregaDe] = useState('');
+  const [entregaAte, setEntregaAte] = useState('');
 
   const filtros = useMemo(() => {
     const f: { de?: string; ate?: string; statusOrix?: string[] } = {};
@@ -263,8 +270,21 @@ export function Board(): React.ReactElement {
     [pendentesComSaldo, casaPedido],
   );
 
-  /** Entregas por coluna, já com a janela de exibição das colunas de desfecho. */
+  /**
+   * Entregas por coluna, já com a janela de exibição das colunas de desfecho.
+   *
+   * O filtro por data da entrega é aplicado AQUI, na exibição, e não na query.
+   * Duas razões: a query ['entregas'] sem filtro alimenta o saldo da coluna
+   * Pendente (ver o topo do arquivo) — recortá-la no servidor faria o saldo
+   * mentir; e essa queryKey é compartilhada com o Dashboard, que passaria a
+   * discordar do quadro sobre o universo de viagens.
+   *
+   * Quando o filtro está ativo, ele MANDA e as janelas de 7/30 dias saem de
+   * cena: quem escolhe "01/03 a 31/03" e recebe zero na coluna Entregue não tem
+   * como adivinhar que havia um corte de 30 dias por cima.
+   */
   const entregasPorStatus = useMemo(() => {
+    const janelaAtiva = entregaDe === '' && entregaAte === '';
     const corteNaoRealizado = isoMenosDias(DIAS_NAO_REALIZADO);
     const corteEntregue = isoMenosDias(DIAS_ENTREGUE);
 
@@ -278,10 +298,14 @@ export function Board(): React.ReactElement {
 
     for (const e of entregas) {
       if (!casaEntrega(e)) continue;
-      if (e.status === 'nao_realizado' && e.dataAgendada < corteNaoRealizado) {
-        continue;
+      if (entregaDe && e.dataAgendada < entregaDe) continue;
+      if (entregaAte && e.dataAgendada > entregaAte) continue;
+      if (janelaAtiva) {
+        if (e.status === 'nao_realizado' && e.dataAgendada < corteNaoRealizado) {
+          continue;
+        }
+        if (e.status === 'entregue' && e.dataAgendada < corteEntregue) continue;
       }
-      if (e.status === 'entregue' && e.dataAgendada < corteEntregue) continue;
       mapa[e.status].push(e);
     }
 
@@ -290,7 +314,7 @@ export function Board(): React.ReactElement {
       lista.sort((a, b) => a.dataAgendada.localeCompare(b.dataAgendada));
     }
     return mapa;
-  }, [entregas, casaEntrega]);
+  }, [entregas, casaEntrega, entregaDe, entregaAte]);
 
   const cancelados = useMemo(
     () =>
@@ -342,10 +366,35 @@ export function Board(): React.ReactElement {
     setAte('');
     setStatusOrix([]);
     setBusca('');
+    setEntregaDe('');
+    setEntregaAte('');
   }
 
   const temFiltros =
-    de !== '' || ate !== '' || statusOrix.length > 0 || busca.trim() !== '';
+    de !== '' ||
+    ate !== '' ||
+    entregaDe !== '' ||
+    entregaAte !== '' ||
+    statusOrix.length > 0 ||
+    busca.trim() !== '';
+
+  /**
+   * Rótulo da janela de uma coluna, para o cabeçalho não mentir.
+   *
+   * Com filtro de data da entrega ativo, ele manda e a janela padrão sai de
+   * cena (ver entregasPorStatus). Sem filtro e sem janela padrão — as colunas
+   * Agendada e Em rota — não há nada a dizer.
+   */
+  function notaJanela(diasPadrao?: number): string | undefined {
+    if (entregaDe === '' && entregaAte === '') {
+      return diasPadrao === undefined ? undefined : `últimos ${diasPadrao} dias`;
+    }
+    if (entregaDe && entregaAte) {
+      return `${formatarData(entregaDe)} – ${formatarData(entregaAte)}`;
+    }
+    if (entregaDe) return `de ${formatarData(entregaDe)}`;
+    return `até ${formatarData(entregaAte)}`;
+  }
 
   const abaCls = (ativo: boolean) =>
     `rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
@@ -457,7 +506,7 @@ export function Board(): React.ReactElement {
 
         <div className="flex flex-col">
           <span className="text-[10px] font-semibold uppercase tracking-wide text-pedra">
-            Entrada do pedido
+            Entrada do pedido (cadastro)
           </span>
           <div className="mt-1 flex items-center gap-1.5 text-xs text-tinta-suave">
             <label htmlFor="filtro-de" className="sr-only">
@@ -484,6 +533,69 @@ export function Board(): React.ReactElement {
               className={campoCls}
             />
           </div>
+          {/* Dois pares de data lado a lado sem dizer o que cada um recorta é
+              convite a erro — daí os dois hints. */}
+          <span className="mt-1 text-[10px] text-pedra">
+            filtra a coluna Pendente
+          </span>
+        </div>
+
+        <div className="flex flex-col">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-pedra">
+            Data da entrega
+          </span>
+          <div className="mt-1 flex items-center gap-1.5 text-xs text-tinta-suave">
+            <label htmlFor="filtro-entrega-de" className="sr-only">
+              Data da entrega — de
+            </label>
+            <input
+              id="filtro-entrega-de"
+              type="date"
+              value={entregaDe}
+              max={entregaAte || undefined}
+              onChange={(e) => setEntregaDe(e.target.value)}
+              className={campoCls}
+            />
+            <span className="text-pedra">até</span>
+            <label htmlFor="filtro-entrega-ate" className="sr-only">
+              Data da entrega — até
+            </label>
+            <input
+              id="filtro-entrega-ate"
+              type="date"
+              value={entregaAte}
+              min={entregaDe || undefined}
+              onChange={(e) => setEntregaAte(e.target.value)}
+              className={campoCls}
+            />
+            {/* O uso real do Johnny é "o que sai hoje" e "o que sai amanhã". */}
+            <button
+              type="button"
+              onClick={() => {
+                const hoje = isoMenosDias(0);
+                setEntregaDe(hoje);
+                setEntregaAte(hoje);
+              }}
+              className="rounded-lg border border-linha bg-papel px-2 py-1 text-[11px] font-semibold text-tinta-suave transition hover:border-mata/30 hover:text-mata"
+            >
+              Hoje
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                // isoMenosDias(-1) = hoje + 1 dia.
+                const amanha = isoMenosDias(-1);
+                setEntregaDe(amanha);
+                setEntregaAte(amanha);
+              }}
+              className="rounded-lg border border-linha bg-papel px-2 py-1 text-[11px] font-semibold text-tinta-suave transition hover:border-mata/30 hover:text-mata"
+            >
+              Amanhã
+            </button>
+          </div>
+          <span className="mt-1 text-[10px] text-pedra">
+            filtra as colunas de viagem
+          </span>
         </div>
 
         <div className="flex flex-col">
@@ -583,6 +695,14 @@ export function Board(): React.ReactElement {
               rotulo="Pendente"
               faixa={STATUS_META.pendente.faixa}
               quantidade={pendentesVisiveis.length}
+              nota={
+                // Pedido pendente não TEM data de entrega — é o que ainda não
+                // foi agendado. Esconder a coluna esconderia o trabalho a
+                // fazer; dizer que ela não é filtrada é o honesto.
+                entregaDe !== '' || entregaAte !== ''
+                  ? 'sem data de entrega — não filtrado'
+                  : undefined
+              }
             >
               {pendentesVisiveis.map(({ pedido, saldo }) => (
                 <PedidoCard
@@ -608,10 +728,10 @@ export function Board(): React.ReactElement {
                 quantidade={entregasPorStatus[status].length}
                 nota={
                   status === 'nao_realizado'
-                    ? `últimos ${DIAS_NAO_REALIZADO} dias`
+                    ? notaJanela(DIAS_NAO_REALIZADO)
                     : status === 'entregue'
-                      ? `últimos ${DIAS_ENTREGUE} dias`
-                      : undefined
+                      ? notaJanela(DIAS_ENTREGUE)
+                      : notaJanela()
                 }
               >
                 {entregasPorStatus[status].map((e) => (
