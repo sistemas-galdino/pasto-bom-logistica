@@ -7,12 +7,35 @@
 
 import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { Entrega } from '@pastobom/shared';
+import type { Entrega, PeriodoEntrega, Reserva } from '@pastobom/shared';
 import { api, ApiError } from '../lib/api';
 import { Header } from '../components/Header';
 import { ClimaResumo } from '../components/ClimaResumo';
-import { formatarMoeda, rotuloItens } from '../lib/format';
+import { formatarData, formatarMoeda, rotuloItens } from '../lib/format';
 import { linkGoogleMaps } from '../lib/maps';
+
+const ROTULO_PERIODO: Record<PeriodoEntrega, string> = {
+  manha: 'manhã',
+  tarde: 'tarde',
+};
+
+/**
+ * Data de hoje em ISO local (yyyy-mm-dd). Não dá para usar toISOString(): ela
+ * converte para UTC e, à noite no fuso do Brasil, já devolve o dia seguinte —
+ * o motorista veria "amanhã" numa reserva que é dele hoje.
+ */
+function hojeISO(): string {
+  const d = new Date();
+  const mes = String(d.getMonth() + 1).padStart(2, '0');
+  const dia = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mes}-${dia}`;
+}
+
+/** Para onde o caminhão vai: fornecedor do Órix ou cidade digitada. */
+function destinoDaReserva(r: Reserva): string {
+  const partes = [r.fornecedorNome, r.cidade].filter(Boolean);
+  return partes.length > 0 ? partes.join(' · ') : 'Destino não informado';
+}
 
 function mensagemDeErro(err: unknown, fallback: string): string {
   if (err instanceof ApiError) return err.message;
@@ -82,6 +105,17 @@ export function RotaDoDia(): React.ReactElement {
     refetchInterval: 60_000,
   });
 
+  // Reservas de caminhão (oficina, buscar adubo na fábrica) numa query SEPARADA
+  // das entregas: o endpoint devolve Reserva[], que não tem cliente, itens nem
+  // pedidoId — juntar as duas listas num array só quebraria o clima e o Maps.
+  // A falha aqui é silenciosa de propósito (ver bloco de reservas no JSX): a
+  // rota de entregas é a função principal da tela e não pode cair com ela.
+  const reservasQuery = useQuery({
+    queryKey: ['minhas-reservas'],
+    queryFn: ({ signal }) => api.minhasReservas(signal),
+    refetchInterval: 60_000,
+  });
+
   const entregaMutacao = useMutation({
     mutationFn: ({ id, obs }: { id: string; obs: string }) =>
       api.transicionarEntrega(id, {
@@ -147,6 +181,15 @@ export function RotaDoDia(): React.ReactElement {
 
       <main className="flex-1 overflow-y-auto scroll-suave">
         <div className="mx-auto max-w-xl px-4 py-5 sm:px-6">
+          {/*
+            Bloco das reservas ANTES da lista de entregas e FORA do encadeamento
+            de estados dela: se a consulta de entregas falhar ou estiver
+            carregando, o motorista ainda vê que o caminhão dele está reservado.
+            Sem reserva (ou com erro na consulta) o bloco simplesmente não
+            existe — nada de "nenhuma reserva" gastando tela de celular.
+          */}
+          <ReservasDoCaminhao reservas={reservasQuery.data ?? []} />
+
           {rotaQuery.isLoading ? (
             <p className="py-16 text-center text-sm text-tinta-suave">
               Carregando suas entregas…
@@ -260,6 +303,75 @@ export function RotaDoDia(): React.ReactElement {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * Reservas do caminhão do motorista, SOMENTE LEITURA (decisão do David): ele
+ * precisa saber que o caminhão vai para a oficina amanhã e nada além disso —
+ * sem confirmar, editar ou cancelar. O visual é deliberadamente diferente do
+ * card de entrega (tracejado, fundo creme, sem cor de status) para que ninguém
+ * confunda "vou à oficina" com "tenho uma entrega".
+ */
+function ReservasDoCaminhao({
+  reservas,
+}: {
+  reservas: Reserva[];
+}): React.ReactElement | null {
+  const hoje = hojeISO();
+  if (reservas.length === 0) return null;
+
+  return (
+    <section className="mb-5" aria-label="Reservas do caminhão">
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-tinta-suave">
+        Caminhão reservado
+      </h3>
+      <ul className="space-y-3">
+        {reservas.map((r) => {
+          const eHoje = r.dataAgendada === hoje;
+          return (
+            <li
+              key={r.id}
+              className="animate-sobe rounded-xl border-2 border-dashed border-pedra/70 bg-creme-100 p-4"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <h4 className="font-display text-lg font-semibold leading-tight text-tinta">
+                  {r.servico}
+                </h4>
+                {eHoje && (
+                  <span className="shrink-0 rounded-md bg-tinta px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-creme-50">
+                    Hoje
+                  </span>
+                )}
+              </div>
+
+              <p className="mt-1.5 text-base font-semibold text-tinta-suave">
+                {eHoje ? 'Hoje' : formatarData(r.dataAgendada)} ·{' '}
+                {ROTULO_PERIODO[r.periodo]}
+              </p>
+
+              <p className="mt-2 flex items-start gap-1.5 text-base text-tinta-suave">
+                <IconePin />
+                <span>{destinoDaReserva(r)}</span>
+              </p>
+
+              {r.produtos && (
+                <p className="mt-2 text-sm text-tinta-suave">
+                  Produtos: {r.produtos}
+                </p>
+              )}
+
+              <p className="mt-3 border-t border-pedra/30 pt-2 text-sm text-tinta-suave">
+                Caminhão:{' '}
+                <span className="font-semibold text-tinta">
+                  {r.caminhaoNome || '—'}
+                </span>
+              </p>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

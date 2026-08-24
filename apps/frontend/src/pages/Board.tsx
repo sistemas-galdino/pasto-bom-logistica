@@ -22,7 +22,14 @@
 
 import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { Entrega, Pedido, StatusEntrega } from '@pastobom/shared';
+import type {
+  AtualizarReservaRequest,
+  CriarReservaRequest,
+  Entrega,
+  Pedido,
+  Reserva,
+  StatusEntrega,
+} from '@pastobom/shared';
 import { api, ApiError } from '../lib/api';
 import {
   agruparEntregasPorPedido,
@@ -39,6 +46,8 @@ import { ConfirmacaoModal } from '../components/ConfirmacaoModal';
 import { SeparacaoModal } from '../components/SeparacaoModal';
 import { ReagendarEntregaModal } from '../components/ReagendarEntregaModal';
 import { NaoRealizadoModal } from '../components/NaoRealizadoModal';
+import { ReservaCard } from '../components/ReservaCard';
+import { ReservaModal } from '../components/ReservaModal';
 import {
   COLUNAS_ENTREGA,
   STATUS_ENTREGA_META,
@@ -103,6 +112,20 @@ export function Board(): React.ReactElement {
   const [alvoNaoRealizado, setAlvoNaoRealizado] = useState<Entrega | null>(null);
   const [erroNaoRealizado, setErroNaoRealizado] = useState<string | null>(null);
 
+  // Reserva de caminhão (o card avulso). `undefined` = modal fechado; `null` =
+  // aberto para uma reserva NOVA; um objeto = aberto em edição. Sem essa
+  // distinção o mesmo estado não conseguiria dizer "abrir vazio".
+  const [reservaEdicao, setReservaEdicao] = useState<Reserva | null | undefined>(
+    undefined,
+  );
+  const [erroReserva, setErroReserva] = useState<string | null>(null);
+  const [cancelandoReserva, setCancelandoReserva] = useState<Reserva | null>(
+    null,
+  );
+  const [erroCancelarReserva, setErroCancelarReserva] = useState<string | null>(
+    null,
+  );
+
   // Filtros server-side (período de ENTRADA + status do Órix) e busca local.
   const [de, setDe] = useState('');
   const [ate, setAte] = useState('');
@@ -137,10 +160,36 @@ export function Board(): React.ReactElement {
     refetchInterval: 60_000,
   });
 
+  /**
+   * Janela das reservas mostradas na faixa.
+   *
+   * Segue o filtro de DATA DA ENTREGA: quem recorta o quadro para "o que sai
+   * hoje" espera que a reserva do mesmo dia venha junto. Sem filtro, de hoje em
+   * diante — reserva da semana passada não é trabalho a fazer, e a faixa existe
+   * para o dia à frente não parecer vago.
+   */
+  const filtroReservas = useMemo(() => {
+    const f: { de?: string; ate?: string } = {};
+    f.de = entregaDe !== '' ? entregaDe : isoMenosDias(0);
+    if (entregaAte !== '') f.ate = entregaAte;
+    return f;
+  }, [entregaDe, entregaAte]);
+
+  // Só as ATIVAS: é o padrão da rota. Reserva cancelada não ocupa caminhão e
+  // não tem por que voltar ao quadro.
+  const reservasQuery = useQuery({
+    queryKey: ['reservas', filtroReservas],
+    queryFn: ({ signal }) => api.listarReservas(filtroReservas, signal),
+    refetchInterval: 60_000,
+  });
+
   function invalidarTudo(): void {
     void queryClient.invalidateQueries({ queryKey: ['pedidos'] });
     void queryClient.invalidateQueries({ queryKey: ['entregas'] });
     void queryClient.invalidateQueries({ queryKey: ['agenda'] });
+    // A reserva ocupa (ou libera) o caminhão, e é isso que a agenda e as
+    // entregas mostram como capacidade — as três precisam cair juntas.
+    void queryClient.invalidateQueries({ queryKey: ['reservas'] });
   }
 
   // --- mutações -------------------------------------------------------------
@@ -231,6 +280,40 @@ export function Board(): React.ReactElement {
     onError: (err) =>
       setErroNaoRealizado(
         mensagemDeErro(err, 'Falha ao marcar a entrega como não realizada.'),
+      ),
+  });
+
+  const reservaMutacao = useMutation({
+    mutationFn: ({
+      id,
+      body,
+    }: {
+      /** Ausente = criar. */
+      id?: string;
+      body: CriarReservaRequest | AtualizarReservaRequest;
+    }) =>
+      id === undefined
+        ? api.criarReserva(body as CriarReservaRequest)
+        : api.atualizarReserva(id, body),
+    onSuccess: () => {
+      invalidarTudo();
+      setReservaEdicao(undefined);
+      setErroReserva(null);
+    },
+    onError: (err) =>
+      setErroReserva(mensagemDeErro(err, 'Falha ao salvar a reserva.')),
+  });
+
+  const cancelarReservaMutacao = useMutation({
+    mutationFn: (id: string) => api.cancelarReserva(id),
+    onSuccess: () => {
+      invalidarTudo();
+      setCancelandoReserva(null);
+      setErroCancelarReserva(null);
+    },
+    onError: (err) =>
+      setErroCancelarReserva(
+        mensagemDeErro(err, 'Falha ao cancelar a reserva.'),
       ),
   });
 
@@ -341,6 +424,28 @@ export function Board(): React.ReactElement {
       pedidos.filter((p) => p.statusLogistico === 'cancelada' && casaPedido(p)),
     [pedidos, casaPedido],
   );
+
+  /**
+   * Reservas da faixa, obedecendo a MESMA busca dos cards.
+   *
+   * Quem digita "oficina" espera achar a reserva; quem digita o nome de um
+   * cliente não espera ver reserva nenhuma. Deixar a faixa fora da busca faria
+   * o quadro filtrado mostrar cartões que não casam com o termo.
+   */
+  const reservasVisiveis = useMemo(() => {
+    const lista = reservasQuery.data ?? [];
+    if (termo === '') return lista;
+    return lista.filter((r) =>
+      [
+        r.servico,
+        r.fornecedorNome ?? '',
+        r.cidade ?? '',
+        r.produtos ?? '',
+        r.caminhaoNome ?? '',
+        r.motoristaNome ?? '',
+      ].some((c) => normalizar(c).includes(termo)),
+    );
+  }, [reservasQuery.data, termo]);
 
   const entregaSeparacao = useMemo(
     () => entregas.find((e) => e.id === separandoId) ?? null,
@@ -488,6 +593,22 @@ export function Board(): React.ReactElement {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Reservar caminhão fica JUNTO das abas, e não dentro de uma coluna:
+              a reserva não pertence a nenhuma etapa do fluxo — ela é o caminhão
+              tomado por outra coisa. */}
+          {podeEscrever && (
+            <button
+              type="button"
+              onClick={() => {
+                setErroReserva(null);
+                setReservaEdicao(null);
+              }}
+              title="Ocupa o caminhão com algo que não é entrega: oficina, buscar mercadoria, outro serviço."
+              className="rounded-lg border border-dashed border-pedra bg-papel px-3 py-1.5 text-xs font-semibold text-tinta-suave transition hover:border-mata/40 hover:text-mata"
+            >
+              + Reservar caminhão
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setVerCancelados(false)}
@@ -709,8 +830,53 @@ export function Board(): React.ReactElement {
             )}
           </div>
         ) : (
-          <div className="scroll-suave flex h-full gap-3 overflow-x-auto p-4 sm:p-6">
-            {/* Coluna PENDENTE: pedidos com saldo. */}
+          <div className="flex h-full flex-col">
+            {/* FAIXA DE RESERVAS, acima das colunas.
+
+                Por que fora das colunas, e não dentro de "Agendada": a `Coluna`
+                se esvazia por `quantidade` (quantidade === 0 vira "Nada aqui."
+                em lugar dos children), então uma reserva posta ali desapareceria
+                em todo dia sem nenhuma entrega — justamente o dia que o Johnny
+                quer ver ocupado. E é mais honesto: reserva não é entrega, não
+                caminha pelo fluxo.
+
+                A faixa só existe quando há reserva: uma faixa vazia permanente
+                só roubaria altura das colunas. */}
+            {reservasVisiveis.length > 0 && (
+              <section className="border-b border-linha bg-creme-50/40 px-4 py-3 sm:px-6">
+                <div className="flex items-baseline gap-2">
+                  <h3 className="font-display text-sm font-semibold text-mata-escuro">
+                    Caminhão reservado
+                  </h3>
+                  <span className="text-[11px] text-pedra">
+                    {reservasVisiveis.length === 1
+                      ? '1 reserva'
+                      : `${reservasVisiveis.length} reservas`}{' '}
+                    · não é entrega a cliente
+                  </span>
+                </div>
+                <div className="scroll-suave mt-2 flex gap-3 overflow-x-auto pb-1">
+                  {reservasVisiveis.map((r) => (
+                    <ReservaCard
+                      key={r.id}
+                      reserva={r}
+                      podeEscrever={podeEscrever}
+                      onEditar={(reserva) => {
+                        setErroReserva(null);
+                        setReservaEdicao(reserva);
+                      }}
+                      onCancelar={(reserva) => {
+                        setErroCancelarReserva(null);
+                        setCancelandoReserva(reserva);
+                      }}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <div className="scroll-suave flex min-h-0 flex-1 gap-3 overflow-x-auto p-4 sm:p-6">
+              {/* Coluna PENDENTE: pedidos com saldo. */}
             <Coluna
               rotulo="Pendente"
               faixa={STATUS_META.pendente.faixa}
@@ -778,6 +944,7 @@ export function Board(): React.ReactElement {
                 ))}
               </Coluna>
             ))}
+            </div>
           </div>
         )}
       </main>
@@ -915,6 +1082,51 @@ export function Board(): React.ReactElement {
           onConfirmar={(motivo) =>
             naoRealizadoMutacao.mutate({ id: alvoNaoRealizado.id, motivo })
           }
+        />
+      )}
+
+      {/* `undefined` é fechado; `null` é aberto em branco (reserva nova). */}
+      {reservaEdicao !== undefined && (
+        <ReservaModal
+          reserva={reservaEdicao}
+          enviando={reservaMutacao.isPending}
+          erro={erroReserva}
+          onFechar={() => {
+            if (!reservaMutacao.isPending) {
+              setReservaEdicao(undefined);
+              setErroReserva(null);
+            }
+          }}
+          onConfirmar={(body) =>
+            reservaMutacao.mutate({
+              id: reservaEdicao?.id,
+              body,
+            })
+          }
+        />
+      )}
+
+      {/* Cancelar reserva passa pela MESMA confirmação dos outros cards: nada de
+          window.confirm, que não tem a paleta, não diz a consequência e não sabe
+          mostrar o erro do servidor. */}
+      {cancelandoReserva && (
+        <ConfirmacaoModal
+          titulo="Cancelar a reserva"
+          subtitulo={`${cancelandoReserva.servico} — ${formatarData(
+            cancelandoReserva.dataAgendada,
+          )}`}
+          descricao="O caminhão fica livre neste período e volta a aceitar entrega. A reserva não é apagada: fica no histórico."
+          rotuloConfirmar="Cancelar reserva"
+          perigo
+          enviando={cancelarReservaMutacao.isPending}
+          erro={erroCancelarReserva}
+          onCancelar={() => {
+            if (!cancelarReservaMutacao.isPending) {
+              setCancelandoReserva(null);
+              setErroCancelarReserva(null);
+            }
+          }}
+          onConfirmar={() => cancelarReservaMutacao.mutate(cancelandoReserva.id)}
         />
       )}
     </div>

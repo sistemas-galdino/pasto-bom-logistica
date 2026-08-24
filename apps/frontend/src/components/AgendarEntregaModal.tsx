@@ -29,7 +29,6 @@ import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type {
   Caminhao,
-  MotoristaResumo,
   Pedido,
   PeriodoEntrega,
   Propriedade,
@@ -42,6 +41,7 @@ import {
   validarQuantidades,
 } from '@pastobom/shared';
 import { api } from '../lib/api';
+import { SeletorSlot } from './SeletorSlot';
 
 interface Props {
   pedido: Pedido;
@@ -128,10 +128,9 @@ export function AgendarEntregaModal({
   /** Produtos cujo peso já foi conferido nesta tela (o checkbox da soja). */
   const [confirmados, setConfirmados] = useState<Set<string>>(new Set());
 
-  const motoristasQuery = useQuery({
-    queryKey: ['motoristas'],
-    queryFn: ({ signal }) => api.listarMotoristas(signal),
-  });
+  // A lista de caminhões continua aqui, além de dentro do SeletorSlot, porque
+  // ESTA tela precisa da CAPACIDADE do caminhão escolhido para avisar que a
+  // carga não cabe. Mesma queryKey, mesmo cache: não é uma segunda requisição.
   const caminhoesQuery = useQuery({
     queryKey: ['caminhoes'],
     queryFn: ({ signal }) => api.listarCaminhoes(signal),
@@ -143,7 +142,6 @@ export function AgendarEntregaModal({
     enabled: pedido.clienteCodigo !== '',
   });
 
-  const motoristas: MotoristaResumo[] = motoristasQuery.data ?? [];
   const caminhoes: Caminhao[] = (caminhoesQuery.data ?? []).filter(
     (c) => c.ativo,
   );
@@ -500,71 +498,22 @@ export function AgendarEntregaModal({
           </div>
         </div>
 
-        {/* Quando e com quem */}
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="block">
-            <span className="text-sm font-semibold text-tinta">Data</span>
-            <input
-              type="date"
-              value={data}
-              disabled={enviando}
-              onChange={(e) => setData(e.target.value)}
-              className={`mt-1 ${campoCls}`}
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-semibold text-tinta">Período</span>
-            <select
-              value={periodo}
-              disabled={enviando}
-              onChange={(e) => setPeriodo(e.target.value as PeriodoEntrega)}
-              className={`mt-1 ${campoCls}`}
-            >
-              <option value="manha">Manhã</option>
-              <option value="tarde">Tarde</option>
-            </select>
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-semibold text-tinta">Motorista</span>
-            <select
-              value={motoristaId}
-              disabled={enviando}
-              onChange={(e) => setMotoristaId(e.target.value)}
-              className={`mt-1 ${campoCls}`}
-            >
-              <option value="">Escolha…</option>
-              {motoristas.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.nome || m.id}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-semibold text-tinta">Caminhão</span>
-            <select
-              value={caminhaoId}
-              disabled={enviando}
-              onChange={(e) => setCaminhaoId(e.target.value)}
-              className={`mt-1 ${campoCls}`}
-            >
-              <option value="">Escolha…</option>
-              {caminhoes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.nome} ({formatarT(c.capacidadeKg)})
-                </option>
-              ))}
-            </select>
-            {caminhoes.length === 0 && !caminhoesQuery.isLoading && (
-              <span className="mt-1 block text-[11px] text-trigo-escuro">
-                Nenhum caminhão ativo cadastrado.
-              </span>
-            )}
-          </label>
-
+        {/* Quando e com quem — os MESMOS seletores da reserva de caminhão
+            (SeletorSlot). A propriedade de entrega entra como campo extra
+            DENTRO da grade dele: é específica do agendamento, mas precisa
+            continuar alinhada com os outros quatro. */}
+        <SeletorSlot
+          className="mt-4"
+          data={data}
+          periodo={periodo}
+          motoristaId={motoristaId}
+          caminhaoId={caminhaoId}
+          onData={setData}
+          onPeriodo={setPeriodo}
+          onMotorista={setMotoristaId}
+          onCaminhao={setCaminhaoId}
+          desabilitado={enviando}
+        >
           {exigePropriedade && (
             <label className="block sm:col-span-2">
               <span className="text-sm font-semibold text-tinta">
@@ -588,7 +537,7 @@ export function AgendarEntregaModal({
               </span>
             </label>
           )}
-        </div>
+        </SeletorSlot>
 
         {/* Avisos */}
         {errosQtd.length > 0 && (
