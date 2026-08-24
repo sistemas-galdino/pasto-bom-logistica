@@ -28,20 +28,20 @@ Conferido contra o banco em 12/08/2026.
 
 | Migração | Aplicada em produção? |
 |---|---|
-| 0001 – 0019 | sim |
-| 0020 | **NÃO** — aguardando janela |
+| 0001 – 0020 | sim |
 
-A **0020 ainda NÃO rodou.** Ela cria `caminhao_limites` — o teto de entregas por
-dia de cada caminhão, por janela de vigência (pedido da Natália, item 10 do
-documento de 08/2026). É a primeira tabela datada do schema. Puramente aditiva:
-tabela nova que ninguém lê ainda, nada destrutivo, sem backfill, e reaplicável
-(`if not exists`).
+A 0020 rodou em 24/08/2026, com autorização do David. Ela cria
+`caminhao_limites` — o teto de entregas por dia de cada caminhão, por janela de
+vigência (pedido da Natália, item 10 do documento de 08/2026). É a primeira
+tabela datada do schema. Puramente aditiva, nada destrutivo, sem backfill, e
+reaplicável (`if not exists`). Conferido após aplicar: RLS ativa, 2 políticas,
+2 índices, 2 checks, 2 FKs.
 
-**Ordem obrigatória: migration ANTES do deploy.** Diferente da 0019, aqui o
-código passa a consultar a tabela no caminho do agendamento — subir o código
+**A ordem importava e foi respeitada: migration ANTES do deploy.** Diferente da
+0019, aqui o código consulta a tabela no caminho do agendamento — subir o código
 primeiro faria `validarCargaDoAgendamento` consultar tabela inexistente. A
 leitura degrada em log em caso de erro (o limite é regra a MAIS e não pode
-travar a operação), mas não conte com isso: aplique primeiro.
+travar a operação), mas isso é rede de segurança, não plano.
 
 A 0019 rodou em 12/08/2026, com autorização do David. Só ACRESCENTA uma coluna
 nulável (`peso_unit_kg`) em `entrega_itens` — o peso congelado da viagem. Nada
