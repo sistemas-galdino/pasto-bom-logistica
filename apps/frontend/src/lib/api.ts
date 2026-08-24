@@ -218,6 +218,13 @@ export const api = {
     return request<Entrega[]>(`/api/entregas${qs ? `?${qs}` : ''}`, { signal });
   },
 
+  /** Uma viagem só, com itens e quantidades — o detalhe do card da agenda. */
+  async obterEntrega(id: string, signal?: AbortSignal): Promise<Entrega> {
+    return request<Entrega>(`/api/entregas/${encodeURIComponent(id)}`, {
+      signal,
+    });
+  },
+
   /** O que ainda falta entregar de um pedido (o que a coluna Pendente mostra). */
   async saldoDoPedido(
     pedidoId: string,

@@ -31,6 +31,7 @@ import type {
 import { agruparSlotPorCaminhao } from '@pastobom/shared';
 import { api } from '../lib/api';
 import { STATUS_ENTREGA_META, STATUS_META } from '../components/status';
+import { EntregaDetalheModal } from '../components/EntregaDetalheModal';
 
 type Visao = 'mes' | 'semana' | 'dia';
 
@@ -179,6 +180,9 @@ export default function Agenda(): React.ReactElement {
   );
   const de = isoDeData(intervalo.inicio);
   const ate = isoDeData(intervalo.fim);
+
+  // Viagem cujo detalhe está aberto. A busca é sob demanda, dentro do modal.
+  const [detalheId, setDetalheId] = useState<string | null>(null);
 
   const agendaQuery = useQuery({
     queryKey: ['agenda', de, ate],
@@ -331,15 +335,27 @@ export default function Agenda(): React.ReactElement {
                 dias={intervalo.dias}
                 isoHoje={isoHoje}
                 porSlot={porSlot}
+                onAbrir={setDetalheId}
               />
             )}
 
             {visao === 'dia' && (
-              <VisaoDia data={isoDeData(ancora)} porSlot={porSlot} />
+              <VisaoDia
+                data={isoDeData(ancora)}
+                porSlot={porSlot}
+                onAbrir={setDetalheId}
+              />
             )}
           </div>
         )}
       </main>
+
+      {detalheId !== null && (
+        <EntregaDetalheModal
+          entregaId={detalheId}
+          onFechar={() => setDetalheId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -471,12 +487,14 @@ interface VisaoSemanaProps {
   dias: Date[];
   isoHoje: string;
   porSlot: Map<string, AgendaSlot>;
+  onAbrir: (entregaId: string) => void;
 }
 
 function VisaoSemana({
   dias,
   isoHoje,
   porSlot,
+  onAbrir,
 }: VisaoSemanaProps): React.ReactElement {
   return (
     <div className="overflow-x-auto">
@@ -530,6 +548,7 @@ function VisaoSemana({
                     slot={porSlot.get(chaveSlot(iso, periodo))}
                     periodo={periodo}
                     compacto
+                    onAbrir={onAbrir}
                   />
                 );
               })}
@@ -544,9 +563,14 @@ function VisaoSemana({
 interface VisaoDiaProps {
   data: string;
   porSlot: Map<string, AgendaSlot>;
+  onAbrir: (entregaId: string) => void;
 }
 
-function VisaoDia({ data, porSlot }: VisaoDiaProps): React.ReactElement {
+function VisaoDia({
+  data,
+  porSlot,
+  onAbrir,
+}: VisaoDiaProps): React.ReactElement {
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       {PERIODOS.map((periodo) => (
@@ -555,6 +579,7 @@ function VisaoDia({ data, porSlot }: VisaoDiaProps): React.ReactElement {
           slot={porSlot.get(chaveSlot(data, periodo))}
           periodo={periodo}
           mostrarTitulo
+          onAbrir={onAbrir}
         />
       ))}
     </div>
@@ -570,6 +595,7 @@ interface BlocoSlotProps {
   compacto?: boolean;
   /** Visão de dia: cabeçalho com o nome do período. */
   mostrarTitulo?: boolean;
+  onAbrir: (entregaId: string) => void;
 }
 
 function BlocoSlot({
@@ -577,6 +603,7 @@ function BlocoSlot({
   periodo,
   compacto = false,
   mostrarTitulo = false,
+  onAbrir,
 }: BlocoSlotProps): React.ReactElement {
   const entregas = slot?.entregas ?? [];
 
@@ -623,6 +650,7 @@ function BlocoSlot({
               key={grupo.caminhaoId ?? '__sem_caminhao__'}
               grupo={grupo}
               compacto={compacto}
+              onAbrir={onAbrir}
             />
           ))}
         </div>
@@ -634,6 +662,7 @@ function BlocoSlot({
 interface GrupoCaminhaoProps {
   grupo: GrupoCaminhaoAgenda;
   compacto: boolean;
+  onAbrir: (entregaId: string) => void;
 }
 
 // O caminhão e a sua carga do período, juntos: barra em cima, clientes embaixo.
@@ -642,6 +671,7 @@ interface GrupoCaminhaoProps {
 function GrupoCaminhao({
   grupo,
   compacto,
+  onAbrir,
 }: GrupoCaminhaoProps): React.ReactElement {
   const semCaminhao = grupo.caminhaoId === null;
 
@@ -684,7 +714,12 @@ function GrupoCaminhao({
         }`}
       >
         {grupo.entregas.map((e) => (
-          <CardEntrega key={e.entregaId} entrega={e} compacto={compacto} />
+          <CardEntrega
+            key={e.entregaId}
+            entrega={e}
+            compacto={compacto}
+            onAbrir={onAbrir}
+          />
         ))}
       </div>
     </div>
@@ -751,18 +786,33 @@ function BarraOcupacao({
 interface CardEntregaProps {
   entrega: AgendaEntrega;
   compacto: boolean;
+  onAbrir: (entregaId: string) => void;
 }
 
 // Ordem de destaque pedida na reunião: CLIENTE, MOTORISTA, BAIRRO (+ cidade).
-function CardEntrega({ entrega, compacto }: CardEntregaProps): React.ReactElement {
+//
+// O cartão é um <button> de largura cheia, e não um <article> com onClick: dá
+// foco por Tab, aciona com Enter/Espaço e ganha :focus-visible sem precisar de
+// role/tabIndex/onKeyDown à mão. Ela pediu para "clicar no card agendado ou em
+// rota e ver os produtos da entrega e quantidade".
+function CardEntrega({
+  entrega,
+  compacto,
+  onAbrir,
+}: CardEntregaProps): React.ReactElement {
   const meta = STATUS_ENTREGA_META[entrega.status];
   const local = [entrega.bairro, entrega.cidade]
     .filter((p) => p && p.trim().length > 0)
     .join(' · ');
 
   return (
-    <article
-      className={`animate-sobe rounded-xl border border-linha bg-papel shadow-carta transition duration-200 hover:-translate-y-0.5 hover:shadow-flutua ${
+    <button
+      type="button"
+      onClick={() => onAbrir(entrega.entregaId)}
+      aria-label={`Ver produtos de ${entrega.clienteNome || 'cliente'}${
+        entrega.orixNumero ? `, pedido nº ${entrega.orixNumero}` : ''
+      }`}
+      className={`animate-sobe block w-full cursor-pointer rounded-xl border border-linha bg-papel text-left shadow-carta transition duration-200 hover:-translate-y-0.5 hover:shadow-flutua focus:outline-none focus-visible:ring-2 focus-visible:ring-folha ${
         compacto ? 'p-2' : 'p-3.5'
       }`}
     >
@@ -841,6 +891,6 @@ function CardEntrega({ entrega, compacto }: CardEntregaProps): React.ReactElemen
           {meta.rotulo}
         </span>
       )}
-    </article>
+    </button>
   );
 }
