@@ -25,8 +25,10 @@ import type {
   AgendaEntrega,
   AgendaOcupacao,
   AgendaSlot,
+  GrupoCaminhaoAgenda,
   PeriodoEntrega,
 } from '@pastobom/shared';
+import { agruparSlotPorCaminhao } from '@pastobom/shared';
 import { api } from '../lib/api';
 import { STATUS_ENTREGA_META, STATUS_META } from '../components/status';
 
@@ -577,7 +579,15 @@ function BlocoSlot({
   mostrarTitulo = false,
 }: BlocoSlotProps): React.ReactElement {
   const entregas = slot?.entregas ?? [];
-  const ocupacao = slot?.ocupacao ?? [];
+
+  // Um bloco por caminhão, com a barra de capacidade virando o CABEÇALHO do
+  // grupo em vez de uma lista solta no topo: era impossível dizer qual cliente
+  // ia em qual caminhão (queixa da Natália). Regra e ordenação em
+  // @pastobom/shared, testadas.
+  const grupos = React.useMemo(
+    () => (slot ? agruparSlotPorCaminhao(slot) : []),
+    [slot],
+  );
 
   return (
     <section
@@ -598,18 +608,6 @@ function BlocoSlot({
         </div>
       )}
 
-      {ocupacao.length > 0 && (
-        <div
-          className={`mb-3 space-y-2 rounded-xl border border-linha bg-papel ${
-            compacto ? 'p-2' : 'p-3'
-          }`}
-        >
-          {ocupacao.map((o) => (
-            <BarraOcupacao key={o.caminhaoId} ocupacao={o} compacto={compacto} />
-          ))}
-        </div>
-      )}
-
       {entregas.length === 0 ? (
         <p
           className={`text-center text-tinta-suave ${
@@ -619,13 +617,77 @@ function BlocoSlot({
           {compacto ? '—' : 'Sem entregas neste período.'}
         </p>
       ) : (
-        <div className={compacto ? 'space-y-2' : 'space-y-3'}>
-          {entregas.map((e) => (
-            <CardEntrega key={e.pedidoId} entrega={e} compacto={compacto} />
+        <div className={compacto ? 'space-y-2.5' : 'space-y-4'}>
+          {grupos.map((grupo) => (
+            <GrupoCaminhao
+              key={grupo.caminhaoId ?? '__sem_caminhao__'}
+              grupo={grupo}
+              compacto={compacto}
+            />
           ))}
         </div>
       )}
     </section>
+  );
+}
+
+interface GrupoCaminhaoProps {
+  grupo: GrupoCaminhaoAgenda;
+  compacto: boolean;
+}
+
+// O caminhão e a sua carga do período, juntos: barra em cima, clientes embaixo.
+// A borda à esquerda é o que amarra visualmente os cards ao cabeçalho — sem
+// ela, dois grupos seguidos voltam a parecer uma lista só.
+function GrupoCaminhao({
+  grupo,
+  compacto,
+}: GrupoCaminhaoProps): React.ReactElement {
+  const semCaminhao = grupo.caminhaoId === null;
+
+  return (
+    <div>
+      <div
+        className={`rounded-xl border bg-papel ${
+          semCaminhao ? 'border-trigo/50' : 'border-linha'
+        } ${compacto ? 'p-2' : 'p-3'}`}
+      >
+        {grupo.ocupacao ? (
+          <BarraOcupacao ocupacao={grupo.ocupacao} compacto={compacto} />
+        ) : (
+          // Sem caminhão não há capacidade a medir — e viagem sem caminhão é
+          // pendência, não detalhe: fica em âmbar e sempre no fim do período.
+          <div className="flex items-center gap-1.5">
+            <AlertTriangle
+              className={`${compacto ? 'h-3 w-3' : 'h-3.5 w-3.5'} shrink-0 text-trigo-escuro`}
+              aria-hidden="true"
+            />
+            <span
+              className={`font-semibold text-trigo-escuro ${
+                compacto ? 'text-[11px]' : 'text-xs'
+              }`}
+            >
+              {semCaminhao ? 'Sem caminhão' : grupo.caminhaoNome}
+            </span>
+            <span
+              className={`ml-auto text-pedra ${compacto ? 'text-[10px]' : 'text-[11px]'}`}
+            >
+              {grupo.entregas.length}
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div
+        className={`mt-1.5 border-l border-linha ${
+          compacto ? 'space-y-1.5 pl-1.5' : 'space-y-2 pl-2.5'
+        }`}
+      >
+        {grupo.entregas.map((e) => (
+          <CardEntrega key={e.entregaId} entrega={e} compacto={compacto} />
+        ))}
+      </div>
+    </div>
   );
 }
 
