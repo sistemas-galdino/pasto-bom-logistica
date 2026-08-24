@@ -5,16 +5,22 @@
 // API guarda kg. A conversão (t × 1000 na ida, kg ÷ 1000 na volta) vive aqui.
 //
 // Não existe excluir: desativar preserva o histórico dos pedidos já entregues.
+//
+// LIMITE DE ENTREGAS/DIA: além da tonelagem, cada caminhão pode ter um teto de
+// QUANTIDADE de entregas por dia, cadastrado por janela de vigência. As duas
+// regras valem juntas — o teto não substitui a capacidade em toneladas. Quem
+// não tem janela cadastrada continua limitado só pela tonelagem.
 
 import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Plus, Truck, X } from 'lucide-react';
+import { CalendarClock, Pencil, Plus, Truck, X } from 'lucide-react';
 import type {
   AtualizarCaminhaoRequest,
   Caminhao,
   CriarCaminhaoRequest,
 } from '@pastobom/shared';
 import { api, ApiError } from '../lib/api';
+import { LimitesEntregaModal } from '../components/LimitesEntregaModal';
 
 function mensagemDeErro(err: unknown, fallback: string): string {
   if (err instanceof ApiError) return err.message;
@@ -44,6 +50,11 @@ export default function Caminhoes(): React.ReactElement {
   const queryClient = useQueryClient();
   const [modalAberto, setModalAberto] = useState(false);
   const [emEdicao, setEmEdicao] = useState<Caminhao | null>(null);
+  // Caminhão cujas janelas de limite estão abertas. Modal (e não seção
+  // expansível) porque a lista é uma TABELA: abrir um formulário com quatro
+  // campos dentro de uma linha quebraria as colunas, e a página já usa modal
+  // para o cadastro do caminhão.
+  const [limitesDe, setLimitesDe] = useState<Caminhao | null>(null);
   const [erroAcao, setErroAcao] = useState<string | null>(null);
 
   const caminhoesQuery = useQuery({
@@ -156,7 +167,7 @@ export default function Caminhoes(): React.ReactElement {
           </p>
         ) : (
           <div className="overflow-x-auto rounded-xl2 border border-linha bg-papel shadow-carta">
-            <table className="w-full min-w-[680px] border-collapse text-left text-sm">
+            <table className="w-full min-w-[820px] border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-linha text-[11px] font-semibold uppercase tracking-wide text-tinta-suave">
                   <th className="px-4 py-3">Nome</th>
@@ -203,6 +214,21 @@ export default function Caminhoes(): React.ReactElement {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setErroAcao(null);
+                              setLimitesDe(c);
+                            }}
+                            title="Máximo de entregas por dia, por período."
+                            className="flex items-center gap-1.5 rounded-lg border border-linha px-3 py-1.5 text-xs font-semibold text-tinta-suave transition hover:border-mata/30 hover:text-mata"
+                          >
+                            <CalendarClock
+                              className="h-3.5 w-3.5"
+                              aria-hidden="true"
+                            />
+                            Entregas/dia
+                          </button>
                           <button
                             type="button"
                             onClick={() => abrirEdicao(c)}
@@ -257,6 +283,13 @@ export default function Caminhoes(): React.ReactElement {
             setEmEdicao(null);
             void queryClient.invalidateQueries({ queryKey: ['caminhoes'] });
           }}
+        />
+      )}
+
+      {limitesDe && (
+        <LimitesEntregaModal
+          caminhao={limitesDe}
+          onFechar={() => setLimitesDe(null)}
         />
       )}
     </div>

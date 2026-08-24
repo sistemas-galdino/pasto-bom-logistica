@@ -36,6 +36,7 @@ import type {
   SaldoItem,
 } from '@pastobom/shared';
 import {
+  avaliarLimiteEntregas,
   avaliarPesoAgendamento,
   pesoDaCarga,
   validarQuantidades,
@@ -192,10 +193,57 @@ export function AgendarEntregaModal({
   );
 
   const caminhaoEscolhido = caminhoes.find((c) => c.id === caminhaoId);
+
+  // O que o caminhão escolhido JÁ tem no dia escolhido. Sem isso a tela só sabia
+  // comparar o peso desta viagem contra a capacidade total, e um caminhão meio
+  // cheio passava batido até o 422 do servidor.
+  //
+  // A janela é o dia inteiro (de = ate) porque as duas regras têm escopos
+  // diferentes: a tonelagem é por SLOT (dia x turno) e o teto de entregas é por
+  // DIA, somando manhã e tarde.
+  const diaQuery = useQuery({
+    queryKey: ['agenda', data, data],
+    queryFn: ({ signal }) => api.agenda(data, data, signal),
+    enabled: data !== '',
+  });
+
+  const limitesQuery = useQuery({
+    queryKey: ['limites-caminhao', caminhaoId],
+    queryFn: ({ signal }) => api.limitesDoCaminhao(caminhaoId, signal),
+    enabled: caminhaoId !== '',
+  });
+
+  /** Ocupação do caminhão escolhido: kg no turno e nº de entregas no dia. */
+  const ocupacaoAtual = useMemo(() => {
+    const slots = diaQuery.data?.slots ?? [];
+    let usadoKgNoSlot = 0;
+    let entregasNoDia = 0;
+    for (const slot of slots) {
+      for (const o of slot.ocupacao) {
+        if (o.caminhaoId !== caminhaoId) continue;
+        entregasNoDia += o.entregas;
+        if (slot.periodo === periodo) usadoKgNoSlot += o.usadoKg;
+      }
+    }
+    return { usadoKgNoSlot, entregasNoDia };
+  }, [diaQuery.data, caminhaoId, periodo]);
+
   const estouraCaminhao =
     caminhaoEscolhido !== undefined &&
     pesoSelecionado !== null &&
-    pesoSelecionado > caminhaoEscolhido.capacidadeKg;
+    ocupacaoAtual.usadoKgNoSlot + pesoSelecionado > caminhaoEscolhido.capacidadeKg;
+
+  // Teto de QUANTIDADE de entregas no dia, a outra metade da regra que a
+  // Natália pediu (as duas valem juntas). Mesma função do backend.
+  const limiteDia = useMemo(
+    () =>
+      avaliarLimiteEntregas({
+        limites: limitesQuery.data ?? [],
+        data,
+        entregasNoDia: ocupacaoAtual.entregasNoDia,
+      }),
+    [limitesQuery.data, data, ocupacaoAtual.entregasNoDia],
+  );
 
   // A MESMA função que o backend usa (@pastobom/shared): a tela não pode ser
   // mais permissiva nem mais rígida do que a regra de verdade.
@@ -211,7 +259,13 @@ export function AgendarEntregaModal({
     (exigePropriedade && propriedadeCodigo === '');
 
   const bloqueado =
-    enviando || faltaCampo || errosQtd.length > 0 || !situacaoPeso.podeAgendar;
+    enviando ||
+    faltaCampo ||
+    errosQtd.length > 0 ||
+    !situacaoPeso.podeAgendar ||
+    // O teto de entregas é contagem, não estimativa: se já sabemos que não
+    // cabe, não faz sentido deixar clicar para colher o 422.
+    !limiteDia.cabe;
 
   function definirQtd(codigo: string, valor: string): void {
     const n = paraNumero(valor);
@@ -561,10 +615,38 @@ export function AgendarEntregaModal({
 
         {estouraCaminhao && errosQtd.length === 0 && (
           <p className="mt-4 rounded-lg border border-trigo/40 bg-trigo-claro px-3 py-2 text-sm text-trigo-escuro">
-            Esta carga passa da capacidade do caminhão escolhido. O sistema vai
-            recusar — reduza a quantidade ou escolha outro caminhão.
+            Esta carga passa da capacidade do caminhão escolhido
+            {ocupacaoAtual.usadoKgNoSlot > 0
+              ? `, que já leva ${formatarKg(ocupacaoAtual.usadoKgNoSlot)} neste período`
+              : ''}
+            . O sistema vai recusar — reduza a quantidade ou escolha outro
+            caminhão.
           </p>
         )}
+
+        {/* Teto de entregas do dia: o limite que ela pediu, avisado ANTES do
+            clique. Sem janela cadastrada nada aparece — o caminhão segue
+            limitado só pela tonelagem, como sempre foi. */}
+        {!limiteDia.cabe && (
+          <p className="mt-4 rounded-lg border border-terra/40 bg-terra-claro px-3 py-2 text-sm text-terra-escuro">
+            Este caminhão já tem {limiteDia.entregasNoDia}{' '}
+            {limiteDia.entregasNoDia === 1 ? 'entrega' : 'entregas'} neste dia e
+            o limite configurado é {limiteDia.maxEntregasDia} por dia. Escolha
+            outro caminhão ou outro dia.
+          </p>
+        )}
+
+        {limiteDia.cabe &&
+          limiteDia.maxEntregasDia !== null &&
+          limiteDia.restantes !== null &&
+          limiteDia.restantes <= 2 && (
+            <p className="mt-4 rounded-lg border border-linha bg-creme-50 px-3 py-2 text-xs text-tinta-suave">
+              Cabe {limiteDia.restantes}{' '}
+              {limiteDia.restantes === 1 ? 'entrega' : 'entregas'} neste
+              caminhão no dia escolhido (limite de {limiteDia.maxEntregasDia}{' '}
+              por dia).
+            </p>
+          )}
 
         {erro && (
           <div

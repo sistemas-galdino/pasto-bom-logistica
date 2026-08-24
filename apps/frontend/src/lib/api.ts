@@ -29,6 +29,7 @@ import type {
   StatusEntrega,
   SaldoItem,
   PeriodoEntrega,
+  LimiteEntregasCaminhao,
 } from '@pastobom/shared';
 import { supabase } from './supabase';
 
@@ -245,6 +246,42 @@ export const api = {
     return request<Entrega>(
       `/api/entregas/${encodeURIComponent(entregaId)}/agendamento`,
       { method: 'PATCH', body },
+    );
+  },
+
+  /** Janelas de limite de entregas por dia de um caminhão. */
+  async limitesDoCaminhao(
+    caminhaoId: string,
+    signal?: AbortSignal,
+  ): Promise<LimiteEntregasCaminhao[]> {
+    return request<LimiteEntregasCaminhao[]>(
+      `/api/caminhoes/${encodeURIComponent(caminhaoId)}/limites`,
+      { signal },
+    );
+  },
+
+  async criarLimiteCaminhao(
+    caminhaoId: string,
+    body: {
+      validoDe: string;
+      validoAte?: string | null;
+      maxEntregasDia: number;
+      observacoes?: string;
+    },
+  ): Promise<LimiteEntregasCaminhao> {
+    return request<LimiteEntregasCaminhao>(
+      `/api/caminhoes/${encodeURIComponent(caminhaoId)}/limites`,
+      { method: 'POST', body },
+    );
+  },
+
+  async removerLimiteCaminhao(
+    caminhaoId: string,
+    limiteId: string,
+  ): Promise<void> {
+    await request<void>(
+      `/api/caminhoes/${encodeURIComponent(caminhaoId)}/limites/${encodeURIComponent(limiteId)}`,
+      { method: 'DELETE' },
     );
   },
 

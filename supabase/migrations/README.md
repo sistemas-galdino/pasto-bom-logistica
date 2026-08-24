@@ -29,6 +29,19 @@ Conferido contra o banco em 12/08/2026.
 | Migração | Aplicada em produção? |
 |---|---|
 | 0001 – 0019 | sim |
+| 0020 | **NÃO** — aguardando janela |
+
+A **0020 ainda NÃO rodou.** Ela cria `caminhao_limites` — o teto de entregas por
+dia de cada caminhão, por janela de vigência (pedido da Natália, item 10 do
+documento de 08/2026). É a primeira tabela datada do schema. Puramente aditiva:
+tabela nova que ninguém lê ainda, nada destrutivo, sem backfill, e reaplicável
+(`if not exists`).
+
+**Ordem obrigatória: migration ANTES do deploy.** Diferente da 0019, aqui o
+código passa a consultar a tabela no caminho do agendamento — subir o código
+primeiro faria `validarCargaDoAgendamento` consultar tabela inexistente. A
+leitura degrada em log em caso de erro (o limite é regra a MAIS e não pode
+travar a operação), mas não conte com isso: aplique primeiro.
 
 A 0019 rodou em 12/08/2026, com autorização do David. Só ACRESCENTA uma coluna
 nulável (`peso_unit_kg`) em `entrega_itens` — o peso congelado da viagem. Nada

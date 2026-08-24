@@ -256,6 +256,25 @@ export interface PesoProduto {
 // Agenda (calendário de entregas — mês/semana/dia)
 // ---------------------------------------------------------------------------
 
+/**
+ * Janela de limite de entregas de um caminhão (migração 0020).
+ *
+ * O TETO é por dia; a janela diz em que período do calendário ele vale. A regra
+ * que escolhe a janela vigente e decide se cabe mais uma entrega está em
+ * limite-entregas.ts, compartilhada pela tela e pelo servidor.
+ */
+export interface LimiteEntregasCaminhao {
+  id: string;
+  caminhaoId: string;
+  /** Data ISO inicial, inclusiva. */
+  validoDe: string;
+  /** Data ISO final, inclusiva. null = vigência aberta. */
+  validoAte: string | null;
+  maxEntregasDia: number;
+  observacoes: string | null;
+  criadoEm: string;
+}
+
 /** Uma VIAGEM como aparece no card da agenda (Onda 2: entrega, não pedido). */
 export interface AgendaEntrega {
   entregaId: string;

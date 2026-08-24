@@ -16,8 +16,10 @@
 // O campo `peso` da API do Órix é inutilizável — ver packages/shared/src/peso.ts.
 
 import {
+  avaliarLimiteEntregas,
   pesoDoNomeProduto,
   type ItemPedido,
+  type LimiteCaminhao,
   type OrigemPeso,
   type PeriodoEntrega,
 } from '@pastobom/shared';
@@ -376,8 +378,13 @@ function formatarT(kg: number): string {
  * pronta para a tela.
  *
  *   1) capacidade do caminhão no slot (a carga do dia não pode estourar);
- *   2) o caminhão não pode sair com dois motoristas no mesmo slot;
- *   3) o motorista não pode levar dois caminhões no mesmo slot.
+ *   2) número de entregas do caminhão no DIA, quando há limite configurado;
+ *   3) o caminhão não pode sair com dois motoristas no mesmo slot;
+ *   4) o motorista não pode levar dois caminhões no mesmo slot.
+ *
+ * Ponto único: todo mundo que agenda ou reagenda passa por aqui. Se você criar
+ * outro caminho de escrita de `entregas`, chame esta função — não copie as
+ * travas.
  */
 export async function validarCargaDoAgendamento(args: {
   /** Entrega que está sendo criada/reagendada (excluída da ocupação). */
@@ -411,7 +418,32 @@ export async function validarCargaDoAgendamento(args: {
     );
   }
 
-  // 2) O caminhão já está com OUTRO motorista neste período?
+  // 2) Quantidade de entregas no DIA (as duas regras valem juntas, como ela
+  //    pediu: tonelagem E número de entregas).
+  //
+  //    Atenção ao escopo: o teto é por DIA e o slot é dia x turno, então a
+  //    contagem soma manhã e tarde. Contar só o slot deixaria o caminhão levar
+  //    5 de manhã e 5 à tarde com teto de 5.
+  const limites = await lerLimitesDoCaminhao(caminhaoId);
+  if (limites.length > 0) {
+    const jaNoDia = await contarEntregasNoDia(data, caminhaoId, entregaId);
+    const veredicto = avaliarLimiteEntregas({
+      limites,
+      data,
+      entregasNoDia: jaNoDia,
+    });
+    if (!veredicto.cabe) {
+      throw new TransicaoError(
+        422,
+        'limite_entregas_excedido',
+        `O ${caminhao.nome} já tem ${veredicto.entregasNoDia} ${
+          veredicto.entregasNoDia === 1 ? 'entrega' : 'entregas'
+        } neste dia e o limite configurado é ${veredicto.maxEntregasDia} por dia. Escolha outro caminhão ou outro dia.`,
+      );
+    }
+  }
+
+  // 3) O caminhão já está com OUTRO motorista neste período?
   const outrosMotoristas = [...(uso.get(caminhaoId)?.motoristaIds ?? [])].filter(
     (id) => id !== motoristaId,
   );
@@ -424,7 +456,7 @@ export async function validarCargaDoAgendamento(args: {
     );
   }
 
-  // 3) O motorista já está em OUTRO caminhão neste período?
+  // 4) O motorista já está em OUTRO caminhão neste período?
   for (const [outroCaminhaoId, u] of uso) {
     if (outroCaminhaoId === caminhaoId) continue;
     if (u.motoristaIds.has(motoristaId)) {
@@ -438,6 +470,69 @@ export async function validarCargaDoAgendamento(args: {
       );
     }
   }
+}
+
+/**
+ * Janelas de limite de um caminhão.
+ *
+ * Lê todas e deixa a escolha da vigente para a regra pura em
+ * @pastobom/shared — assim a tela decide igual ao servidor. Lista vazia = sem
+ * teto de quantidade, e o caminhão segue limitado só pela tonelagem (nenhum
+ * default foi pedido; inventar um faria o sistema recusar agendamento que hoje
+ * passa, sem ninguém ter configurado nada).
+ */
+export async function lerLimitesDoCaminhao(
+  caminhaoId: string,
+): Promise<LimiteCaminhao[]> {
+  const { data, error } = await supabase
+    .from('caminhao_limites')
+    .select('valido_de, valido_ate, max_entregas_dia')
+    .eq('caminhao_id', caminhaoId);
+
+  if (error) {
+    // Degrada em vez de derrubar: o limite de quantidade é uma regra a MAIS, e
+    // uma falha de leitura aqui não pode impedir a operação de agendar. A
+    // tonelagem, que é a regra antiga, continua valendo.
+    log.error(
+      `[carga] Falha ao ler os limites do caminhão ${caminhaoId}: ${error.message}`,
+    );
+    return [];
+  }
+
+  return (data ?? []).map((l) => ({
+    validoDe: String(l.valido_de),
+    validoAte: l.valido_ate === null ? null : String(l.valido_ate),
+    maxEntregasDia: Number(l.max_entregas_dia),
+  }));
+}
+
+/**
+ * Quantas entregas vivas o caminhão tem NESSE DIA, somando manhã e tarde.
+ *
+ * `ignorarEntregaId` existe pelo mesmo motivo do `ocupacaoDoSlot`: reagendar
+ * dentro do mesmo dia não pode fazer a viagem competir consigo mesma.
+ */
+async function contarEntregasNoDia(
+  data: string,
+  caminhaoId: string,
+  ignorarEntregaId?: string,
+): Promise<number> {
+  const { data: linhas, error } = await supabase
+    .from('entregas')
+    .select('id')
+    .eq('data_agendada', data)
+    .eq('caminhao_id', caminhaoId)
+    .in('status', ['agendada', 'em_rota']);
+
+  if (error) {
+    throw new TransicaoError(
+      500,
+      'erro_banco',
+      `Falha ao contar as entregas do dia: ${error.message}`,
+    );
+  }
+
+  return (linhas ?? []).filter((l) => l.id !== ignorarEntregaId).length;
 }
 
 /** Nome do motorista (profiles) para compor a mensagem de erro. */

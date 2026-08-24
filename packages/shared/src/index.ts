@@ -10,6 +10,7 @@ export * from './clima.js';
 export * from './peso.js';
 export * from './peso-agendamento.js';
 export * from './agenda-grupos.js';
+export * from './limite-entregas.js';
 export * from './separacao.js';
 export * from './reconciliacao.js';
 export * from './janela-poll.js';

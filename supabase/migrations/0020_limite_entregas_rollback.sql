@@ -1,0 +1,21 @@
+-- 0020_limite_entregas_rollback.sql
+-- Desfaz a 0020.
+--
+-- O QUE SE PERDE: todas as janelas de limite cadastradas (caminhão X, 01/09 a
+-- 30/09, máx. 5/dia). Não há onde guardá-las no modelo anterior — o schema não
+-- tinha nenhuma tabela com vigência. Exporte antes se houver algo cadastrado:
+--
+--   select c.nome, l.valido_de, l.valido_ate, l.max_entregas_dia, l.observacoes
+--     from caminhao_limites l
+--     join caminhoes c on c.id = l.caminhao_id
+--    order by c.nome, l.valido_de;
+--
+-- O QUE NÃO SE PERDE: nada de pedido, entrega, item, peso ou separação. A 0020
+-- é puramente aditiva e não toca em nenhuma tabela existente. A trava de
+-- TONELAGEM continua valendo — ela nunca dependeu desta tabela.
+--
+-- ATENÇÃO: a versão atual do sistema LÊ `caminhao_limites` no caminho do
+-- agendamento. Só rode este rollback junto com o deploy de uma versão anterior,
+-- senão todo agendamento passa a falhar.
+
+drop table if exists caminhao_limites cascade;
