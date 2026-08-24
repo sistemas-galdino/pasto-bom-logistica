@@ -37,6 +37,7 @@ import {
 import type { Entrega, PeriodoEntrega } from '@pastobom/shared';
 import { api } from '../lib/api';
 import { useAuth } from '../auth/AuthProvider';
+import { addDias, capitalizar, hojeLocal, isoDeData } from '../lib/datas';
 
 /**
  * Grupos exibidos. 'sem' cobre o pedido agendado sem turno definido; 'atrasado'
@@ -68,25 +69,6 @@ type Selecao = { tipo: 'dia'; iso: string } | { tipo: 'atrasados' };
 const SEM_CAMINHAO = 'Sem caminhão';
 
 // --- datas (sempre locais; nunca `new Date('YYYY-MM-DD')`) -----------------
-
-function isoDeData(d: Date): string {
-  const mes = String(d.getMonth() + 1).padStart(2, '0');
-  const dia = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${mes}-${dia}`;
-}
-
-function hojeLocal(): Date {
-  const agora = new Date();
-  return new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
-}
-
-function addDias(d: Date, n: number): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
-}
-
-function capitalizar(texto: string): string {
-  return texto.charAt(0).toUpperCase() + texto.slice(1);
-}
 
 /** 'YYYY-MM-DD' → "Terça-feira, 14 de julho". */
 function rotuloDoDia(iso: string): string {

@@ -34,6 +34,16 @@ import { agruparSlotPorCaminhao } from '@pastobom/shared';
 import { api } from '../lib/api';
 import { STATUS_ENTREGA_META, STATUS_META } from '../components/status';
 import { EntregaDetalheModal } from '../components/EntregaDetalheModal';
+import { emToneladas } from '../lib/format';
+import {
+  addDias,
+  addMeses,
+  capitalizar,
+  DIAS_CURTOS,
+  hojeLocal,
+  inicioDaSemana,
+  isoDeData,
+} from '../lib/datas';
 
 type Visao = 'mes' | 'semana' | 'dia';
 
@@ -44,45 +54,8 @@ const PERIODO_ROTULO: Record<PeriodoEntrega, string> = {
   tarde: 'Tarde',
 };
 
-const DIAS_CURTOS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
 // --- datas (sempre locais; nunca `new Date('YYYY-MM-DD')`) -----------------
-
-function isoDeData(d: Date): string {
-  const mes = String(d.getMonth() + 1).padStart(2, '0');
-  const dia = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${mes}-${dia}`;
-}
-
-function hojeLocal(): Date {
-  const agora = new Date();
-  return new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
-}
-
-function addDias(d: Date, n: number): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
-}
-
-function addMeses(d: Date, n: number): Date {
-  return new Date(d.getFullYear(), d.getMonth() + n, 1);
-}
-
-/** Domingo da semana de `d` (a grade começa no domingo). */
-function inicioDaSemana(d: Date): Date {
-  return addDias(d, -d.getDay());
-}
-
-function capitalizar(texto: string): string {
-  return texto.charAt(0).toUpperCase() + texto.slice(1);
-}
-
-/** Toneladas com 1 casa (ex.: 4,2) — a tela sempre fala em toneladas. */
-function emToneladas(kg: number): string {
-  return (kg / 1000).toLocaleString('pt-BR', {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  });
-}
 
 function chaveSlot(data: string, periodo: PeriodoEntrega): string {
   return `${data}|${periodo}`;

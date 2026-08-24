@@ -31,6 +31,21 @@ export function formatarData(iso: string | null | undefined): string {
   return d.toLocaleDateString('pt-BR');
 }
 
+/**
+ * Toneladas com uma casa (ex.: 4,2). A tela SEMPRE fala em toneladas — o kg é
+ * unidade de cadastro, tonelada é a unidade da conversa do Johnny com a frota.
+ *
+ * Estava duplicada em quatro arquivos (Agenda, EntregaDetalheModal, Separação
+ * impressa e mais), byte a byte. Uma casa decimal é decisão de apresentação e
+ * mudá-la em três lugares e esquecer o quarto é o desfecho previsível.
+ */
+export function emToneladas(kg: number): string {
+  return (kg / 1000).toLocaleString('pt-BR', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
+}
+
 /** Pluraliza "item"/"itens". */
 export function rotuloItens(n: number): string {
   return n === 1 ? '1 item' : `${n} itens`;

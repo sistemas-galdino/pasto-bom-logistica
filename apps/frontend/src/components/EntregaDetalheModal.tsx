@@ -17,7 +17,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Check, MapPin, Truck, User, X } from 'lucide-react';
 import type { PeriodoEntrega } from '@pastobom/shared';
 import { api } from '../lib/api';
-import { formatarData } from '../lib/format';
+import { emToneladas, formatarData } from '../lib/format';
 import { STATUS_ENTREGA_META } from './status';
 
 const PERIODO_ROTULO: Record<PeriodoEntrega, string> = {
@@ -28,13 +28,6 @@ const PERIODO_ROTULO: Record<PeriodoEntrega, string> = {
 interface Props {
   entregaId: string;
   onFechar: () => void;
-}
-
-function emToneladas(kg: number): string {
-  return (kg / 1000).toLocaleString('pt-BR', {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  });
 }
 
 /** Quantidade sem decimal inútil: 100, não 100,00 — mas 2,5 continua 2,5. */

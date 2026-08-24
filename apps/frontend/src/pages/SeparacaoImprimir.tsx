@@ -28,6 +28,8 @@ import { useSearchParams } from 'react-router-dom';
 import { Printer, X } from 'lucide-react';
 import type { Entrega, PeriodoEntrega } from '@pastobom/shared';
 import { api } from '../lib/api';
+import { emToneladas } from '../lib/format';
+import { hojeLocal, isoDeData } from '../lib/datas';
 import { useAuth } from '../auth/AuthProvider';
 
 const SEM_CAMINHAO = 'Sem caminhão';
@@ -38,17 +40,6 @@ const PERIODO_ROTULO: Record<PeriodoEntrega, string> = {
 };
 
 // --- datas (sempre locais; nunca `new Date('YYYY-MM-DD')`) -----------------
-
-function isoDeData(d: Date): string {
-  const mes = String(d.getMonth() + 1).padStart(2, '0');
-  const dia = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${mes}-${dia}`;
-}
-
-function hojeLocal(): Date {
-  const agora = new Date();
-  return new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
-}
 
 function dataLonga(iso: string): string {
   const p = iso.split('-').map(Number);
@@ -65,13 +56,6 @@ function dataLonga(iso: string): string {
 
 function formatarQtd(qtd: number): string {
   return qtd.toLocaleString('pt-BR', { maximumFractionDigits: 3 });
-}
-
-function emToneladas(kg: number): string {
-  return (kg / 1000).toLocaleString('pt-BR', {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  });
 }
 
 /** Caminhão da viagem, com o mesmo rótulo da tela de separação. */
