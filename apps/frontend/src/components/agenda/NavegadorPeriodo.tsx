@@ -16,6 +16,8 @@ export interface NavegadorPeriodoProps {
   /** Título já formatado do período (a formatação é da montagem da página). */
   titulo: string;
   totalEntregas: number;
+  /** Reservas do período. Contadas à parte: reserva não é entrega. */
+  totalReservas: number;
   /** Mostra o "atualizando…" ao lado da contagem. */
   atualizando: boolean;
   onNavegar: (passo: -1 | 1) => void;
@@ -27,6 +29,7 @@ export function NavegadorPeriodo({
   visao,
   titulo,
   totalEntregas,
+  totalReservas,
   atualizando,
   onNavegar,
   onHoje,
@@ -78,6 +81,10 @@ export function NavegadorPeriodo({
           <span className="text-pedra">·</span>
           <span className="text-tinta-suave">
             {totalEntregas === 1 ? '1 entrega' : `${totalEntregas} entregas`}
+            {totalReservas > 0 &&
+              ` · ${
+                totalReservas === 1 ? '1 reserva' : `${totalReservas} reservas`
+              }`}
           </span>
           {atualizando && (
             <span className="text-xs text-pedra">atualizando…</span>

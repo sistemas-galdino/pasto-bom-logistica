@@ -126,6 +126,12 @@ export default function Agenda(): React.ReactElement {
     (s, slot) => s + slot.entregas.length,
     0,
   );
+  // As reservas contam separado: elas não são entrega, mas OCUPAM o período, e
+  // é por isso que o aviso de vazio abaixo tem de olhar as duas coisas.
+  const totalReservas = (agendaQuery.data?.slots ?? []).reduce(
+    (s, slot) => s + slot.reservas.length,
+    0,
+  );
 
   const isoHoje = isoDeData(hojeLocal());
   const titulo = tituloDoPeriodo(visao, intervalo, ancora);
@@ -142,6 +148,7 @@ export default function Agenda(): React.ReactElement {
         visao={visao}
         titulo={titulo}
         totalEntregas={totalEntregas}
+        totalReservas={totalReservas}
         atualizando={agendaQuery.isFetching}
         onNavegar={navegar}
         onHoje={() => setAncora(hojeLocal())}
@@ -170,7 +177,11 @@ export default function Agenda(): React.ReactElement {
           </div>
         ) : (
           <div className="mx-auto max-w-[1600px] space-y-4 p-4 animate-sobe sm:p-6">
-            {totalEntregas === 0 && (
+            {/* Só é "nenhuma entrega" quando também não há RESERVA. Contar só
+                entregas fazia o período da oficina exibir o aviso de vazio e,
+                logo embaixo, os cards da reserva — a mesma armadilha que o
+                BlocoSlot já resolve um nível abaixo, reaparecendo aqui. */}
+            {totalEntregas === 0 && totalReservas === 0 && (
               <p className="flex items-center justify-center gap-2 rounded-xl2 border border-dashed border-linha bg-papel/60 py-6 text-sm text-tinta-suave">
                 <CalendarDays
                   className="h-4 w-4 text-pedra"

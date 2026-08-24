@@ -112,10 +112,19 @@ export function VisaoMes({
                 ) : (
                   <div className="mt-2 space-y-1.5">
                     <div className="flex items-center gap-1.5 text-[11px] text-tinta-suave">
-                      <span className="rounded bg-folha-claro px-1.5 py-0.5 font-semibold text-mata">
+                      {/* M e T contam ENTREGAS. A reserva vem na linha
+                          tracejada abaixo, separada, porque somá-la aqui diria
+                          que há entrega onde não há. */}
+                      <span
+                        className="rounded bg-folha-claro px-1.5 py-0.5 font-semibold text-mata"
+                        title="Entregas da manhã"
+                      >
                         M {manha?.entregas.length ?? 0}
                       </span>
-                      <span className="rounded bg-trigo-claro px-1.5 py-0.5 font-semibold text-trigo-escuro">
+                      <span
+                        className="rounded bg-trigo-claro px-1.5 py-0.5 font-semibold text-trigo-escuro"
+                        title="Entregas da tarde"
+                      >
                         T {tarde?.entregas.length ?? 0}
                       </span>
                     </div>

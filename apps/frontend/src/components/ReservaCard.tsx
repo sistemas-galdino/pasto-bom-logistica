@@ -8,9 +8,9 @@
 // card de reserva da agenda: o mesmo objeto tem de se reconhecer nas duas telas.
 //
 // Este componente é do QUADRO e vive na faixa acima das colunas. O da agenda
-// (pages/Agenda.tsx) é outro: lá o card é só leitura, cabe num slot estreito e
-// tem modo compacto; aqui ele carrega as ações de Editar e Cancelar, que só a
-// logística vê.
+// (components/agenda/CardReserva.tsx) é outro: lá o card é só leitura, cabe num
+// slot estreito e tem modo compacto; aqui ele carrega as ações de Editar e
+// Cancelar, que só a logística vê.
 //
 // O CADEADO não é enfeite. É a diferença entre "o caminhão está reservado" e "o
 // caminhão vai fazer isso e ainda entrega" — quem lê o quadro para prometer
