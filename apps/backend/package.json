@@ -20,6 +20,7 @@
     "limpar:fora-orix": "node --import tsx --env-file-if-exists=.env src/scripts/limpar-fora-orix.ts",
     "limpar:fora-gatilho": "node --import tsx --env-file-if-exists=.env src/scripts/limpar-fora-gatilho.ts",
     "conferir:orix": "node --import tsx --env-file-if-exists=.env src/scripts/conferir-orix.ts",
+    "sincronizar:fornecedores": "node --import tsx --env-file-if-exists=.env src/scripts/sincronizar-fornecedores.ts",
     "varredura:profunda": "node --import tsx --env-file-if-exists=.env src/scripts/varredura-profunda.ts"
   },
   "dependencies": {

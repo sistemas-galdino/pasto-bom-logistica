@@ -42,6 +42,19 @@ const envSchema = z.object({
   // Com 20 ela anda ~4 h por dia e cedo ou tarde cai na janela em que o Órix
   // está no ar, sem ninguém precisar descobrir qual é essa janela.
   VARREDURA_INTERVALO_HORAS: z.coerce.number().positive().default(20),
+  // Espelho do cadastro de FORNECEDORES do Órix (migração 0021), que alimenta o
+  // autocomplete da reserva de caminhão — "puxar o fornecedor já traz a cidade".
+  //
+  // Como na varredura, o cron NÃO é o horário de execução: é a frequência da
+  // VERIFICAÇÃO ("faz mais de FORNECEDORES_INTERVALO_HORAS que não espelho?").
+  // Horário fixo não serve — o Órix cai à noite e o ciclo nunca completaria.
+  //
+  // MINUTO 37 de propósito: o poll é */5 e a checagem da varredura é 15, então
+  // qualquer minuto que não seja múltiplo de 5 (nem 15) evita disparar três
+  // rotinas no mesmo tick contra o mesmo servidor instável.
+  FORNECEDORES_CRON: z.string().min(1).default('37 * * * *'),
+  // Cadastro de fornecedor muda devagar (é cadastro, não movimento): 24 h basta.
+  FORNECEDORES_INTERVALO_HORAS: z.coerce.number().positive().default(24),
   API_PORT: z.coerce.number().int().positive().default(3333),
   // URL do frontend — usada no link de convite (definir senha). NÃO envia
   // e-mail: o link é copiado na tela Usuários e mandado pela logística.

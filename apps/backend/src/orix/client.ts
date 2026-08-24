@@ -7,6 +7,11 @@
 //    chunking de datas (isso é responsabilidade do worker).
 //  - getCliente (GET /Cliente/{codigo}).
 //  - getPropriedades (GET /Propriedades/{codigo_cliente}).
+//  - getFornecedores (GET /Fornecedores?pagina=&limite=) — UMA página por
+//    chamada; o LOOP DE PÁGINAS é do worker (worker/fornecedores.ts), pela mesma
+//    razão do chunking de datas: quem sabe abortar, retomar e decidir se o ciclo
+//    foi parcial é quem grava no banco, não o cliente HTTP.
+//  - getFornecedor (GET /Fornecedor/{codigo}).
 //
 // Detalhes de robustez:
 //  - fetch nativo do Node (>= 20), timeout de 30s por requisição.
@@ -46,6 +51,72 @@ export interface GetPedidosParams {
 
 interface RespostaRegistros<T> {
   registros?: T[];
+}
+
+/**
+ * Envelope dos endpoints PAGINADOS do Órix (/Clientes, /Fornecedores): além dos
+ * `registros`, vêm `paginaAtual` e `paginas` — é o total de páginas que diz ao
+ * worker quando parar (a API não devolve página vazia como sinal de fim).
+ */
+interface RespostaPaginada<T> extends RespostaRegistros<T> {
+  paginaAtual?: number | string;
+  paginas?: number | string;
+  /** Total de registros do cadastro inteiro (não da página). */
+  total?: number | string;
+}
+
+/**
+ * Registro cru de GET /Fornecedores, campos como o servidor manda (snake_case).
+ *
+ * POR QUE ESTE TIPO MORA AQUI, E NÃO EM @pastobom/shared (onde estão
+ * OrixCliente/OrixPropriedade): o fornecedor não atravessa a fronteira para o
+ * frontend — o front consome a tabela-espelho `fornecedores` pela rota
+ * /api/fornecedores, nunca o formato do Órix. Manter o DTO cru dentro do
+ * backend evita publicar no pacote compartilhado um formato que só a ingestão vê.
+ *
+ * TODOS os campos são opcionais de propósito: o cadastro do Órix é preenchido à
+ * mão e a API omite o que está vazio. A index signature preserva o que não
+ * mapeamos (mesmo padrão de OrixPedidoItem).
+ */
+export interface OrixFornecedor {
+  codigo?: string | number;
+  nome?: string;
+  fantasia?: string;
+  tipo?: string;
+  cpf_cnpj?: string;
+  endereco?: string;
+  numero?: string;
+  bairro?: string;
+  cidade?: string;
+  cep?: string;
+  cod_municipio?: string | number;
+  uf?: string;
+  telefone?: string;
+  celular?: string;
+  email?: string;
+  /** 'S' / 'N' no Órix. A normalização para boolean é do worker. */
+  ativo?: string;
+  [k: string]: unknown;
+}
+
+/** Uma página de GET /Fornecedores, já com os números da paginação legíveis. */
+export interface PaginaFornecedores {
+  registros: OrixFornecedor[];
+  paginaAtual: number;
+  /** Total de páginas informado pelo Órix (1 quando a API não informa). */
+  paginas: number;
+}
+
+export interface GetFornecedoresParams {
+  /** 1-based, como o Órix conta. */
+  pagina: number;
+  limite: number;
+}
+
+/** Converte um número que pode vir como string ('18') no envelope do Órix. */
+function numeroOuPadrao(valor: unknown, padrao: number): number {
+  const n = Number(valor);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : padrao;
 }
 
 /** Erro de credencial Órix (login {valid:false} ou senha inválida). */
@@ -236,6 +307,71 @@ export class OrixClient {
     const corpo =
       await this.parseJson<RespostaRegistros<OrixPropriedade>>(resp);
     return corpo?.registros ?? [];
+  }
+
+  /**
+   * GET /Fornecedores?pagina=&limite= — UMA página do cadastro de fornecedores.
+   *
+   * São ~3.600 fornecedores (~18 páginas de 200). NÃO percorre as páginas aqui:
+   * o worker é que decide o passo, o que fazer com página que falha e se o ciclo
+   * pode ser considerado completo (ver o cabeçalho deste arquivo).
+   *
+   * Devolve `paginas: 1` quando a API não informa o total — assim o worker para
+   * depois da primeira página em vez de girar sem fim.
+   */
+  async getFornecedores(p: GetFornecedoresParams): Promise<PaginaFornecedores> {
+    const pagina = Math.max(1, Math.trunc(p.pagina));
+    const limite = Math.max(1, Math.trunc(p.limite));
+
+    const resp = await this.requestAutenticada(
+      `/Fornecedores?pagina=${pagina}&limite=${limite}`,
+      { method: 'GET' },
+    );
+
+    // 404 aqui não é erro: é página além do fim (ou cadastro vazio). Devolver
+    // lista vazia deixa o worker encerrar o loop sem tratar isso como falha.
+    if (resp.status === 404) {
+      return { registros: [], paginaAtual: pagina, paginas: pagina };
+    }
+
+    const corpo =
+      await this.parseJson<RespostaPaginada<OrixFornecedor>>(resp);
+
+    return {
+      registros: corpo?.registros ?? [],
+      paginaAtual: numeroOuPadrao(corpo?.paginaAtual, pagina),
+      paginas: numeroOuPadrao(corpo?.paginas, 1),
+    };
+  }
+
+  /**
+   * GET /Fornecedor/{codigo} — um fornecedor. Retorna null se não existir.
+   *
+   * Mesma tolerância de getCliente: a API responde o registro direto em alguns
+   * endpoints e dentro de {registros:[...]} em outros, e já vimos as duas
+   * formas em produção.
+   */
+  async getFornecedor(codigo: string): Promise<OrixFornecedor | null> {
+    const resp = await this.requestAutenticada(
+      `/Fornecedor/${encodeURIComponent(codigo)}`,
+      { method: 'GET' },
+    );
+
+    if (resp.status === 404) {
+      return null;
+    }
+
+    const corpo = await this.parseJson<unknown>(resp);
+    if (corpo === null || corpo === undefined) {
+      return null;
+    }
+
+    if (typeof corpo === 'object' && 'registros' in (corpo as object)) {
+      const lista = (corpo as RespostaRegistros<OrixFornecedor>).registros ?? [];
+      return lista[0] ?? null;
+    }
+
+    return corpo as OrixFornecedor;
   }
 
   // --------------------------------------------------------------------------
