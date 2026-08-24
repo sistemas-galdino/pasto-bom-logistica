@@ -354,6 +354,90 @@ export interface AgendaResposta {
 }
 
 // ---------------------------------------------------------------------------
+// Reserva de caminhão (o card avulso do Johnny) — migração 0021
+// ---------------------------------------------------------------------------
+
+/**
+ * Situação de uma reserva.
+ *
+ * Só duas, e de propósito: a reserva não vai em rota, não é entregue e não é
+ * separada. Reusar `StatusEntrega` aqui convidaria a confundir os dois objetos
+ * para sempre.
+ */
+export type StatusReserva = 'ativa' | 'cancelada';
+
+/**
+ * Uma reserva de caminhão: o caminhão ocupado por algo que não é entrega a
+ * cliente (oficina, buscar adubo na fábrica, "reservar para outra coisa").
+ *
+ * No lugar do cliente vem o `servico`, texto livre, que é o título do card. O
+ * destino pode ser um fornecedor do Órix ou uma cidade digitada — e a `cidade`
+ * fica gravada em texto NOS DOIS CASOS, para que mudança no cadastro do Órix
+ * não reescreva a reserva de ontem.
+ */
+export interface Reserva {
+  id: string;
+  status: StatusReserva;
+  servico: string;
+  fornecedorCodigo: string | null;
+  /** Resolvido na leitura; null quando a reserva não tem fornecedor. */
+  fornecedorNome: string | null;
+  cidade: string | null;
+  produtos: string | null;
+  /** Data ISO (YYYY-MM-DD). */
+  dataAgendada: string;
+  periodo: PeriodoEntrega;
+  caminhaoId: string;
+  caminhaoNome: string | null;
+  motoristaId: string | null;
+  motoristaNome: string | null;
+  /** null = ocupa o caminhão sem consumir tonelagem. */
+  pesoPrevistoKg: number | null;
+  /** true = nenhuma entrega de cliente entra neste caminhão/slot. */
+  bloqueiaCaminhao: boolean;
+  observacoes: string | null;
+  criadoEm: string;
+}
+
+/** Corpo de POST /api/reservas. */
+export interface CriarReservaRequest {
+  servico: string;
+  dataAgendada: string;
+  periodo: PeriodoEntrega;
+  caminhaoId: string;
+  motoristaId?: string | null;
+  fornecedorCodigo?: string | null;
+  cidade?: string | null;
+  produtos?: string | null;
+  pesoPrevistoKg?: number | null;
+  /** Ausente = true (o pedido literal do Johnny é reservar o caminhão). */
+  bloqueiaCaminhao?: boolean;
+  observacoes?: string | null;
+}
+
+/**
+ * Corpo de PATCH /api/reservas/:id — só o que veio muda.
+ *
+ * `status` fica FORA: cancelar tem rota própria, como no resto do projeto, para
+ * um PATCH distraído não apagar uma reserva sem passar pela mesma porta.
+ */
+export type AtualizarReservaRequest = Partial<CriarReservaRequest>;
+
+/**
+ * Fornecedor do espelho do Órix, na forma enxuta que o autocomplete da reserva
+ * consome. O que importa ali é o nome (para achar) e a cidade (que é o motivo
+ * de puxar do Órix em vez de digitar).
+ */
+export interface Fornecedor {
+  codigo: string;
+  nome: string;
+  fantasia: string | null;
+  cidade: string | null;
+  bairro: string | null;
+  uf: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Motivos de não entrega (cadastro da logística)
 // ---------------------------------------------------------------------------
 

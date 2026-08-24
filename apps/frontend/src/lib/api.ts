@@ -30,13 +30,17 @@ import type {
   SaldoItem,
   PeriodoEntrega,
   LimiteEntregasCaminhao,
-} from '@pastobom/shared';
-import { supabase } from './supabase';
+  Reserva,
+  CriarReservaRequest,
+  AtualizarReservaRequest,
+  Fornecedor,
+} from "@pastobom/shared";
+import { supabase } from "./supabase";
 
 const BASE_URL = (
   (import.meta.env.VITE_API_URL as string | undefined) ??
-  'http://localhost:3333'
-).replace(/\/$/, '');
+  "http://localhost:3333"
+).replace(/\/$/, "");
 
 /** Erro HTTP enriquecido com status e payload do servidor. */
 export class ApiError extends Error {
@@ -45,7 +49,7 @@ export class ApiError extends Error {
 
   constructor(status: number, message: string, payload: unknown) {
     super(message);
-    this.name = 'ApiError';
+    this.name = "ApiError";
     this.status = status;
     this.payload = payload;
   }
@@ -53,17 +57,17 @@ export class ApiError extends Error {
 
 /** Mensagens amigáveis por status para os erros mais relevantes do board. */
 function mensagemPadrao(status: number, payload: unknown): string {
-  if (payload && typeof payload === 'object') {
+  if (payload && typeof payload === "object") {
     const obj = payload as Record<string, unknown>;
     const msg = obj.message ?? obj.error;
-    if (typeof msg === 'string' && msg.trim().length > 0) {
+    if (typeof msg === "string" && msg.trim().length > 0) {
       return msg;
     }
   }
-  if (status === 401) return 'Sessão expirada. Faça login novamente.';
-  if (status === 403) return 'Você não tem permissão para esta ação.';
-  if (status === 409) return 'Transição inválida para este pedido.';
-  if (status === 422) return 'Selecione a propriedade de entrega.';
+  if (status === 401) return "Sessão expirada. Faça login novamente.";
+  if (status === 403) return "Você não tem permissão para esta ação.";
+  if (status === 409) return "Transição inválida para este pedido.";
+  if (status === 422) return "Selecione a propriedade de entrega.";
   return `Falha na requisição (HTTP ${status}).`;
 }
 
@@ -83,14 +87,14 @@ async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
   const token = await obterToken();
   const headers: Record<string, string> = {};
   if (opts.body !== undefined) {
-    headers['Content-Type'] = 'application/json';
+    headers["Content-Type"] = "application/json";
   }
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+    headers["Authorization"] = `Bearer ${token}`;
   }
 
   const res = await fetch(`${BASE_URL}${path}`, {
-    method: opts.method ?? 'GET',
+    method: opts.method ?? "GET",
     headers,
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
     signal: opts.signal,
@@ -107,7 +111,11 @@ async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
   }
 
   if (!res.ok) {
-    throw new ApiError(res.status, mensagemPadrao(res.status, payload), payload);
+    throw new ApiError(
+      res.status,
+      mensagemPadrao(res.status, payload),
+      payload,
+    );
   }
 
   return payload as T;
@@ -178,25 +186,27 @@ export const api = {
     filtros?: FiltrosPedidos,
   ): Promise<Pedido[]> {
     const params = new URLSearchParams();
-    if (status && status.length > 0) params.set('status', status.join(','));
-    if (filtros?.de) params.set('de', filtros.de);
-    if (filtros?.ate) params.set('ate', filtros.ate);
+    if (status && status.length > 0) params.set("status", status.join(","));
+    if (filtros?.de) params.set("de", filtros.de);
+    if (filtros?.ate) params.set("ate", filtros.ate);
     if (filtros?.statusOrix && filtros.statusOrix.length > 0) {
-      params.set('statusOrix', filtros.statusOrix.join(','));
+      params.set("statusOrix", filtros.statusOrix.join(","));
     }
     const qs = params.toString();
-    return request<Pedido[]>(`/api/pedidos${qs ? `?${qs}` : ''}`, { signal });
+    return request<Pedido[]>(`/api/pedidos${qs ? `?${qs}` : ""}`, { signal });
   },
 
   /** Detalhe de um pedido. */
   async obterPedido(id: string, signal?: AbortSignal): Promise<Pedido> {
-    return request<Pedido>(`/api/pedidos/${encodeURIComponent(id)}`, { signal });
+    return request<Pedido>(`/api/pedidos/${encodeURIComponent(id)}`, {
+      signal,
+    });
   },
 
   /** Aplica uma transição de status; devolve o pedido atualizado. */
   async transicionar(id: string, body: TransicaoRequest): Promise<Pedido> {
     return request<Pedido>(`/api/pedidos/${encodeURIComponent(id)}/transicao`, {
-      method: 'POST',
+      method: "POST",
       body,
     });
   },
@@ -204,7 +214,7 @@ export const api = {
   /** Reverte o status uma etapa (logística); devolve o pedido atualizado. */
   async reverter(id: string, para: StatusLogistico): Promise<Pedido> {
     return request<Pedido>(`/api/pedidos/${encodeURIComponent(id)}/reverter`, {
-      method: 'POST',
+      method: "POST",
       body: { para } satisfies ReverterRequest,
     });
   },
@@ -220,17 +230,17 @@ export const api = {
   ): Promise<Entrega[]> {
     const params = new URLSearchParams();
     if (filtros.status && filtros.status.length > 0) {
-      params.set('status', filtros.status.join(','));
+      params.set("status", filtros.status.join(","));
     }
-    if (filtros.de) params.set('de', filtros.de);
-    if (filtros.ate) params.set('ate', filtros.ate);
-    if (filtros.motoristaId) params.set('motoristaId', filtros.motoristaId);
-    if (filtros.pedidoId) params.set('pedidoId', filtros.pedidoId);
+    if (filtros.de) params.set("de", filtros.de);
+    if (filtros.ate) params.set("ate", filtros.ate);
+    if (filtros.motoristaId) params.set("motoristaId", filtros.motoristaId);
+    if (filtros.pedidoId) params.set("pedidoId", filtros.pedidoId);
     if (filtros.naoRealizadoDias !== undefined) {
-      params.set('naoRealizadoDias', String(filtros.naoRealizadoDias));
+      params.set("naoRealizadoDias", String(filtros.naoRealizadoDias));
     }
     const qs = params.toString();
-    return request<Entrega[]>(`/api/entregas${qs ? `?${qs}` : ''}`, { signal });
+    return request<Entrega[]>(`/api/entregas${qs ? `?${qs}` : ""}`, { signal });
   },
 
   /**
@@ -245,7 +255,7 @@ export const api = {
   ): Promise<Entrega> {
     return request<Entrega>(
       `/api/entregas/${encodeURIComponent(entregaId)}/agendamento`,
-      { method: 'PATCH', body },
+      { method: "PATCH", body },
     );
   },
 
@@ -271,7 +281,7 @@ export const api = {
   ): Promise<LimiteEntregasCaminhao> {
     return request<LimiteEntregasCaminhao>(
       `/api/caminhoes/${encodeURIComponent(caminhaoId)}/limites`,
-      { method: 'POST', body },
+      { method: "POST", body },
     );
   },
 
@@ -281,8 +291,66 @@ export const api = {
   ): Promise<void> {
     await request<void>(
       `/api/caminhoes/${encodeURIComponent(caminhaoId)}/limites/${encodeURIComponent(limiteId)}`,
-      { method: 'DELETE' },
+      { method: "DELETE" },
     );
+  },
+
+  // -------------------------------------------------------------------------
+  // Reservas de caminhão (o card avulso) — Onda C
+  // -------------------------------------------------------------------------
+
+  /** Reservas ativas de uma janela. Sem filtro de data, todas as ativas. */
+  async listarReservas(
+    filtro: { de?: string; ate?: string; caminhaoId?: string } = {},
+    signal?: AbortSignal,
+  ): Promise<Reserva[]> {
+    const params = new URLSearchParams();
+    if (filtro.de) params.set("de", filtro.de);
+    if (filtro.ate) params.set("ate", filtro.ate);
+    if (filtro.caminhaoId) params.set("caminhaoId", filtro.caminhaoId);
+    const qs = params.toString();
+    return request<Reserva[]>(`/api/reservas${qs ? `?${qs}` : ""}`, { signal });
+  },
+
+  async criarReserva(body: CriarReservaRequest): Promise<Reserva> {
+    return request<Reserva>("/api/reservas", { method: "POST", body });
+  },
+
+  async atualizarReserva(
+    id: string,
+    body: AtualizarReservaRequest,
+  ): Promise<Reserva> {
+    return request<Reserva>(`/api/reservas/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body,
+    });
+  },
+
+  /** Cancela (não apaga): a reserva sai da ocupação e fica no histórico. */
+  async cancelarReserva(id: string): Promise<Reserva> {
+    return request<Reserva>(
+      `/api/reservas/${encodeURIComponent(id)}/cancelar`,
+      { method: "POST" },
+    );
+  },
+
+  /** Reservas do motorista logado, de hoje em diante — só leitura. */
+  async minhasReservas(signal?: AbortSignal): Promise<Reserva[]> {
+    return request<Reserva[]>("/api/minhas-reservas", { signal });
+  },
+
+  /**
+   * Busca fornecedores no espelho do Órix para o autocomplete da reserva.
+   * O servidor limita o resultado: são ~3.600 no cadastro.
+   */
+  async buscarFornecedores(
+    q: string,
+    signal?: AbortSignal,
+  ): Promise<Fornecedor[]> {
+    const params = new URLSearchParams({ q });
+    return request<Fornecedor[]>(`/api/fornecedores?${params.toString()}`, {
+      signal,
+    });
   },
 
   /** Uma viagem só, com itens e quantidades — o detalhe do card da agenda. */
@@ -305,7 +373,7 @@ export const api = {
 
   /** Agenda uma viagem: data, período, motorista, caminhão e as quantidades. */
   async criarEntrega(body: CriarEntregaBody): Promise<Entrega> {
-    return request<Entrega>('/api/entregas', { method: 'POST', body });
+    return request<Entrega>("/api/entregas", { method: "POST", body });
   },
 
   /** Avança a viagem (em rota, entregue, não realizado, cancelada). */
@@ -315,7 +383,7 @@ export const api = {
   ): Promise<Entrega> {
     return request<Entrega>(
       `/api/entregas/${encodeURIComponent(entregaId)}/transicao`,
-      { method: 'POST', body },
+      { method: "POST", body },
     );
   },
 
@@ -326,7 +394,7 @@ export const api = {
   ): Promise<Entrega> {
     return request<Entrega>(
       `/api/entregas/${encodeURIComponent(entregaId)}/reverter`,
-      { method: 'POST', body: { para } },
+      { method: "POST", body: { para } },
     );
   },
 
@@ -340,7 +408,7 @@ export const api = {
       `/api/entregas/${encodeURIComponent(entregaId)}/itens/${encodeURIComponent(
         itemId,
       )}/separacao`,
-      { method: 'PATCH', body: { separado } },
+      { method: "PATCH", body: { separado } },
     );
   },
 
@@ -351,18 +419,18 @@ export const api = {
   ): Promise<Entrega> {
     return request<Entrega>(
       `/api/entregas/${encodeURIComponent(entregaId)}/separacao`,
-      { method: 'PATCH', body: { separado } },
+      { method: "PATCH", body: { separado } },
     );
   },
 
   /** App do motorista: as viagens dele (agendadas e em rota). */
   async listarMinhasEntregas(signal?: AbortSignal): Promise<Entrega[]> {
-    return request<Entrega[]>('/api/minhas-entregas', { signal });
+    return request<Entrega[]>("/api/minhas-entregas", { signal });
   },
 
   /** Fase 3: lista de motoristas (logística atribui). */
   async listarMotoristas(signal?: AbortSignal): Promise<MotoristaResumo[]> {
-    return request<MotoristaResumo[]>('/api/motoristas', { signal });
+    return request<MotoristaResumo[]>("/api/motoristas", { signal });
   },
 
   /** Propriedades de um cliente (para escolha na transição de agendamento). */
@@ -378,12 +446,12 @@ export const api = {
 
   /** Configuração pública (status gatilho, templates). */
   async config(signal?: AbortSignal): Promise<ConfigResponse> {
-    return request<ConfigResponse>('/api/config', { signal });
+    return request<ConfigResponse>("/api/config", { signal });
   },
 
   /** Última sincronização com o Órix (heartbeat do worker de poll). */
   async statusSync(signal?: AbortSignal): Promise<SyncStatusResponse> {
-    return request<SyncStatusResponse>('/api/sync', { signal });
+    return request<SyncStatusResponse>("/api/sync", { signal });
   },
 
   /**
@@ -397,11 +465,11 @@ export const api = {
     signal?: AbortSignal,
   ): Promise<PrevisaoClima> {
     const params = new URLSearchParams();
-    if (data) params.set('data', data);
-    if (propriedadeCodigo) params.set('propriedadeCodigo', propriedadeCodigo);
+    if (data) params.set("data", data);
+    if (propriedadeCodigo) params.set("propriedadeCodigo", propriedadeCodigo);
     const qs = params.toString();
     return request<PrevisaoClima>(
-      `/api/clima/pedido/${encodeURIComponent(pedidoId)}${qs ? `?${qs}` : ''}`,
+      `/api/clima/pedido/${encodeURIComponent(pedidoId)}${qs ? `?${qs}` : ""}`,
       { signal },
     );
   },
@@ -412,7 +480,7 @@ export const api = {
     signal?: AbortSignal,
   ): Promise<Record<string, PrevisaoClima | null>> {
     if (pedidoIds.length === 0) return {};
-    const qs = `?pedidos=${encodeURIComponent(pedidoIds.join(','))}`;
+    const qs = `?pedidos=${encodeURIComponent(pedidoIds.join(","))}`;
     return request<Record<string, PrevisaoClima | null>>(`/api/clima${qs}`, {
       signal,
     });
@@ -420,12 +488,12 @@ export const api = {
 
   /** Frota: lista os caminhões (leitura liberada; escrita só logística). */
   async listarCaminhoes(signal?: AbortSignal): Promise<Caminhao[]> {
-    return request<Caminhao[]>('/api/caminhoes', { signal });
+    return request<Caminhao[]>("/api/caminhoes", { signal });
   },
 
   /** Frota: cadastra um caminhão. */
   async criarCaminhao(body: CriarCaminhaoRequest): Promise<Caminhao> {
-    return request<Caminhao>('/api/caminhoes', { method: 'POST', body });
+    return request<Caminhao>("/api/caminhoes", { method: "POST", body });
   },
 
   /** Frota: atualiza nome, placa, capacidade ou o flag de ativo. */
@@ -434,7 +502,7 @@ export const api = {
     body: AtualizarCaminhaoRequest,
   ): Promise<Caminhao> {
     return request<Caminhao>(`/api/caminhoes/${encodeURIComponent(id)}`, {
-      method: 'PATCH',
+      method: "PATCH",
       body,
     });
   },
@@ -449,15 +517,15 @@ export const api = {
     signal?: AbortSignal,
   ): Promise<MotivoNaoEntrega[]> {
     return request<MotivoNaoEntrega[]>(
-      `/api/motivos${todos ? '?todos=1' : ''}`,
+      `/api/motivos${todos ? "?todos=1" : ""}`,
       { signal },
     );
   },
 
   /** Cadastra um motivo de não entrega (somente logística). */
   async criarMotivo(descricao: string): Promise<MotivoNaoEntrega> {
-    return request<MotivoNaoEntrega>('/api/motivos', {
-      method: 'POST',
+    return request<MotivoNaoEntrega>("/api/motivos", {
+      method: "POST",
       body: { descricao },
     });
   },
@@ -468,7 +536,7 @@ export const api = {
     body: { descricao?: string; ativo?: boolean; ordem?: number },
   ): Promise<MotivoNaoEntrega> {
     return request<MotivoNaoEntrega>(`/api/motivos/${encodeURIComponent(id)}`, {
-      method: 'PATCH',
+      method: "PATCH",
       body,
     });
   },
@@ -483,7 +551,7 @@ export const api = {
   ): Promise<PesoProduto> {
     return request<PesoProduto>(
       `/api/produtos/${encodeURIComponent(produtoCodigo)}/peso`,
-      { method: 'PUT', body: { pesoKg } },
+      { method: "PUT", body: { pesoKg } },
     );
   },
 
@@ -499,15 +567,15 @@ export const api = {
 
   /** Administração: lista todos os usuários do sistema (somente logística). */
   async listarUsuarios(signal?: AbortSignal): Promise<UsuarioAdmin[]> {
-    return request<UsuarioAdmin[]>('/api/usuarios', { signal });
+    return request<UsuarioAdmin[]>("/api/usuarios", { signal });
   },
 
   /** Administração: gera o link de acesso de um novo usuário (não envia e-mail). */
   async convidarUsuario(
     body: ConviteUsuarioRequest,
   ): Promise<ConviteUsuarioResposta> {
-    return request<ConviteUsuarioResposta>('/api/usuarios/convite', {
-      method: 'POST',
+    return request<ConviteUsuarioResposta>("/api/usuarios/convite", {
+      method: "POST",
       body,
     });
   },
@@ -518,7 +586,7 @@ export const api = {
     body: AtualizarUsuarioRequest,
   ): Promise<UsuarioAdmin> {
     return request<UsuarioAdmin>(`/api/usuarios/${encodeURIComponent(id)}`, {
-      method: 'PATCH',
+      method: "PATCH",
       body,
     });
   },
@@ -530,7 +598,7 @@ export const api = {
   ): Promise<UsuarioAdmin> {
     return request<UsuarioAdmin>(
       `/api/usuarios/${encodeURIComponent(id)}/status`,
-      { method: 'PATCH', body: { ativo } },
+      { method: "PATCH", body: { ativo } },
     );
   },
 
@@ -538,7 +606,7 @@ export const api = {
   async regenerarLink(id: string): Promise<LinkAcessoResposta> {
     return request<LinkAcessoResposta>(
       `/api/usuarios/${encodeURIComponent(id)}/link`,
-      { method: 'POST' },
+      { method: "POST" },
     );
   },
 
@@ -561,14 +629,14 @@ export const api = {
   async confirmarLinkAcesso(token: string): Promise<AcessoConfirmadoResposta> {
     return request<AcessoConfirmadoResposta>(
       `/api/acesso/${encodeURIComponent(token)}`,
-      { method: 'POST' },
+      { method: "POST" },
     );
   },
 
   /** Encerra o próprio link de acesso, depois que a senha foi criada. */
   async concluirAcesso(): Promise<void> {
-    await request<void>('/api/usuarios/eu/acesso-concluido', {
-      method: 'POST',
+    await request<void>("/api/usuarios/eu/acesso-concluido", {
+      method: "POST",
     });
   },
 };
