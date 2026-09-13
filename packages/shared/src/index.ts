@@ -15,6 +15,7 @@ export * from './capacidade-caminhao.js';
 export * from './quadro-agendada.js';
 export * from './periodo-agenda.js';
 export * from './vagas-agenda.js';
+export * from './busca-texto.js';
 export * from './rota-ordem.js';
 export * from './separacao.js';
 export * from './reconciliacao.js';

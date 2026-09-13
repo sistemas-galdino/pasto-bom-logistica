@@ -204,6 +204,15 @@ export interface VisaoSemanaProps {
    * (não desenha cartão nenhum) e as páginas só buscam nas visões que mostram.
    */
   climaPorPedido?: Record<string, PrevisaoClima | null>;
+  /**
+   * Faixa de vagas no cabeçalho do dia. OPCIONAL: a /agenda não passa e a semana
+   * dela renderiza exatamente como sempre renderizou.
+   *
+   * É `render` e não uma prop de dados porque as vagas dependem da frota, dos
+   * tetos e de quem está olhando (o vendedor vê o número, não o botão) — coisas
+   * que a visão não tem por que conhecer. Assim a semana continua sem estado.
+   */
+  renderVagas?: (dataIso: string) => React.ReactNode;
 }
 
 export function VisaoSemana({
@@ -212,6 +221,7 @@ export function VisaoSemana({
   porSlot,
   onAbrir,
   climaPorPedido,
+  renderVagas,
 }: VisaoSemanaProps): React.ReactElement {
   return (
     <div className="overflow-x-auto">
@@ -237,6 +247,7 @@ export function VisaoSemana({
                 >
                   {d.getDate()}
                 </p>
+                {renderVagas?.(iso)}
               </div>
             );
           })}

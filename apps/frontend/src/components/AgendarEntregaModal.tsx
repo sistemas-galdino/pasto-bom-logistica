@@ -38,11 +38,14 @@ import {
   avaliarCapacidade,
   avaliarLimiteEntregas,
   avaliarPesoAgendamento,
+  intervaloDaVisao,
+  ocupacaoDoCaminhaoNoDia,
   pesoDaCarga,
   validarQuantidades,
 } from '@pastobom/shared';
 import { api } from '../lib/api';
 import { ClimaResumo } from './ClimaResumo';
+import { MiniSemanaCaminhao } from './agenda/MiniSemanaCaminhao';
 import { SeletorSlot } from './SeletorSlot';
 
 interface Props {
@@ -50,6 +53,22 @@ interface Props {
   saldo: SaldoItem[];
   enviando: boolean;
   erro: string | null;
+  /**
+   * Slot já escolhido, quando o modal foi aberto por uma VAGA da tela de
+   * Agendamento: quem clicou em "quinta de manhã no Cargo 816" não deve ter de
+   * redigitar as três coisas.
+   *
+   * Aplicado nos INICIALIZADORES de `useState`, sem `useEffect`. Isso vale
+   * porque o modal é montado e desmontado a cada abertura (o pai renderiza
+   * `{agendando && <AgendarEntregaModal .../>}`). Quem um dia mantiver este
+   * modal montado trocando o `slotInicial` precisa dar a ele uma `key` — senão
+   * o segundo slot é ignorado em silêncio.
+   */
+  slotInicial?: {
+    data: string;
+    periodo: PeriodoEntrega;
+    caminhaoId?: string;
+  };
   onCancelar: () => void;
   onConfirmar: (dados: {
     dataAgendada: string;
@@ -104,16 +123,19 @@ export function AgendarEntregaModal({
   saldo,
   enviando,
   erro,
+  slotInicial,
   onCancelar,
   onConfirmar,
 }: Props): React.ReactElement {
   // Só o que ainda tem o que entregar entra na tela; item zerado já foi.
   const comSaldo = useMemo(() => saldo.filter((s) => s.qtdSaldo > 0), [saldo]);
 
-  const [data, setData] = useState(hojeISO());
-  const [periodo, setPeriodo] = useState<PeriodoEntrega>('manha');
+  const [data, setData] = useState(slotInicial?.data ?? hojeISO());
+  const [periodo, setPeriodo] = useState<PeriodoEntrega>(
+    slotInicial?.periodo ?? 'manha',
+  );
   const [motoristaId, setMotoristaId] = useState('');
-  const [caminhaoId, setCaminhaoId] = useState('');
+  const [caminhaoId, setCaminhaoId] = useState(slotInicial?.caminhaoId ?? '');
   const [propriedadeCodigo, setPropriedadeCodigo] = useState(
     pedido.propriedadeCodigo ?? '',
   );
@@ -201,10 +223,32 @@ export function AgendarEntregaModal({
   // A janela é o dia inteiro (de = ate) porque os dois números têm escopos
   // diferentes: a tonelagem é por SLOT (dia x turno) e o teto de entregas é por
   // DIA, somando manhã e tarde.
+  /**
+   * A SEMANA do dia escolhido, e não só o dia.
+   *
+   * Duas razões: a mini-agenda abaixo mostra a semana do caminhão (pedido dela
+   * na reunião de 27/08 — "ao escolher o caminhão, mostrar a agenda daquele
+   * caminhão, ao menos a semana"), e a chave passa a ser a MESMA da visão de
+   * semana, então quem clicou numa vaga na tela de Agendamento abre este modal
+   * com o cache quente.
+   *
+   * `intervaloDaVisao` LANÇA em data impossível — e o campo é um <input
+   * type="date"> em que dá para digitar 31/02. Por isso o try.
+   */
+  const semana = useMemo(() => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) return null;
+    try {
+      return intervaloDaVisao('semana', data);
+    } catch {
+      return null;
+    }
+  }, [data]);
+
   const diaQuery = useQuery({
-    queryKey: ['agenda', data, data],
-    queryFn: ({ signal }) => api.agenda(data, data, signal),
-    enabled: data !== '',
+    queryKey: ['agenda', semana?.inicio ?? '', semana?.fim ?? ''],
+    queryFn: ({ signal }) =>
+      api.agenda(semana?.inicio ?? '', semana?.fim ?? '', signal),
+    enabled: semana !== null,
   });
 
   const limitesQuery = useQuery({
@@ -237,20 +281,26 @@ export function AgendarEntregaModal({
     staleTime: 30 * 60 * 1000,
   });
 
-  /** Ocupação do caminhão escolhido: kg no turno e nº de entregas no dia. */
-  const ocupacaoAtual = useMemo(() => {
-    const slots = diaQuery.data?.slots ?? [];
-    let usadoKgNoSlot = 0;
-    let entregasNoDia = 0;
-    for (const slot of slots) {
-      for (const o of slot.ocupacao) {
-        if (o.caminhaoId !== caminhaoId) continue;
-        entregasNoDia += o.entregas;
-        if (slot.periodo === periodo) usadoKgNoSlot += o.usadoKg;
-      }
-    }
-    return { usadoKgNoSlot, entregasNoDia };
-  }, [diaQuery.data, caminhaoId, periodo]);
+  /**
+   * Ocupação do caminhão escolhido: kg no turno e nº de entregas NO DIA.
+   *
+   * A REGRESSÃO QUE ESTA LINHA EVITA: isto já foi um laço aqui dentro que
+   * somava `o.entregas` de TODOS os slots da resposta. Enquanto a consulta era
+   * de um dia só (de = ate) dava no mesmo; agora que ela traz a semana, somar
+   * tudo faria `entregasNoDia` virar "entregas na semana" e o teto começaria a
+   * recusar agendamento legítimo, em silêncio, com uma mensagem que parece
+   * correta. `ocupacaoDoCaminhaoNoDia` filtra por `slot.data`, e existe um
+   * teste no shared só para isso.
+   */
+  const ocupacaoAtual = useMemo(
+    () =>
+      ocupacaoDoCaminhaoNoDia(diaQuery.data?.slots ?? [], {
+        data,
+        caminhaoId,
+        periodo,
+      }),
+    [diaQuery.data, data, caminhaoId, periodo],
+  );
 
   // Como o caminhão fica com esta viagem dentro. A MESMA função que a agenda
   // usa para pintar as barras — desde 27/08/2026 esta comparação é a informação
@@ -599,6 +649,24 @@ export function AgendarEntregaModal({
             </label>
           )}
         </SeletorSlot>
+
+        {/* A SEMANA DO CAMINHÃO, quando já se sabe qual é. Pedido dela:
+            "ao escolher o caminhão, mostrar a agenda daquele caminhão, ao menos
+            a semana" — para não empilhar tudo na terça com a quinta vazia.
+            Os slots vão INTEIROS: quem filtra por caminhão é a regra pura, e
+            filtrar antes esconderia justamente os dias livres. */}
+        {caminhaoId !== '' && semana !== null && (
+          <div className="mt-3">
+            <MiniSemanaCaminhao
+              dias={semana.dias}
+              slots={diaQuery.data?.slots ?? []}
+              limites={diaQuery.data?.limites ?? []}
+              caminhaoId={caminhaoId}
+              dataEscolhida={data}
+              carregando={diaQuery.isLoading}
+            />
+          </div>
+        )}
 
         {/* Fora do SeletorSlot de propósito: o cabeçalho dele diz que ali só
             moram os CAMPOS do slot, e ele é compartilhado com a reserva de

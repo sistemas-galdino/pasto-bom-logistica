@@ -32,6 +32,7 @@ import type {
 } from '@pastobom/shared';
 import { ordenarCartoesAgendada } from '@pastobom/shared';
 import { api, ApiError } from '../lib/api';
+import { invalidarAgendamento } from '../lib/cache';
 import {
   agruparEntregasPorPedido,
   isoMenosDias,
@@ -192,13 +193,11 @@ export function Board(): React.ReactElement {
     refetchInterval: 60_000,
   });
 
+  // As quatro chaves que um agendamento mexe, em lib/cache.ts: a tela de
+  // Agendamento invalida exatamente as mesmas, e esquecer uma delas num dos
+  // lados não daria erro nenhum — só deixaria o calendário mentindo.
   function invalidarTudo(): void {
-    void queryClient.invalidateQueries({ queryKey: ['pedidos'] });
-    void queryClient.invalidateQueries({ queryKey: ['entregas'] });
-    void queryClient.invalidateQueries({ queryKey: ['agenda'] });
-    // A reserva ocupa (ou libera) o caminhão, e é isso que a agenda e as
-    // entregas mostram como capacidade — as três precisam cair juntas.
-    void queryClient.invalidateQueries({ queryKey: ['reservas'] });
+    invalidarAgendamento(queryClient);
   }
 
   // --- mutações -------------------------------------------------------------
