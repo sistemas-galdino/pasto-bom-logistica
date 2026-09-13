@@ -39,6 +39,7 @@ import {
 import type { Entrega, PeriodoEntrega } from '@pastobom/shared';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../auth/AuthProvider';
+import { pilulaFiltro } from '../lib/pilula';
 import { addDias, capitalizar, hojeLocal, isoDeData } from '../lib/datas';
 import { ConfirmacaoModal } from '../components/ConfirmacaoModal';
 import { rotuloAcaoEntrega } from '../components/status';
@@ -292,13 +293,6 @@ export default function Separacao(): React.ReactElement {
         : 'border border-linha bg-papel text-tinta-suave hover:border-mata/30 hover:text-mata'
     }`;
 
-  const pilulaCaminhao = (ativo: boolean) =>
-    `rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-      ativo
-        ? 'border-mata bg-mata text-creme-50 shadow-carta'
-        : 'border-linha bg-papel text-tinta-suave hover:border-mata/30 hover:text-mata'
-    }`;
-
   if (!podeSeparar) {
     return (
       <div className="flex h-full items-center justify-center p-6">
@@ -471,7 +465,7 @@ export default function Separacao(): React.ReactElement {
                   type="button"
                   onClick={() => escolherCaminhao(null)}
                   aria-pressed={caminhaoAtivo === null}
-                  className={pilulaCaminhao(caminhaoAtivo === null)}
+                  className={pilulaFiltro(caminhaoAtivo === null)}
                 >
                   Todos os caminhões ({totalSelecao})
                 </button>
@@ -481,7 +475,7 @@ export default function Separacao(): React.ReactElement {
                     type="button"
                     onClick={() => escolherCaminhao(nome)}
                     aria-pressed={caminhaoAtivo === nome}
-                    className={pilulaCaminhao(caminhaoAtivo === nome)}
+                    className={pilulaFiltro(caminhaoAtivo === nome)}
                   >
                     {nome} ({qtde})
                   </button>

@@ -20,6 +20,7 @@ import { AppShell } from './components/layout/AppShell';
 import { Board } from './pages/Board';
 import { Dashboard } from './pages/Dashboard';
 import Agenda from './pages/Agenda';
+import Agendamento from './pages/Agendamento';
 import Caminhoes from './pages/Caminhoes';
 import { Rotas } from './pages/Rotas';
 import Separacao from './pages/Separacao';
@@ -134,6 +135,11 @@ export function App(): React.ReactElement {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/entregas" element={<Board />} />
               <Route path="/agenda" element={<Agenda />} />
+              {/* SEM SomenteLogistica: o backend já libera GET /agenda a
+                  logística, almoxarifado e vendedor, e recusa escrita de quem
+                  não é logística. O vendedor precisa ver — é o motivo de a tela
+                  existir. */}
+              <Route path="/agendamento" element={<Agendamento />} />
               {/* A própria página barra quem não pode separar (logística e
                   almoxarifado passam); a Sidebar já esconde o item dos demais. */}
               <Route path="/separacao" element={<Separacao />} />

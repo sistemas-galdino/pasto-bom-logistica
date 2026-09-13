@@ -4,6 +4,7 @@
 
 import {
   CalendarDays,
+  CalendarPlus,
   ClipboardList,
   LayoutDashboard,
   Package,
@@ -56,6 +57,12 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     titulo: 'Operações',
     itens: [
+      // Primeiro da lista porque é o começo do processo — e sem `papeis` DE
+      // PROPÓSITO: o vendedor precisa ver a agenda do caminhão para responder
+      // ao cliente ("ele não sabe se aquele caminhão está disponível"). O
+      // backend é que recusa ESCRITA de quem não é logística; a tela só esconde
+      // o botão que não adiantaria oferecer.
+      { rotulo: 'Agendamento', to: '/agendamento', icone: CalendarPlus },
       {
         rotulo: 'Separação',
         to: '/separacao',
@@ -92,11 +99,16 @@ export const ROTAS_META: Record<string, RotaMeta> = {
     subtitulo: 'Acompanhamento do fim do processo',
   },
   '/agenda': { titulo: 'Agenda', subtitulo: 'Entregas por dia e período' },
+  // O lookup da Topbar é EXATO: sem esta entrada o cabeçalho cai no genérico.
+  '/agendamento': {
+    titulo: 'Agendamento',
+    subtitulo: 'Agenda do caminhão e vagas do dia',
+  },
   '/separacao': {
     titulo: 'Separação',
     subtitulo: 'O que separar no dia, por período',
   },
-  '/rotas': { titulo: 'Rota', subtitulo: 'Pedidos em rota por motorista' },
+  '/rotas': { titulo: 'Rota', subtitulo: 'Quem está na estrada agora' },
   '/motoristas': { titulo: 'Motoristas', subtitulo: 'Equipe e cargas em rota' },
   '/caminhoes': { titulo: 'Caminhões', subtitulo: 'Frota e capacidade de carga' },
   '/usuarios': { titulo: 'Usuários', subtitulo: 'Acessos e papéis da equipe' },

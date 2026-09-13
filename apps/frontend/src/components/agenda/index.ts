@@ -19,3 +19,5 @@ export { VisaoDia, VisaoMes, VisaoSemana } from './Visoes';
 export type { VisaoDiaProps, VisaoMesProps, VisaoSemanaProps } from './Visoes';
 export { chaveSlot, PERIODO_ROTULO, PERIODOS } from './slots';
 export type { Visao } from './slots';
+export { intervaloParaTela, tituloDoPeriodo } from './periodo';
+export type { IntervaloDesenhavel } from './periodo';

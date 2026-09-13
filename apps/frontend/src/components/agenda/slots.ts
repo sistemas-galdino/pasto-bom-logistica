@@ -7,10 +7,16 @@
 // precisam da função. Ela mora aqui, e a página importa DAQUI — assim existe uma
 // única definição de chave, e não duas que podem divergir em silêncio.
 
-import type { PeriodoEntrega } from '@pastobom/shared';
+import type { PeriodoEntrega, VisaoAgenda } from '@pastobom/shared';
 
-/** Visões do calendário. */
-export type Visao = 'mes' | 'semana' | 'dia';
+/**
+ * Visões do calendário.
+ *
+ * ALIAS do tipo do shared, e não uma segunda união escrita à mão: quem calcula
+ * o intervalo de cada visão é `intervaloDaVisao` (packages/shared), e duas
+ * uniões com os mesmos três valores só existem para, um dia, discordarem.
+ */
+export type Visao = VisaoAgenda;
 
 export const PERIODOS: PeriodoEntrega[] = ['manha', 'tarde'];
 

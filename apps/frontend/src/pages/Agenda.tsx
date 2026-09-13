@@ -23,88 +23,27 @@ import { api } from '../lib/api';
 import { EntregaDetalheModal } from '../components/EntregaDetalheModal';
 import {
   chaveSlot,
+  intervaloParaTela,
   NavegadorPeriodo,
+  tituloDoPeriodo,
   VisaoDia,
   VisaoMes,
   VisaoSemana,
 } from '../components/agenda';
 import type { Visao } from '../components/agenda';
-import {
-  addDias,
-  addMeses,
-  capitalizar,
-  hojeLocal,
-  inicioDaSemana,
-  isoDeData,
-} from '../lib/datas';
-
-// --- datas (sempre locais; nunca `new Date('YYYY-MM-DD')`) -----------------
-
-interface Intervalo {
-  inicio: Date;
-  fim: Date;
-  dias: Date[];
-}
-
-function intervaloDaVisao(visao: Visao, ancora: Date): Intervalo {
-  if (visao === 'dia') {
-    return { inicio: ancora, fim: ancora, dias: [ancora] };
-  }
-
-  let inicio: Date;
-  let fim: Date;
-  if (visao === 'semana') {
-    inicio = inicioDaSemana(ancora);
-    fim = addDias(inicio, 6);
-  } else {
-    const primeiro = new Date(ancora.getFullYear(), ancora.getMonth(), 1);
-    const ultimo = new Date(ancora.getFullYear(), ancora.getMonth() + 1, 0);
-    inicio = inicioDaSemana(primeiro);
-    fim = addDias(inicioDaSemana(ultimo), 6);
-  }
-
-  const dias: Date[] = [];
-  for (let d = inicio; d <= fim; d = addDias(d, 1)) {
-    dias.push(d);
-  }
-  return { inicio, fim, dias };
-}
-
-function tituloDoPeriodo(
-  visao: Visao,
-  intervalo: Intervalo,
-  ancora: Date,
-): string {
-  if (visao === 'dia') {
-    return capitalizar(
-      ancora.toLocaleDateString('pt-BR', {
-        weekday: 'long',
-        day: '2-digit',
-        month: 'long',
-        year: 'numeric',
-      }),
-    );
-  }
-  if (visao === 'semana') {
-    const curto = (d: Date) =>
-      d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-    return `${curto(intervalo.inicio)} – ${curto(intervalo.fim)} de ${intervalo.fim.getFullYear()}`;
-  }
-  return capitalizar(
-    ancora.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
-  );
-}
+import { addDias, addMeses, hojeLocal, isoDeData } from '../lib/datas';
 
 export default function Agenda(): React.ReactElement {
   const [visao, setVisao] = useState<Visao>('semana');
   const [ancora, setAncora] = useState<Date>(() => hojeLocal());
 
+  const ancoraIso = isoDeData(ancora);
   const intervalo = useMemo(
-    () => intervaloDaVisao(visao, ancora),
-    [visao, ancora],
+    () => intervaloParaTela(visao, ancoraIso),
+    [visao, ancoraIso],
   );
-  const de = isoDeData(intervalo.inicio);
-  const ate = isoDeData(intervalo.fim);
+  const de = intervalo.inicio;
+  const ate = intervalo.fim;
 
   // Viagem cujo detalhe está aberto. A busca é sob demanda, dentro do modal.
   const [detalheId, setDetalheId] = useState<string | null>(null);
@@ -166,7 +105,7 @@ export default function Agenda(): React.ReactElement {
   );
 
   const isoHoje = isoDeData(hojeLocal());
-  const titulo = tituloDoPeriodo(visao, intervalo, ancora);
+  const titulo = tituloDoPeriodo(visao, intervalo, ancoraIso);
 
   function navegar(passo: -1 | 1) {
     if (visao === 'dia') setAncora((a) => addDias(a, passo));
@@ -225,7 +164,7 @@ export default function Agenda(): React.ReactElement {
 
             {visao === 'mes' && (
               <VisaoMes
-                dias={intervalo.dias}
+                dias={intervalo.diasData}
                 mesAtual={ancora.getMonth()}
                 isoHoje={isoHoje}
                 porSlot={porSlot}
@@ -234,7 +173,7 @@ export default function Agenda(): React.ReactElement {
 
             {visao === 'semana' && (
               <VisaoSemana
-                dias={intervalo.dias}
+                dias={intervalo.diasData}
                 isoHoje={isoHoje}
                 porSlot={porSlot}
                 onAbrir={setDetalheId}
