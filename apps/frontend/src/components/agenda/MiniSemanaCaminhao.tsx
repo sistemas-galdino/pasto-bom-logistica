@@ -14,10 +14,9 @@
 // o de tornar a visão de semana responsiva a um contexto que ela não tem.
 
 import React from 'react';
-import { vagasDoDia } from '@pastobom/shared';
+import { ocupacaoDoCaminhaoNoDia, vagasDoDia } from '@pastobom/shared';
 import type { AgendaLimite, AgendaSlot } from '@pastobom/shared';
 import { DIAS_CURTOS, dataDeIso } from '../../lib/datas';
-import { ocupacaoDoCaminhaoNoDia } from '@pastobom/shared';
 
 export interface MiniSemanaCaminhaoProps {
   /** Os 7 dias (ISO) da semana mostrada. */

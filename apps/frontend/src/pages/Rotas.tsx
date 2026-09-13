@@ -20,7 +20,6 @@ import { ordenarParadas } from '@pastobom/shared';
 import type { Entrega } from '@pastobom/shared';
 import { api } from '../lib/api';
 import { EntregaCard } from '../components/EntregaCard';
-import { EntregaDetalheModal } from '../components/EntregaDetalheModal';
 import { pilulaFiltro } from '../lib/pilula';
 
 // ---------------------------------------------------------------------------

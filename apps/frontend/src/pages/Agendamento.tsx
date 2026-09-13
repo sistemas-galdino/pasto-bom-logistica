@@ -201,6 +201,17 @@ export default function Agendamento(): React.ReactElement {
   const nomeDoCaminhao = (id: string): string =>
     caminhoes.find((c) => c.id === id)?.nome || 'Caminhão';
 
+  // Memorizado porque a FaixaVagas recalcula as vagas quando a lista muda de
+  // identidade — e um `.filter()` no meio do JSX cria um array novo por render,
+  // sete vezes por semana desenhada.
+  const caminhoesDaFaixa = useMemo(
+    () =>
+      filtroAtivo === null
+        ? caminhoes
+        : caminhoes.filter((c) => c.id === filtroAtivo),
+    [caminhoes, filtroAtivo],
+  );
+
   /**
    * A faixa de vagas de um dia.
    *
@@ -218,11 +229,7 @@ export default function Agendamento(): React.ReactElement {
         data={dataIso}
         slots={slots}
         limites={agendaQuery.data?.limites ?? []}
-        caminhoes={
-          filtroAtivo === null
-            ? caminhoes
-            : caminhoes.filter((c) => c.id === filtroAtivo)
-        }
+        caminhoes={caminhoesDaFaixa}
         variante={variante}
         // Passado não recebe convite: ninguém agenda para trás, e a pílula ali
         // só produziria um 422 (ou, pior, uma viagem marcada para ontem).
