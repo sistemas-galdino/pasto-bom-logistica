@@ -31,13 +31,17 @@ import {
   PackageCheck,
   Printer,
   Truck,
+  TruckIcon,
   User,
   Undo2,
+  X,
 } from 'lucide-react';
 import type { Entrega, PeriodoEntrega } from '@pastobom/shared';
-import { api } from '../lib/api';
+import { api, ApiError } from '../lib/api';
 import { useAuth } from '../auth/AuthProvider';
 import { addDias, capitalizar, hojeLocal, isoDeData } from '../lib/datas';
+import { ConfirmacaoModal } from '../components/ConfirmacaoModal';
+import { rotuloAcaoEntrega } from '../components/status';
 
 /**
  * Grupos exibidos. 'sem' cobre o pedido agendado sem turno definido; 'atrasado'
@@ -109,7 +113,7 @@ function estaSeparado(entrega: Entrega): boolean {
 // --- página -----------------------------------------------------------------
 
 export default function Separacao(): React.ReactElement {
-  const { podeSeparar } = useAuth();
+  const { podeSeparar, podeEscrever } = useAuth();
   const queryClient = useQueryClient();
 
   const [selecao, setSelecao] = useState<Selecao>(() => ({
@@ -119,6 +123,25 @@ export default function Separacao(): React.ReactElement {
   // null = "Todos os caminhões". Guarda o NOME do caminhão (ou SEM_CAMINHAO).
   const [caminhao, setCaminhao] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  // Viagem esperando confirmação de "pôr em rota" (pedido dela: "aí ele já
+  // separou naquela mesma tela, ele já consegue pôr em rota").
+  const [emRota, setEmRota] = useState<Entrega | null>(null);
+  const [erroEmRota, setErroEmRota] = useState<string | null>(null);
+  // Última viagem que saiu daqui. A lista é `status: ['agendada']`, então o
+  // cartão SOME no sucesso — sumir logo depois de um "OK" que também some é
+  // desorientador. Esta faixa diz para onde ele foi.
+  const [saiuEmRota, setSaiuEmRota] = useState<string | null>(null);
+
+  // Trocar o dia ou o caminhão troca a lista inteira: a faixa passaria a falar
+  // de uma viagem que nem estava sendo mostrada. Some junto com o contexto.
+  function escolherSelecao(nova: Selecao): void {
+    setSelecao(nova);
+    setSaiuEmRota(null);
+  }
+  function escolherCaminhao(nome: string | null): void {
+    setCaminhao(nome);
+    setSaiuEmRota(null);
+  }
 
   const isoHoje = isoDeData(hojeLocal());
   const isoAmanha = isoDeData(addDias(hojeLocal(), 1));
@@ -155,6 +178,30 @@ export default function Separacao(): React.ReactElement {
       api.definirSeparacaoEntrega(v.pedidoId, v.separado),
     onSuccess: aoConcluir,
     onError: aoFalhar,
+  });
+
+  const emRotaMut = useMutation({
+    mutationFn: (entregaId: string) =>
+      api.transicionarEntrega(entregaId, { para: 'em_rota' }),
+    onSuccess: async () => {
+      setSaiuEmRota(emRota?.clienteNome || emRota?.orixNumero || 'A viagem');
+      setEmRota(null);
+      setErroEmRota(null);
+      // Além de entregas/pedidos: a viagem sai de 'agendada', e a agenda e a
+      // ocupação dos caminhões mostram isso. Sem invalidar as quatro, o
+      // calendário segue dizendo que a carga está esperando no galpão.
+      await queryClient.invalidateQueries({ queryKey: ['entregas'] });
+      await queryClient.invalidateQueries({ queryKey: ['pedidos'] });
+      await queryClient.invalidateQueries({ queryKey: ['agenda'] });
+      await queryClient.invalidateQueries({ queryKey: ['reservas'] });
+    },
+    onError: (e: unknown) => {
+      setErroEmRota(
+        e instanceof ApiError || e instanceof Error
+          ? e.message
+          : 'Não foi possível pôr em rota.',
+      );
+    },
   });
 
   // O que a seleção atual traz, ANTES do filtro de caminhão (é desta lista que
@@ -282,21 +329,21 @@ export default function Separacao(): React.ReactElement {
               type="date"
               value={selecao.tipo === 'dia' ? selecao.iso : ''}
               onChange={(e) =>
-                setSelecao({ tipo: 'dia', iso: e.target.value || isoHoje })
+                escolherSelecao({ tipo: 'dia', iso: e.target.value || isoHoje })
               }
               aria-label="Dia da separação"
               className="rounded-lg border border-linha bg-papel px-2.5 py-1.5 text-xs font-semibold text-tinta outline-none transition focus:border-mata/40"
             />
             <button
               type="button"
-              onClick={() => setSelecao({ tipo: 'dia', iso: isoHoje })}
+              onClick={() => escolherSelecao({ tipo: 'dia', iso: isoHoje })}
               className={botaoDia(selecao.tipo === 'dia' && selecao.iso === isoHoje)}
             >
               Hoje
             </button>
             <button
               type="button"
-              onClick={() => setSelecao({ tipo: 'dia', iso: isoAmanha })}
+              onClick={() => escolherSelecao({ tipo: 'dia', iso: isoAmanha })}
               className={botaoDia(
                 selecao.tipo === 'dia' && selecao.iso === isoAmanha,
               )}
@@ -306,7 +353,7 @@ export default function Separacao(): React.ReactElement {
             {/* Agendado para trás não some da fila: continua para separar. */}
             <button
               type="button"
-              onClick={() => setSelecao({ tipo: 'atrasados' })}
+              onClick={() => escolherSelecao({ tipo: 'atrasados' })}
               title="Pedidos agendados para dias que já passaram e ainda não saíram"
               className={botaoDia(selecao.tipo === 'atrasados')}
             >
@@ -392,6 +439,26 @@ export default function Separacao(): React.ReactElement {
               </div>
             )}
 
+            {/* Para onde o cartão foi. A lista é `status: ['agendada']`, então
+                a viagem some no sucesso — sumir logo depois de um "OK" que
+                também some deixaria a pessoa procurando o que ela mesma fez. */}
+            {saiuEmRota && (
+              <div className="flex items-start justify-between gap-3 rounded-xl2 border border-folha/40 bg-mata-claro px-4 py-2.5 text-sm text-mata-escuro">
+                <span>
+                  <strong className="font-semibold">{saiuEmRota}</strong> saiu
+                  para entrega e deixou esta lista.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSaiuEmRota(null)}
+                  aria-label="Fechar aviso"
+                  className="shrink-0 rounded p-0.5 text-mata-escuro/70 hover:text-mata-escuro"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
             {/* Filtro por caminhão: quem carrega o 1620 quer ver só o 1620.
                 Só aparece quando há mais de um caminhão para escolher. */}
             {caminhoes.length > 1 && (
@@ -402,7 +469,7 @@ export default function Separacao(): React.ReactElement {
               >
                 <button
                   type="button"
-                  onClick={() => setCaminhao(null)}
+                  onClick={() => escolherCaminhao(null)}
                   aria-pressed={caminhaoAtivo === null}
                   className={pilulaCaminhao(caminhaoAtivo === null)}
                 >
@@ -412,7 +479,7 @@ export default function Separacao(): React.ReactElement {
                   <button
                     key={nome}
                     type="button"
-                    onClick={() => setCaminhao(nome)}
+                    onClick={() => escolherCaminhao(nome)}
                     aria-pressed={caminhaoAtivo === nome}
                     className={pilulaCaminhao(caminhaoAtivo === nome)}
                   >
@@ -480,6 +547,14 @@ export default function Separacao(): React.ReactElement {
                             setErro(null);
                             pedidoMut.mutate({ pedidoId: pedido.id, separado });
                           }}
+                          onPorEmRota={
+                            podeEscrever
+                              ? () => {
+                                  setErroEmRota(null);
+                                  setEmRota(pedido);
+                                }
+                              : undefined
+                          }
                         />
                       ))}
                     </div>
@@ -490,6 +565,27 @@ export default function Separacao(): React.ReactElement {
           </div>
         )}
       </main>
+
+      {/* Confirma, e não clique direto, por duas razões que se somam: pôr em
+          rota MANDA WHATSAPP ao cliente (efeito externo e irreversível), e daqui
+          o cartão some da lista. A descrição diz quem consegue desfazer. */}
+      {emRota && (
+        <ConfirmacaoModal
+          titulo={rotuloAcaoEntrega('agendada', 'em_rota')}
+          subtitulo={`Pedido nº ${emRota.orixNumero || '—'} — ${
+            emRota.clienteNome || 'Cliente'
+          }`}
+          descricao="O cliente recebe a mensagem de que o pedido saiu para entrega, e a viagem deixa esta lista. Depois disso, só a logística consegue voltá-la para agendada."
+          rotuloConfirmar={rotuloAcaoEntrega('agendada', 'em_rota')}
+          enviando={emRotaMut.isPending}
+          erro={erroEmRota}
+          onConfirmar={() => emRotaMut.mutate(emRota.id)}
+          onCancelar={() => {
+            setEmRota(null);
+            setErroEmRota(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -503,6 +599,13 @@ interface CartaoProps {
   ocupado: boolean;
   onToggleItem: (itemId: string, separado: boolean) => void;
   onDefinirPedido: (separado: boolean) => void;
+  /**
+   * Ausente = sem o botão de despachar. Hoje isso é o papel `almoxarifado`:
+   * pôr em rota manda WhatsApp ao cliente e só a LOGÍSTICA consegue reverter
+   * (`reverterEntrega` devolve 403 para os demais), então dar o botão a quem
+   * não pode desfazer seria uma armadilha.
+   */
+  onPorEmRota?: () => void;
 }
 
 function CartaoSeparacao({
@@ -511,6 +614,7 @@ function CartaoSeparacao({
   ocupado,
   onToggleItem,
   onDefinirPedido,
+  onPorEmRota,
 }: CartaoProps): React.ReactElement {
   const tot = pedido.itens.length;
   const sep = pedido.itens.filter((i) => i.separado).length;
@@ -656,20 +760,38 @@ function CartaoSeparacao({
       {/* Ação */}
       <div className="mt-3.5">
         {completa ? (
-          <div className="flex items-center justify-between gap-3 rounded-lg bg-mata-claro px-3 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-mata-claro px-3 py-2">
             <span className="flex items-center gap-1.5 text-sm font-semibold text-mata-escuro">
               <Check className="h-4 w-4" aria-hidden="true" />
               Separado
             </span>
-            <button
-              type="button"
-              disabled={ocupado}
-              onClick={() => onDefinirPedido(false)}
-              className="flex items-center gap-1.5 rounded-lg border border-mata/30 bg-papel px-3 py-1.5 text-xs font-semibold text-mata-escuro transition hover:border-mata/60 disabled:opacity-60"
-            >
-              <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
-              Desfazer
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={ocupado}
+                onClick={() => onDefinirPedido(false)}
+                className="flex items-center gap-1.5 rounded-lg border border-mata/30 bg-papel px-3 py-1.5 text-xs font-semibold text-mata-escuro transition hover:border-mata/60 disabled:opacity-60"
+              >
+                <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
+                Desfazer
+              </button>
+              {/* Só no estado COMPLETO, e sem versão desabilitada no
+                  incompleto: ali a única ação certa é o botão largo "Dar OK na
+                  separação", e um segundo botão apagado ao lado só competiria
+                  com ele. O rótulo vem da fonte única de rótulos de transição —
+                  nada de digitar "Pôr em rota" numa terceira tela. */}
+              {onPorEmRota && (
+                <button
+                  type="button"
+                  disabled={ocupado}
+                  onClick={onPorEmRota}
+                  className="flex items-center gap-1.5 rounded-lg bg-mata px-3 py-1.5 text-xs font-bold text-creme-50 shadow-sm transition hover:bg-mata-escuro disabled:opacity-60"
+                >
+                  <TruckIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                  {rotuloAcaoEntrega('agendada', 'em_rota')}
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <button
