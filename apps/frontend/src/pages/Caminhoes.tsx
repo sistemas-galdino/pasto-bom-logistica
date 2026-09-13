@@ -6,10 +6,11 @@
 //
 // Não existe excluir: desativar preserva o histórico dos pedidos já entregues.
 //
-// LIMITE DE ENTREGAS/DIA: além da tonelagem, cada caminhão pode ter um teto de
-// QUANTIDADE de entregas por dia, cadastrado por janela de vigência. As duas
-// regras valem juntas — o teto não substitui a capacidade em toneladas. Quem
-// não tem janela cadastrada continua limitado só pela tonelagem.
+// LIMITE DE ENTREGAS/DIA: o teto de QUANTIDADE de entregas por dia, por janela
+// de vigência, é a ÚNICA regra que recusa agendamento. A capacidade em
+// toneladas continua cadastrada aqui e continua aparecendo na agenda — como
+// sinal, não como trava (decisão da Natália, 27/08/2026). Caminhão sem janela
+// cadastrada não tem limite nenhum, e por isso esta tela o marca.
 
 import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -375,7 +376,9 @@ function CaminhaoModal({
                 {edicao ? 'Editar caminhão' : 'Novo caminhão'}
               </h2>
               <p className="text-sm text-tinta-suave">
-                A capacidade limita a carga de cada período na agenda.
+                A capacidade aparece na agenda como o quanto o caminhão já
+                leva. Ela não recusa agendamento — quem recusa é o teto de
+                entregas por dia.
               </p>
             </div>
           </div>

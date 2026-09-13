@@ -35,6 +35,7 @@ import type {
   SaldoItem,
 } from '@pastobom/shared';
 import {
+  avaliarCapacidade,
   avaliarLimiteEntregas,
   avaliarPesoAgendamento,
   pesoDaCarga,
@@ -196,7 +197,7 @@ export function AgendarEntregaModal({
   // comparar o peso desta viagem contra a capacidade total, e um caminhão meio
   // cheio passava batido até o 422 do servidor.
   //
-  // A janela é o dia inteiro (de = ate) porque as duas regras têm escopos
+  // A janela é o dia inteiro (de = ate) porque os dois números têm escopos
   // diferentes: a tonelagem é por SLOT (dia x turno) e o teto de entregas é por
   // DIA, somando manhã e tarde.
   const diaQuery = useQuery({
@@ -226,13 +227,25 @@ export function AgendarEntregaModal({
     return { usadoKgNoSlot, entregasNoDia };
   }, [diaQuery.data, caminhaoId, periodo]);
 
-  const estouraCaminhao =
-    caminhaoEscolhido !== undefined &&
-    pesoSelecionado !== null &&
-    ocupacaoAtual.usadoKgNoSlot + pesoSelecionado > caminhaoEscolhido.capacidadeKg;
+  // Como o caminhão fica com esta viagem dentro. A MESMA função que a agenda
+  // usa para pintar as barras — desde 27/08/2026 esta comparação é a informação
+  // que decide, não mais uma trava, e ela não pode existir em duas versões.
+  const capacidade = useMemo(
+    () =>
+      avaliarCapacidade({
+        capacidadeKg: caminhaoEscolhido?.capacidadeKg ?? 0,
+        usadoKg: ocupacaoAtual.usadoKgNoSlot,
+        adicionalKg: pesoSelecionado ?? 0,
+      }),
+    [caminhaoEscolhido, ocupacaoAtual.usadoKgNoSlot, pesoSelecionado],
+  );
 
-  // Teto de QUANTIDADE de entregas no dia, a outra metade da regra que a
-  // Natália pediu (as duas valem juntas). Mesma função do backend.
+  /** Só há o que sinalizar quando se sabe o caminhão E o peso da carga. */
+  const mostraCapacidade =
+    caminhaoEscolhido !== undefined && pesoSelecionado !== null;
+
+  // Teto de QUANTIDADE de entregas no dia. Desde 27/08/2026 é a única regra que
+  // recusa agendamento. Mesma função do backend.
   const limiteDia = useMemo(
     () =>
       avaliarLimiteEntregas({
@@ -263,6 +276,11 @@ export function AgendarEntregaModal({
     !situacaoPeso.podeAgendar ||
     // O teto de entregas é contagem, não estimativa: se já sabemos que não
     // cabe, não faz sentido deixar clicar para colher o 422.
+    //
+    // O PESO NÃO ENTRA AQUI, e isso é a decisão da Natália de 27/08/2026, não
+    // um esquecimento: "que ele não seja um impeditivo de agendamento, mas que
+    // ele sinalize". Passar da capacidade pinta a linha de peso e mostra o
+    // aviso — e deixa agendar.
     !limiteDia.cabe;
 
   function definirQtd(codigo: string, valor: string): void {
@@ -482,18 +500,36 @@ export function AgendarEntregaModal({
             })}
           </ul>
 
-          <div className="mt-2 flex items-center justify-between text-xs">
-            <span className="text-tinta-suave">Peso desta viagem</span>
+          {/* O SINALIZADOR. Desde 27/08/2026 é isto que a Natália pediu no
+              lugar da trava: "que ele sinalize se aquele caminhão já tá lotado
+              ou não". Por isso a linha diz como o caminhão FICA, e não só
+              quanto pesa esta viagem — o número que decide é o total do turno.
+
+              Cor `terra` e não `brasa`: brasa é a cor de impedimento no
+              projeto (erro de quantidade, "não realizado"), e passar da
+              capacidade deixou de impedir. */}
+          <div className="mt-2 flex items-baseline justify-between gap-3 text-xs">
+            <span className="shrink-0 text-tinta-suave">Peso desta viagem</span>
             <span
-              className={`font-display font-semibold ${
-                estouraCaminhao ? 'text-brasa' : 'text-mata-escuro'
+              className={`text-right font-display font-semibold ${
+                !mostraCapacidade
+                  ? 'text-mata-escuro'
+                  : capacidade.nivel === 'excedido'
+                    ? 'text-terra-escuro'
+                    : capacidade.nivel === 'cheio'
+                      ? 'text-trigo-escuro'
+                      : 'text-mata-escuro'
               }`}
             >
               {pesoSelecionado === null
                 ? 'peso desconhecido'
                 : formatarT(pesoSelecionado)}
-              {caminhaoEscolhido &&
-                ` de ${formatarT(caminhaoEscolhido.capacidadeKg)}`}
+              {mostraCapacidade && caminhaoEscolhido && (
+                <span className="font-normal">
+                  {' · '}o caminhão fica com {formatarT(capacidade.totalKg)} de{' '}
+                  {formatarT(caminhaoEscolhido.capacidadeKg)}
+                </span>
+              )}
             </span>
           </div>
         </div>
@@ -555,27 +591,46 @@ export function AgendarEntregaModal({
             {situacaoPeso.faltando.length > 0
               ? `Falta o peso de: ${situacaoPeso.faltando
                   .map((f) => f.nomeProduto || f.produtoCodigo)
-                  .join(', ')}. Sem o peso não dá para saber se a carga cabe no caminhão.`
+                  .join(', ')}. Sem ele esta viagem entra na agenda pesando zero e o caminhão vai parecer mais vazio do que está.`
               : `Confira o peso de: ${situacaoPeso.aConfirmar
                   .map((c) => c.nomeProduto || c.produtoCodigo)
                   .join(', ')}. Este peso foi informado pela equipe — confirme ou altere se este lote for diferente.`}
           </p>
         )}
 
-        {estouraCaminhao && errosQtd.length === 0 && (
-          <p className="mt-4 rounded-lg border border-trigo/40 bg-trigo-claro px-3 py-2 text-sm text-trigo-escuro">
-            Esta carga passa da capacidade do caminhão escolhido
-            {ocupacaoAtual.usadoKgNoSlot > 0
-              ? `, que já leva ${formatarKg(ocupacaoAtual.usadoKgNoSlot)} neste período`
-              : ''}
-            . O sistema vai recusar — reduza a quantidade ou escolha outro
-            caminhão.
-          </p>
-        )}
+        {/* AVISO DE CAPACIDADE — não bloqueia. Este texto já disse "O sistema
+            vai recusar"; virou mentira em 27/08/2026 e foi reescrito. Se
+            alguém voltar a fazer o peso recusar, é aqui e no `bloqueado` que a
+            mudança aparece. */}
+        {mostraCapacidade &&
+          capacidade.nivel === 'excedido' &&
+          errosQtd.length === 0 &&
+          caminhaoEscolhido && (
+            <p className="mt-4 rounded-lg border border-terra/40 bg-terra-claro px-3 py-2 text-sm text-terra-escuro">
+              Caminhão lotado: o {caminhaoEscolhido.nome} comporta{' '}
+              {formatarT(caminhaoEscolhido.capacidadeKg)} e ficaria com{' '}
+              {formatarT(capacidade.totalKg)} neste período — passa{' '}
+              {formatarT(capacidade.excedenteKg)}. Dá para agendar assim mesmo;
+              confira a carga antes de mandar o caminhão.
+            </p>
+          )}
 
-        {/* Teto de entregas do dia: o limite que ela pediu, avisado ANTES do
-            clique. Sem janela cadastrada nada aparece — o caminhão segue
-            limitado só pela tonelagem, como sempre foi. */}
+        {mostraCapacidade &&
+          capacidade.nivel === 'cheio' &&
+          errosQtd.length === 0 &&
+          caminhaoEscolhido && (
+            <p className="mt-4 rounded-lg border border-linha bg-creme-50 px-3 py-2 text-xs text-tinta-suave">
+              Este caminhão fecha a capacidade neste período:{' '}
+              {formatarT(capacidade.totalKg)} de{' '}
+              {formatarT(caminhaoEscolhido.capacidadeKg)}. Ainda dá para
+              agendar.
+            </p>
+          )}
+
+        {/* Teto de entregas do dia: desde 27/08/2026 é a ÚNICA regra que recusa
+            agendamento de cliente. Sem janela cadastrada não aparece nada aqui
+            — e aí o caminhão não tem trava nenhuma, que é o que a nota logo
+            abaixo diz com todas as letras. */}
         {!limiteDia.cabe && (
           <p className="mt-4 rounded-lg border border-terra/40 bg-terra-claro px-3 py-2 text-sm text-terra-escuro">
             Este caminhão já tem {limiteDia.entregasNoDia}{' '}
@@ -594,6 +649,20 @@ export function AgendarEntregaModal({
               {limiteDia.restantes === 1 ? 'entrega' : 'entregas'} neste
               caminhão no dia escolhido (limite de {limiteDia.maxEntregasDia}{' '}
               por dia).
+            </p>
+          )}
+
+        {/* O buraco que a decisão de 27/08 abriu, dito na cara. Até então a
+            tonelagem segurava o caminhão sem janela cadastrada; agora não
+            segura mais nada. Inventar um teto padrão seria pior — passaria a
+            recusar agendamento com um número que ninguém configurou. */}
+        {caminhaoId !== '' &&
+          !limitesQuery.isLoading &&
+          limiteDia.maxEntregasDia === null && (
+            <p className="mt-4 rounded-lg border border-linha bg-creme-50 px-3 py-2 text-xs text-tinta-suave">
+              Este caminhão não tem teto de entregas por dia cadastrado — nada
+              limita a quantidade de viagens dele. Confira a carga pela linha de
+              peso acima antes de confirmar.
             </p>
           )}
 

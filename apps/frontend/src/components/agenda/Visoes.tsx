@@ -10,6 +10,7 @@
 
 import React from 'react';
 import type { AgendaSlot } from '@pastobom/shared';
+import { avaliarCapacidade } from '@pastobom/shared';
 import { DIAS_CURTOS, isoDeData } from '../../lib/datas';
 import { emToneladas } from '../../lib/format';
 import { BlocoSlot } from './BlocoSlot';
@@ -66,11 +67,21 @@ export function VisaoMes({
             const itens = entregas + reservas;
             const foraDoMes = d.getMonth() !== mesAtual;
             const ehHoje = iso === isoHoje;
-            const cheio = capacidadeKg > 0 && usadoKg >= capacidadeKg;
-            const pct =
-              capacidadeKg > 0
-                ? Math.min(100, (usadoKg / capacidadeKg) * 100)
-                : 0;
+            // O agregado do dia: a soma das capacidades de TODOS os caminhões
+            // que têm carga. Serve para a leitura de folga geral do mês.
+            const capacidade = avaliarCapacidade({ capacidadeKg, usadoKg });
+            const pct = Math.min(100, capacidade.percentual ?? 0);
+            // ...mas o agregado ESCONDE o caminhão estourado dentro de um dia
+            // folgado (um a 120% e outro a 40% somam 80%). Com o peso virando
+            // sinal em 27/08/2026, o mês é a visão mais usada e não pode ser a
+            // única que não avisa. Por isso a contagem por caminhão, separada.
+            const estourados = ocupacoes.filter(
+              (o) =>
+                avaliarCapacidade({
+                  capacidadeKg: o.capacidadeKg,
+                  usadoKg: o.usadoKg,
+                }).nivel === 'excedido',
+            );
 
             return (
               <div
@@ -133,11 +144,27 @@ export function VisaoMes({
                         {reservas === 1 ? '1 reserva' : `${reservas} reservas`}
                       </p>
                     )}
+                    {estourados.length > 0 && (
+                      <p
+                        className="rounded bg-terra-claro px-1.5 py-0.5 text-[10px] font-semibold text-terra-escuro"
+                        title={`Acima da capacidade: ${estourados
+                          .map((o) => o.caminhaoNome)
+                          .join(', ')}. O sistema não impede — confira a carga.`}
+                      >
+                        {estourados.length === 1
+                          ? '1 caminhão passou'
+                          : `${estourados.length} caminhões passaram`}
+                      </p>
+                    )}
                     {capacidadeKg > 0 && (
                       <div>
                         <p
                           className={`text-[11px] font-semibold ${
-                            cheio ? 'text-terra-escuro' : 'text-tinta-suave'
+                            capacidade.nivel === 'excedido'
+                              ? 'text-terra-escuro'
+                              : capacidade.nivel === 'cheio'
+                                ? 'text-trigo-escuro'
+                                : 'text-tinta-suave'
                           }`}
                         >
                           {emToneladas(usadoKg)} / {emToneladas(capacidadeKg)} t
@@ -145,7 +172,11 @@ export function VisaoMes({
                         <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-creme-100">
                           <div
                             className={`h-full rounded-full transition-all ${
-                              cheio ? 'bg-terra' : 'bg-folha'
+                              capacidade.nivel === 'excedido'
+                                ? 'bg-terra'
+                                : capacidade.nivel === 'cheio'
+                                  ? 'bg-trigo'
+                                  : 'bg-folha'
                             }`}
                             style={{ width: `${pct}%` }}
                           />

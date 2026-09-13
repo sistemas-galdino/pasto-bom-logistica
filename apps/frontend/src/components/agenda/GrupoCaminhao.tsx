@@ -8,6 +8,7 @@
 import React from 'react';
 import { AlertTriangle } from 'lucide-react';
 import type { AgendaOcupacao, GrupoCaminhaoAgenda } from '@pastobom/shared';
+import { avaliarCapacidade } from '@pastobom/shared';
 import { emToneladas } from '../../lib/format';
 import { CardEntrega } from './CardEntrega';
 import { CardReserva } from './CardReserva';
@@ -89,18 +90,28 @@ export interface BarraOcupacaoProps {
   compacto: boolean;
 }
 
-// "Truck Branco: 4,2 / 10,0 t" + barra. Vermelho quando o caminhão fechou a
-// capacidade — é o sinal de que não cabe mais nada naquele período.
+// "Truck Branco: 4,2 / 10,0 t" + barra.
+//
+// Esta barra deixou de ser decoração em 27/08/2026. Com o peso não recusando
+// mais agendamento, ela é O SINAL que a Natália pediu no lugar da trava:
+// "mostrando na agenda, mas que ele não seja um impeditivo de agendamento, mas
+// que ele sinalize para ele se aquele caminhão já tá lotado ou não".
+//
+// Por isso a comparação saiu daqui e foi para `avaliarCapacidade` no shared:
+// ela existia em três cópias que discordavam entre si (a barra ficava vermelha
+// em >=, o servidor recusava em >), e um caminhão fechado na capacidade exata
+// aparecia vermelho e passava. Agora "fechou" (âmbar) e "passou" (terra) são
+// estados diferentes, e o excedente aparece escrito.
 export function BarraOcupacao({
   ocupacao,
   compacto,
 }: BarraOcupacaoProps): React.ReactElement {
-  const cheio =
-    ocupacao.capacidadeKg > 0 && ocupacao.usadoKg >= ocupacao.capacidadeKg;
-  const pct =
-    ocupacao.capacidadeKg > 0
-      ? Math.min(100, (ocupacao.usadoKg / ocupacao.capacidadeKg) * 100)
-      : 0;
+  const capacidade = avaliarCapacidade({
+    capacidadeKg: ocupacao.capacidadeKg,
+    usadoKg: ocupacao.usadoKg,
+  });
+  // A barra é limitada em 100%; o texto ao lado é que conta a verdade inteira.
+  const pct = Math.min(100, capacidade.percentual ?? 0);
 
   return (
     <div>
@@ -115,16 +126,35 @@ export function BarraOcupacao({
         <span
           className={`shrink-0 font-semibold ${
             compacto ? 'text-[11px]' : 'text-xs'
-          } ${cheio ? 'text-terra-escuro' : 'text-tinta-suave'}`}
+          } ${
+            capacidade.nivel === 'excedido'
+              ? 'text-terra-escuro'
+              : capacidade.nivel === 'cheio'
+                ? 'text-trigo-escuro'
+                : 'text-tinta-suave'
+          }`}
+          title={
+            capacidade.nivel === 'excedido'
+              ? `Acima da capacidade em ${emToneladas(capacidade.excedenteKg)} t. O sistema não impede — confira a carga.`
+              : capacidade.nivel === 'cheio'
+                ? 'Caminhão fechado neste período.'
+                : undefined
+          }
         >
           {emToneladas(ocupacao.usadoKg)} / {emToneladas(ocupacao.capacidadeKg)}{' '}
           t
+          {capacidade.nivel === 'excedido' &&
+            ` · passou ${emToneladas(capacidade.excedenteKg)} t`}
         </span>
       </div>
       <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-creme-100">
         <div
           className={`h-full rounded-full transition-all ${
-            cheio ? 'bg-terra' : 'bg-folha'
+            capacidade.nivel === 'excedido'
+              ? 'bg-terra'
+              : capacidade.nivel === 'cheio'
+                ? 'bg-trigo'
+                : 'bg-folha'
           }`}
           style={{ width: `${pct}%` }}
         />

@@ -1,14 +1,18 @@
 // Limite de ENTREGAS por dia de um caminhão, por janela de vigência.
 //
-// A tonelagem (capacidade em kg do caminhão) continua valendo e não é tocada
-// aqui: as duas regras são checadas juntas no agendamento. Esta tela só
-// cadastra o TETO DE QUANTIDADE — "esse caminhão faz no máximo 5 entregas por
-// dia entre 01/09 e 30/09".
+// Esta tela cadastra o TETO DE QUANTIDADE — "esse caminhão faz no máximo 5
+// entregas por dia entre 01/09 e 30/09".
 //
-// SEM nenhuma janela cadastrada não existe teto de quantidade: o caminhão segue
-// limitado só pela tonelagem, como sempre foi. Nenhum default é inventado, e a
-// tela diz isso em voz alta — do contrário a operação acharia que existe um
-// limite padrão escondido.
+// DESDE 27/08/2026 ELE É A ÚNICA TRAVA DE AGENDAMENTO. A tonelagem (capacidade
+// em kg do caminhão) deixou de recusar por decisão da Natália: "que ele não
+// seja um impeditivo de agendamento, mas que ele sinalize". Ela continua
+// cadastrada e continua aparecendo na agenda — como sinal.
+//
+// SEM nenhuma janela cadastrada o caminhão não tem trava NENHUMA, e a tela diz
+// isso em voz alta, em âmbar. Antes essa frase era inofensiva ("segue limitado
+// só pela tonelagem"); hoje é um aviso de verdade. Nenhum default é inventado:
+// um teto que ninguém configurou passaria a recusar agendamento com um número
+// sem dono.
 
 import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -184,8 +188,9 @@ export function LimitesEntregaModal({
                 Entregas por dia — {caminhao.nome}
               </h2>
               <p className="text-sm text-tinta-suave">
-                Teto de quantidade por período. A capacidade em toneladas
-                continua valendo junto.
+                Teto de quantidade por dia. Desde 09/2026 é a única regra que
+                recusa agendamento — a capacidade em toneladas virou aviso na
+                tela e não bloqueia mais.
               </p>
             </div>
           </div>
@@ -241,12 +246,14 @@ export function LimitesEntregaModal({
               </button>
             </div>
           ) : limites.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-linha px-3 py-4 text-center text-sm text-tinta-suave">
-              Nenhuma janela cadastrada — este caminhão segue limitado{' '}
-              <strong className="font-semibold text-tinta">
-                só pela tonelagem
+            <p className="rounded-lg border border-trigo/40 bg-trigo-claro px-3 py-4 text-center text-sm text-trigo-escuro">
+              Nenhuma janela cadastrada — este caminhão{' '}
+              <strong className="font-semibold">
+                não tem limite nenhum de agendamento
               </strong>
-              . Não existe teto padrão de entregas por dia.
+              . A capacidade em toneladas aparece na agenda, mas não recusa.
+              Não existe teto padrão: enquanto não houver janela aqui, dá para
+              marcar quantas viagens quiser neste caminhão.
             </p>
           ) : (
             <ul className="space-y-2">
