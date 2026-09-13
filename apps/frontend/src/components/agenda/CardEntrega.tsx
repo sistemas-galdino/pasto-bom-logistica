@@ -8,14 +8,20 @@
 
 import React from 'react';
 import { AlertTriangle, MapPin, Truck, User } from 'lucide-react';
-import type { AgendaEntrega } from '@pastobom/shared';
+import type { AgendaEntrega, PrevisaoClima } from '@pastobom/shared';
 import { STATUS_ENTREGA_META } from '../status';
 import { emToneladas } from '../../lib/format';
+import { ClimaResumo } from '../ClimaResumo';
 
 export interface CardEntregaProps {
   entrega: AgendaEntrega;
   compacto: boolean;
   onAbrir: (entregaId: string) => void;
+  /**
+   * Previsão do dia para o destino desta viagem. Opcional: a visão de Mês não
+   * desenha cartão nenhum, e quem não busca o clima simplesmente não passa.
+   */
+  clima?: PrevisaoClima | null;
 }
 
 // Ordem de destaque pedida na reunião: CLIENTE, MOTORISTA, BAIRRO (+ cidade).
@@ -28,6 +34,7 @@ export function CardEntrega({
   entrega,
   compacto,
   onAbrir,
+  clima,
 }: CardEntregaProps): React.ReactElement {
   const meta = STATUS_ENTREGA_META[entrega.status];
   const local = [entrega.bairro, entrega.cidade]
@@ -118,6 +125,15 @@ export function CardEntrega({
           </span>
         )}
       </div>
+
+      {/* O selo do tempo, pedido dela em 11/09: "se você puder colocar na
+          agenda também, fica legal". Só no modo não-compacto — na semana
+          estreita esta linha já disputa espaço com "peso pendente". */}
+      {!compacto && clima?.disponivel && (
+        <div className="mt-2">
+          <ClimaResumo variant="badge" previsao={clima} />
+        </div>
+      )}
 
       {!compacto && (
         <span

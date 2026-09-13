@@ -122,6 +122,38 @@ export default function Agenda(): React.ReactElement {
     return mapa;
   }, [agendaQuery.data]);
 
+
+  /**
+   * PREVISÃO DO TEMPO no cartão da agenda — pedido dela em 11/09/2026: "se você
+   * puder colocar na agenda também, fica legal".
+   *
+   * SÓ nas visões Dia e Semana. O Mês não desenha cartão nenhum (é um mapa de
+   * densidade: contadores e barra), então buscar lá seria pagar por nada — e é
+   * justamente lá que os ~42 dias na tela estourariam o teto de 200 pedidos da
+   * rota. O `slice` fica como cinto, não como plano.
+   */
+  const idsClima = useMemo(() => {
+    if (visao === 'mes') return [];
+    const ids = new Set<string>();
+    for (const slot of agendaQuery.data?.slots ?? []) {
+      for (const e of slot.entregas) ids.add(e.pedidoId);
+    }
+    return [...ids].slice(0, 200);
+  }, [agendaQuery.data, visao]);
+
+  const idsClimaKey = useMemo(
+    () => idsClima.slice().sort().join(','),
+    [idsClima],
+  );
+
+  const climaQuery = useQuery({
+    queryKey: ['clima-agenda', idsClimaKey],
+    queryFn: ({ signal }) => api.climaLote(idsClima, signal),
+    enabled: idsClima.length > 0,
+    staleTime: 30 * 60 * 1000,
+  });
+  const climaPorPedido = climaQuery.data ?? {};
+
   const totalEntregas = (agendaQuery.data?.slots ?? []).reduce(
     (s, slot) => s + slot.entregas.length,
     0,
@@ -206,6 +238,7 @@ export default function Agenda(): React.ReactElement {
                 isoHoje={isoHoje}
                 porSlot={porSlot}
                 onAbrir={setDetalheId}
+                climaPorPedido={climaPorPedido}
               />
             )}
 
@@ -214,6 +247,7 @@ export default function Agenda(): React.ReactElement {
                 data={isoDeData(ancora)}
                 porSlot={porSlot}
                 onAbrir={setDetalheId}
+                climaPorPedido={climaPorPedido}
               />
             )}
           </div>

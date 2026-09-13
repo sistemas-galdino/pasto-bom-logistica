@@ -61,6 +61,9 @@ const STATUS_ORIX_OPCOES = STATUS_ORIX_META;
 const DIAS_NAO_REALIZADO = 7;
 const DIAS_ENTREGUE = 30;
 
+/** Horizonte da previsão do Open-Meteo (services/clima.ts). */
+const HORIZONTE_CLIMA_DIAS = 16;
+
 /** Transição de entrega aguardando confirmação. */
 interface AlvoEntrega {
   entrega: Entrega;
@@ -418,6 +421,49 @@ export function Board(): React.ReactElement {
     }
     return mapa;
   }, [entregas, casaEntrega, entregaDe, entregaAte]);
+
+  /**
+   * PREVISÃO DO TEMPO nos cartões de viagem.
+   *
+   * `EntregaCard` declara a prop `clima` desde a Onda 2 e NINGUÉM a preenchia:
+   * o lote que a alimentava foi embora junto com o quadro antigo, no commit
+   * 7343f9a. Ou seja, o selo existia no código e nunca aparecia na tela.
+   *
+   * Só `agendada` e `em_rota`: viagem entregue ou não realizada já aconteceu, e
+   * prever o tempo dela é gasto sem decisão. Só dentro do horizonte de 16 dias
+   * do Open-Meteo (services/clima.ts), senão a consulta volta
+   * `fora_do_horizonte` e o selo não renderiza de qualquer jeito.
+   *
+   * `isoMenosDias(-N)` = hoje + N dias, como no atalho "Amanhã" dos filtros.
+   */
+  const idsClima = useMemo(() => {
+    const hoje = isoMenosDias(0);
+    const limite = isoMenosDias(-HORIZONTE_CLIMA_DIAS);
+    const ids = new Set<string>();
+    for (const status of ['agendada', 'em_rota'] as const) {
+      for (const e of entregasPorStatus[status]) {
+        if (e.dataAgendada < hoje || e.dataAgendada > limite) continue;
+        ids.add(e.pedidoId);
+      }
+    }
+    // Teto da rota (MAX_LOTE em routes/clima.ts). As colunas já vêm ordenadas
+    // por data crescente, então o corte sacrifica o dia mais distante — o menos
+    // útil, e o mais provável de já estar fora do horizonte de previsão.
+    return [...ids].slice(0, 200);
+  }, [entregasPorStatus]);
+
+  const idsClimaKey = useMemo(
+    () => idsClima.slice().sort().join(','),
+    [idsClima],
+  );
+
+  const climaQuery = useQuery({
+    queryKey: ['clima-quadro', idsClimaKey],
+    queryFn: ({ signal }) => api.climaLote(idsClima, signal),
+    enabled: idsClima.length > 0,
+    staleTime: 30 * 60 * 1000,
+  });
+  const climaPorPedido = climaQuery.data ?? {};
 
   const cancelados = useMemo(
     () =>
@@ -924,6 +970,7 @@ export function Board(): React.ReactElement {
                   <EntregaCard
                     key={e.id}
                     entrega={e}
+                    clima={climaPorPedido[e.pedidoId] ?? null}
                     podeEscrever={podeEscrever}
                     podeSeparar={podeSeparar}
                     onTransicionar={abrirTransicaoEntrega}

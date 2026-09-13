@@ -26,6 +26,7 @@ import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Caminhao, Entrega, MotoristaResumo, PeriodoEntrega } from '@pastobom/shared';
 import { api } from '../lib/api';
+import { ClimaResumo } from './ClimaResumo';
 import { formatarData } from '../lib/format';
 
 export interface ReagendarBody {
@@ -93,6 +94,21 @@ export function ReagendarEntregaModal({
   // e não justifica uma segunda mensagem ao cliente. Quem já recebeu "sua
   // entrega é dia 12" não quer um WhatsApp por causa de troca de motorista.
   const [avisarCliente, setAvisarCliente] = useState(false);
+
+  // A previsão da data NOVA. É o caso mais forte do clima no sistema: o
+  // placeholder do campo Motivo, logo abaixo, é literalmente "ex.: chuva na
+  // estrada" — quem abre esta tela quase sempre está mudando o dia porque o
+  // tempo virou.
+  //
+  // Sem `propriedadeCodigo`: este modal declara que não troca o destino, então
+  // o backend usa a propriedade já salva do pedido, que é a correta.
+  const climaQuery = useQuery({
+    queryKey: ['clima', entrega.pedidoId, data, ''],
+    queryFn: ({ signal }) =>
+      api.climaPedido(entrega.pedidoId, data, undefined, signal),
+    enabled: data.trim().length > 0,
+    staleTime: 30 * 60 * 1000,
+  });
 
   // As MESMAS queryKeys do AgendarEntregaModal, para reaproveitar o cache: quem
   // acabou de agendar e reagenda em seguida não espera duas listas de novo.
@@ -331,6 +347,16 @@ export function ReagendarEntregaModal({
             </span>
           </span>
         </label>
+
+        {data.trim() !== '' && (
+          <div className="mt-4">
+            <ClimaResumo
+              variant="completo"
+              previsao={climaQuery.data}
+              carregando={climaQuery.isLoading}
+            />
+          </div>
+        )}
 
         {faltaCompletar && (
           <p className="mt-4 rounded-lg border border-trigo/40 bg-trigo-claro px-3 py-2 text-sm text-trigo-escuro">

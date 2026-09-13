@@ -42,6 +42,7 @@ import {
   validarQuantidades,
 } from '@pastobom/shared';
 import { api } from '../lib/api';
+import { ClimaResumo } from './ClimaResumo';
 import { SeletorSlot } from './SeletorSlot';
 
 interface Props {
@@ -210,6 +211,30 @@ export function AgendarEntregaModal({
     queryKey: ['limites-caminhao', caminhaoId],
     queryFn: ({ signal }) => api.limitesDoCaminhao(caminhaoId, signal),
     enabled: caminhaoId !== '',
+  });
+
+  // PREVISÃO DO TEMPO para a data e a propriedade escolhidas.
+  //
+  // Isto já existiu e se perdeu no commit 7343f9a (27/07/2026), que substituiu
+  // o TransicaoModal por este modal — o backend nunca saiu do ar, só o
+  // chamador. A Natália notou a falta em 11/09: "conforme a cidade que aquele
+  // cliente está cadastrado, ele mostre pra gente a previsão do tempo daquele
+  // dia... é que no começo você tinha colocado".
+  //
+  // A rota dá prioridade à data ESCOLHIDA sobre a salva, exatamente para este
+  // preview. O serviço nunca lança: falha vira `disponivel: false` com motivo, e
+  // o ClimaResumo já sabe dizer cada um deles.
+  const climaQuery = useQuery({
+    queryKey: ['clima', pedido.id, data, propriedadeCodigo],
+    queryFn: ({ signal }) =>
+      api.climaPedido(
+        pedido.id,
+        data,
+        propriedadeCodigo.trim() || undefined,
+        signal,
+      ),
+    enabled: data.trim().length > 0,
+    staleTime: 30 * 60 * 1000,
   });
 
   /** Ocupação do caminhão escolhido: kg no turno e nº de entregas no dia. */
@@ -574,6 +599,21 @@ export function AgendarEntregaModal({
             </label>
           )}
         </SeletorSlot>
+
+        {/* Fora do SeletorSlot de propósito: o cabeçalho dele diz que ali só
+            moram os CAMPOS do slot, e ele é compartilhado com a reserva de
+            caminhão, que não tem cliente nem previsão. Como `children` isto
+            viraria a 5ª célula da grade de 2 colunas, colada no select de
+            caminhão. */}
+        {data.trim() !== '' && (
+          <div className="mt-3">
+            <ClimaResumo
+              variant="completo"
+              previsao={climaQuery.data}
+              carregando={climaQuery.isLoading}
+            />
+          </div>
+        )}
 
         {/* Avisos */}
         {errosQtd.length > 0 && (

@@ -407,6 +407,32 @@ function PainelAgendaCaminhao(): React.ReactElement {
     [slots, filtroAtivo],
   );
 
+
+  // Previsão do tempo no cartão, igual à página de Agenda. Só nas visões que
+  // desenham cartão — ver o comentário lá. Usa `slotsVisiveis`: quem filtrou um
+  // caminhão não precisa da previsão dos outros.
+  const idsClima = useMemo(() => {
+    if (visao === 'mes') return [];
+    const ids = new Set<string>();
+    for (const slot of slotsVisiveis) {
+      for (const e of slot.entregas) ids.add(e.pedidoId);
+    }
+    return [...ids].slice(0, 200);
+  }, [slotsVisiveis, visao]);
+
+  const idsClimaKey = useMemo(
+    () => idsClima.slice().sort().join(','),
+    [idsClima],
+  );
+
+  const climaQuery = useQuery({
+    queryKey: ['clima-agenda', idsClimaKey],
+    queryFn: ({ signal }) => api.climaLote(idsClima, signal),
+    enabled: idsClima.length > 0,
+    staleTime: 30 * 60 * 1000,
+  });
+  const climaPorPedido = climaQuery.data ?? {};
+
   const porSlot = useMemo(() => {
     const mapa = new Map<string, AgendaSlot>();
     for (const slot of slotsVisiveis) {
@@ -577,6 +603,7 @@ function PainelAgendaCaminhao(): React.ReactElement {
                 isoHoje={isoHoje}
                 porSlot={porSlot}
                 onAbrir={setDetalheId}
+                climaPorPedido={climaPorPedido}
               />
             )}
 
@@ -585,6 +612,7 @@ function PainelAgendaCaminhao(): React.ReactElement {
                 data={isoDeData(ancora)}
                 porSlot={porSlot}
                 onAbrir={setDetalheId}
+                climaPorPedido={climaPorPedido}
               />
             )}
           </div>

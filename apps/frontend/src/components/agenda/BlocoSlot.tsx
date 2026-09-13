@@ -5,7 +5,11 @@
 // agenda do caminhão (tela de Rota) monta as mesmas visões a partir dela.
 
 import React from 'react';
-import type { AgendaSlot, PeriodoEntrega } from '@pastobom/shared';
+import type {
+  AgendaSlot,
+  PeriodoEntrega,
+  PrevisaoClima,
+} from '@pastobom/shared';
 import { agruparSlotPorCaminhao } from '@pastobom/shared';
 import { GrupoCaminhao } from './GrupoCaminhao';
 import { PERIODO_ROTULO } from './slots';
@@ -18,6 +22,8 @@ export interface BlocoSlotProps {
   /** Visão de dia: cabeçalho com o nome do período. */
   mostrarTitulo?: boolean;
   onAbrir: (entregaId: string) => void;
+  /** Previsão por pedido. Opcional: o Mês não desenha cartão e não busca. */
+  climaPorPedido?: Record<string, PrevisaoClima | null>;
 }
 
 export function BlocoSlot({
@@ -26,6 +32,7 @@ export function BlocoSlot({
   compacto = false,
   mostrarTitulo = false,
   onAbrir,
+  climaPorPedido,
 }: BlocoSlotProps): React.ReactElement {
   const entregas = slot?.entregas ?? [];
   const reservas = slot?.reservas ?? [];
@@ -79,6 +86,7 @@ export function BlocoSlot({
               grupo={grupo}
               compacto={compacto}
               onAbrir={onAbrir}
+              climaPorPedido={climaPorPedido}
             />
           ))}
         </div>

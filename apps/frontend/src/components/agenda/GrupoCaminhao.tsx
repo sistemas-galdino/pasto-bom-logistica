@@ -7,7 +7,11 @@
 
 import React from 'react';
 import { AlertTriangle } from 'lucide-react';
-import type { AgendaOcupacao, GrupoCaminhaoAgenda } from '@pastobom/shared';
+import type {
+  AgendaOcupacao,
+  GrupoCaminhaoAgenda,
+  PrevisaoClima,
+} from '@pastobom/shared';
 import { avaliarCapacidade } from '@pastobom/shared';
 import { emToneladas } from '../../lib/format';
 import { CardEntrega } from './CardEntrega';
@@ -17,6 +21,8 @@ export interface GrupoCaminhaoProps {
   grupo: GrupoCaminhaoAgenda;
   compacto: boolean;
   onAbrir: (entregaId: string) => void;
+  /** Previsão por pedido. Opcional: o Mês não desenha cartão e não busca. */
+  climaPorPedido?: Record<string, PrevisaoClima | null>;
 }
 
 // O caminhão e a sua carga do período, juntos: barra em cima, clientes embaixo.
@@ -26,6 +32,7 @@ export function GrupoCaminhao({
   grupo,
   compacto,
   onAbrir,
+  climaPorPedido,
 }: GrupoCaminhaoProps): React.ReactElement {
   const semCaminhao = grupo.caminhaoId === null;
 
@@ -78,6 +85,7 @@ export function GrupoCaminhao({
             entrega={e}
             compacto={compacto}
             onAbrir={onAbrir}
+            clima={climaPorPedido?.[e.pedidoId] ?? null}
           />
         ))}
       </div>

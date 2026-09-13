@@ -9,7 +9,7 @@
 // que permite a tela de Rota reusá-las com a sua própria navegação.
 
 import React from 'react';
-import type { AgendaSlot } from '@pastobom/shared';
+import type { AgendaSlot, PrevisaoClima } from '@pastobom/shared';
 import { avaliarCapacidade } from '@pastobom/shared';
 import { DIAS_CURTOS, isoDeData } from '../../lib/datas';
 import { emToneladas } from '../../lib/format';
@@ -199,6 +199,11 @@ export interface VisaoSemanaProps {
   isoHoje: string;
   porSlot: Map<string, AgendaSlot>;
   onAbrir: (entregaId: string) => void;
+  /**
+   * Previsão por pedido, para o selo no cartão. Opcional: a VisaoMes não recebe
+   * (não desenha cartão nenhum) e as páginas só buscam nas visões que mostram.
+   */
+  climaPorPedido?: Record<string, PrevisaoClima | null>;
 }
 
 export function VisaoSemana({
@@ -206,6 +211,7 @@ export function VisaoSemana({
   isoHoje,
   porSlot,
   onAbrir,
+  climaPorPedido,
 }: VisaoSemanaProps): React.ReactElement {
   return (
     <div className="overflow-x-auto">
@@ -260,6 +266,7 @@ export function VisaoSemana({
                     periodo={periodo}
                     compacto
                     onAbrir={onAbrir}
+                    climaPorPedido={climaPorPedido}
                   />
                 );
               })}
@@ -275,12 +282,18 @@ export interface VisaoDiaProps {
   data: string;
   porSlot: Map<string, AgendaSlot>;
   onAbrir: (entregaId: string) => void;
+  /**
+   * Previsão por pedido, para o selo no cartão. Opcional: a VisaoMes não recebe
+   * (não desenha cartão nenhum) e as páginas só buscam nas visões que mostram.
+   */
+  climaPorPedido?: Record<string, PrevisaoClima | null>;
 }
 
 export function VisaoDia({
   data,
   porSlot,
   onAbrir,
+  climaPorPedido,
 }: VisaoDiaProps): React.ReactElement {
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -291,6 +304,7 @@ export function VisaoDia({
           periodo={periodo}
           mostrarTitulo
           onAbrir={onAbrir}
+          climaPorPedido={climaPorPedido}
         />
       ))}
     </div>
