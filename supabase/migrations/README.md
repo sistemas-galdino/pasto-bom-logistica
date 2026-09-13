@@ -132,6 +132,25 @@ primeiro faria `validarCargaDoAgendamento` consultar tabela inexistente. A
 leitura degrada em log em caso de erro (o limite é regra a MAIS e não pode
 travar a operação), mas isso é rede de segurança, não plano.
 
+> **Correção de 13/09/2026 — o `comment on table caminhao_limites` está
+> desatualizado no banco.** Ele diz que o teto "soma-se à regra de tonelagem
+> (capacidade_kg): as duas valem juntas". Deixou de ser verdade em 09/2026: a
+> tonelagem parou de recusar agendamento e virou só sinalizador na tela
+> (decisão da Natália na reunião de 27/08 — "que ele não seja um impeditivo de
+> agendamento, mas que ele sinalize se aquele caminhão já tá lotado ou não").
+> Hoje `caminhao_limites` é a ÚNICA regra que recusa agendamento, e caminhão
+> sem janela cadastrada não tem teto nenhum.
+>
+> Fica registrado aqui, e **não** numa migration: uma migration que só troca um
+> `comment on` gastaria uma janela de aplicação num banco compartilhado com
+> produção para mudar texto que nenhum código lê. Quem for mexer nessa tabela
+> lê este arquivo antes — e a regra viva está em
+> `packages/shared/src/limite-entregas.ts` e `apps/backend/src/services/carga.ts`,
+> os dois já corrigidos.
+>
+> A `caminhao_limites` também **não foi alterada**: o esquema continua certo. O
+> que mudou foi o peso, que nunca esteve nesta tabela.
+
 A 0019 rodou em 12/08/2026, com autorização do David. Só ACRESCENTA uma coluna
 nulável (`peso_unit_kg`) em `entrega_itens` — o peso congelado da viagem. Nada
 destrutivo, sem backfill, e o código anterior não se importa com ela. Pode ser
