@@ -363,6 +363,32 @@ export interface AgendaResposta {
   slots: AgendaSlot[];
   /** Frota ativa, para a tela mostrar capacidade total mesmo em slot vazio. */
   caminhoes: Caminhao[];
+  /**
+   * Tetos de entregas/dia da frota que TOCAM a janela consultada.
+   *
+   * As janelas CRUAS, e não as vagas já expandidas por dia: com MAX_DIAS = 92 e
+   * N caminhões, expandir seriam até 92×N objetos para carregar uma ou duas
+   * configurações. Quem resolve qual janela vale numa data é `limiteVigente`,
+   * regra pura que o frontend já usa no modal de agendar.
+   *
+   * Também NÃO vem "entregas no dia": esse número já está em
+   * `slot.ocupacao[].entregas`, e duplicá-lo criaria duas verdades que podem
+   * discordar no dia em que alguém mudar um dos dois caminhos.
+   *
+   * Obrigatório. Caminhão sem janela simplesmente não aparece aqui — e isso
+   * significa SEM TETO, não teto zero.
+   */
+  limites: AgendaLimite[];
+}
+
+/** Uma janela de teto de entregas/dia, como a agenda a publica. */
+export interface AgendaLimite {
+  caminhaoId: string;
+  /** Data ISO inicial, inclusiva. */
+  validoDe: string;
+  /** Data ISO final, inclusiva. null = vigência aberta. */
+  validoAte: string | null;
+  maxEntregasDia: number;
 }
 
 // ---------------------------------------------------------------------------

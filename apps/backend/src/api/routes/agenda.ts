@@ -13,6 +13,7 @@ import { z } from 'zod';
 
 import type {
   AgendaEntrega,
+  AgendaLimite,
   AgendaOcupacao,
   AgendaReserva,
   AgendaResposta,
@@ -144,6 +145,14 @@ const SELECT_AGENDA =
   'entrega_itens(produto_codigo, qtd, peso_unit_kg), ' +
   'pedidos(orix_numero, cliente_codigo, cliente_nome, cidade_cliente)';
 
+/** Linha de `caminhao_limites` (migração 0020) que toca a janela consultada. */
+interface LimiteAgendaRow {
+  caminhao_id: string;
+  valido_de: string;
+  valido_ate: string | null;
+  max_entregas_dia: number | string | null;
+}
+
 /** Peso da viagem: total agregado (desconhecido = 0) e o exibível (null se faltar peso). */
 interface PesoDoPedido {
   agregadoKg: number;
@@ -201,17 +210,19 @@ export async function agendaRoutes(app: FastifyInstance): Promise<void> {
       // As reservas entram aqui e não junto da query de entregas porque não
       // dependem dela: um slot pode ter reserva e nenhuma entrega — é o caso da
       // manhã da oficina, e é exatamente o que a tela precisa mostrar.
-      const [frota, motoristas, clientes, pesos, reservas] = await Promise.all([
-        lerFrota(),
-        resolverNomesMotorista(linhas),
-        resolverClientes(linhas),
-        lerPesosProdutos(
-          linhas.flatMap((l) =>
-            (l.entrega_itens ?? []).map((i) => i.produto_codigo ?? ''),
+      const [frota, motoristas, clientes, pesos, reservas, limites] =
+        await Promise.all([
+          lerFrota(),
+          resolverNomesMotorista(linhas),
+          resolverClientes(linhas),
+          lerPesosProdutos(
+            linhas.flatMap((l) =>
+              (l.entrega_itens ?? []).map((i) => i.produto_codigo ?? ''),
+            ),
           ),
-        ),
-        lerReservas(de, ate),
-      ]);
+          lerReservas(de, ate),
+          lerLimites(de, ate),
+        ]);
 
       const slots = montarSlots(
         linhas,
@@ -224,6 +235,7 @@ export async function agendaRoutes(app: FastifyInstance): Promise<void> {
       const resposta: AgendaResposta = {
         slots,
         caminhoes: [...frota.values()].filter((c) => c.ativo),
+        limites,
       };
       return reply.send(resposta);
     } catch (err) {
@@ -352,6 +364,45 @@ async function lerReservas(
   ]);
 
   return { linhas, motoristas, fornecedores };
+}
+
+/**
+ * Janelas de teto de entregas/dia que TOCAM a janela consultada.
+ *
+ * O recorte é de SOBREPOSIÇÃO, não de contenção: uma janela aberta cadastrada
+ * em janeiro vale para setembro, e um filtro `valido_de >= de` a perderia — o
+ * caminhão apareceria sem teto justamente porque a configuração é antiga.
+ *
+ * Degrada para vazio com log.error, como `lerReservas`: falha ao ler o teto não
+ * pode apagar o calendário. O preço é a tela mostrar "sem teto" por alguns
+ * segundos; o alternativo era o mês inteiro em branco. Quem RECUSA agendamento
+ * é `validarCargaDoAgendamento`, que lê o teto por conta própria e falha
+ * fechado — nada aqui afrouxa trava nenhuma.
+ */
+async function lerLimites(de: string, ate: string): Promise<AgendaLimite[]> {
+  const { data, error } = await supabase
+    .from('caminhao_limites')
+    .select('caminhao_id, valido_de, valido_ate, max_entregas_dia')
+    .lte('valido_de', ate)
+    .or(`valido_ate.is.null,valido_ate.gte.${de}`);
+
+  if (error) {
+    log.error(`[agenda] Falha ao ler os tetos de entrega: ${error.message}`);
+    return [];
+  }
+
+  const limites: AgendaLimite[] = [];
+  for (const r of (data ?? []) as unknown as LimiteAgendaRow[]) {
+    const max = Number(r.max_entregas_dia);
+    if (!r.caminhao_id || !Number.isFinite(max) || max <= 0) continue;
+    limites.push({
+      caminhaoId: r.caminhao_id,
+      validoDe: r.valido_de,
+      validoAte: r.valido_ate,
+      maxEntregasDia: max,
+    });
+  }
+  return limites;
 }
 
 /**
