@@ -31,27 +31,31 @@ export interface NavSection {
   itens: NavItem[];
 }
 
-// Os RÓTULOS seguem o vocabulário da operação, pedido pela Natália: Principal
-// fica só com o painel e a agenda, e o quadro desce para Operações com o nome
-// que a equipe usa, "Expedição". Os PATHS não mudam: /entregas e /rotas seguem
-// valendo (e /expedicao redireciona para /entregas), para não invalidar link
-// salvo de ninguém.
+// Os RÓTULOS seguem o vocabulário da operação, pedido pela Natália. Os PATHS
+// não mudam: /entregas e /rotas seguem valendo (e /expedicao redireciona para
+// /entregas), para não invalidar link salvo de ninguém.
+//
+// A ORDEM DE OPERAÇÕES É A ORDEM DO PROCESSO (reunião de 27/08/2026): "ele vai
+// agendar, ele vai separar, ele vai acompanhar a rota e depois ele tem o quadro
+// de pedidos". O quadro foi para o FIM porque deixou de ser onde o trabalho
+// começa: "quando a gente colocar os motoristas todos dentro do aplicativo, o
+// quadro de pedido só vai ser para ele acompanhar, porque o próprio motorista
+// vai finalizar o pedido".
 export const NAV_SECTIONS: NavSection[] = [
   {
     titulo: 'Principal',
     itens: [
-      { rotulo: 'Dash', to: '/dashboard', icone: LayoutDashboard },
+      // "Dashboard" e não "Dash": ela pediu a volta do nome inteiro — o apelido
+      // tinha nascido de uma abreviação dela num documento anterior.
+      { rotulo: 'Dashboard', to: '/dashboard', icone: LayoutDashboard },
+      // A Agenda continua aqui, e continua somente leitura: é a visão de todos
+      // os papéis. Quem AGENDA usa a tela de Agendamento, em Operações.
       { rotulo: 'Agenda', to: '/agenda', icone: CalendarDays },
     ],
   },
   {
     titulo: 'Operações',
-    // Ordem do fluxo físico: o pedido entra na expedição, é separado, e sai em
-    // rota.
     itens: [
-      // Sem `papeis` DE PROPÓSITO: o quadro é a tela que todos os papéis de
-      // equipe abrem, vendedor incluído. Não restrinja aqui.
-      { rotulo: 'Expedição', to: '/entregas', icone: Package },
       {
         rotulo: 'Separação',
         to: '/separacao',
@@ -59,6 +63,9 @@ export const NAV_SECTIONS: NavSection[] = [
         papeis: ['logistica', 'almoxarifado'],
       },
       { rotulo: 'Rota', to: '/rotas', icone: Route, papeis: ['logistica', 'vendedor'] },
+      // Sem `papeis` DE PROPÓSITO: o quadro é a tela que todos os papéis de
+      // equipe abrem, vendedor incluído. Não restrinja aqui.
+      { rotulo: 'Quadro de pedidos', to: '/entregas', icone: Package },
       { rotulo: 'Motoristas', to: '/motoristas', icone: Users, papeis: ['logistica'] },
       { rotulo: 'Caminhões', to: '/caminhoes', icone: Truck, papeis: ['logistica'] },
     ],
@@ -80,7 +87,10 @@ export interface RotaMeta {
 
 export const ROTAS_META: Record<string, RotaMeta> = {
   '/dashboard': { titulo: 'Dashboard', subtitulo: 'Visão geral da operação' },
-  '/entregas': { titulo: 'Expedição', subtitulo: 'Quadro de pedidos por status' },
+  '/entregas': {
+    titulo: 'Quadro de pedidos',
+    subtitulo: 'Acompanhamento do fim do processo',
+  },
   '/agenda': { titulo: 'Agenda', subtitulo: 'Entregas por dia e período' },
   '/separacao': {
     titulo: 'Separação',

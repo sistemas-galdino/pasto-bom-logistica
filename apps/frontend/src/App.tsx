@@ -168,10 +168,11 @@ export function App(): React.ReactElement {
                 ANTES do catch-all "*", senão caem no redirect de home. */}
             <Route path="/definir-senha" element={<DefinirSenha />} />
             <Route path="/acesso/:token" element={<Acesso />} />
-            {/* Apelidos históricos do quadro. O menu chama a tela de
-                "Expedição" e o /board é do nome antigo, mas o path canônico
-                segue /entregas — trocá-lo invalidaria link salvo por quem usa
-                o sistema todo dia, sem ganho nenhum. */}
+            {/* Apelidos históricos do quadro. Ele já se chamou "Board" e depois
+                "Expedição"; hoje o menu diz "Quadro de pedidos". O path
+                canônico segue /entregas em todas essas trocas — mexer nele
+                invalidaria link salvo por quem usa o sistema todo dia, sem
+                ganho nenhum. */}
             <Route path="/board" element={<Navigate to="/entregas" replace />} />
             <Route path="/expedicao" element={<Navigate to="/entregas" replace />} />
             <Route
