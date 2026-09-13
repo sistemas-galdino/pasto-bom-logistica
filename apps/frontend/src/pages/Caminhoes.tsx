@@ -13,15 +13,23 @@
 // cadastrada não tem limite nenhum, e por isso esta tela o marca.
 
 import React, { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { CalendarClock, Pencil, Plus, Truck, X } from 'lucide-react';
 import type {
   AtualizarCaminhaoRequest,
   Caminhao,
   CriarCaminhaoRequest,
+  LimiteEntregasCaminhao,
 } from '@pastobom/shared';
+import { limiteVigente } from '@pastobom/shared';
 import { api, ApiError } from '../lib/api';
 import { LimitesEntregaModal } from '../components/LimitesEntregaModal';
+import { hojeLocal, isoDeData } from '../lib/datas';
 
 function mensagemDeErro(err: unknown, fallback: string): string {
   if (err instanceof ApiError) return err.message;
@@ -63,6 +71,46 @@ export default function Caminhoes(): React.ReactElement {
     queryFn: ({ signal }) => api.listarCaminhoes(signal),
   });
 
+  const caminhoesLista = caminhoesQuery.data ?? [];
+
+  // O TETO DE CADA CAMINHÃO, na tabela.
+  //
+  // Existe por causa de 27/08/2026: a tonelagem deixou de recusar agendamento,
+  // então caminhão sem janela cadastrada não tem trava NENHUMA. Antes isso era
+  // detalhe de configuração; agora é o que separa "o sistema segura" de "só a
+  // atenção da equipe segura", e precisa estar visível sem abrir modal nenhum.
+  //
+  // Uma query por caminhão, com a MESMA queryKey do LimitesEntregaModal: a
+  // frota tem punhado de linhas e o cache é compartilhado, então abrir o modal
+  // depois não refaz a chamada. Um endpoint novo só para isto não se paga.
+  const limitesQueries = useQueries({
+    queries: caminhoesLista.map((c) => ({
+      queryKey: ['limites-caminhao', c.id],
+      queryFn: ({ signal }: { signal?: AbortSignal }) =>
+        api.limitesDoCaminhao(c.id, signal),
+    })),
+  });
+
+  const isoHoje = isoDeData(hojeLocal());
+  const tetoPorCaminhao = new Map<string, number | null>();
+  let carregandoTetos = false;
+  caminhoesLista.forEach((c, i) => {
+    const q = limitesQueries[i];
+    if (!q || q.isLoading) {
+      carregandoTetos = true;
+      return;
+    }
+    const janela = limiteVigente(
+      (q.data ?? []) as LimiteEntregasCaminhao[],
+      isoHoje,
+    );
+    tetoPorCaminhao.set(c.id, janela?.maxEntregasDia ?? null);
+  });
+
+  const semTeto = caminhoesLista.filter(
+    (c) => c.ativo && tetoPorCaminhao.get(c.id) === null,
+  );
+
   const statusMutacao = useMutation({
     mutationFn: ({ id, ativo }: { id: string; ativo: boolean }) =>
       api.atualizarCaminhao(id, { ativo }),
@@ -74,7 +122,7 @@ export default function Caminhoes(): React.ReactElement {
       setErroAcao(mensagemDeErro(err, 'Falha ao alterar o caminhão.')),
   });
 
-  const caminhoes = caminhoesQuery.data ?? [];
+  const caminhoes = caminhoesLista;
   const ativos = caminhoes.filter((c) => c.ativo);
   const capacidadeAtiva = ativos.reduce((s, c) => s + c.capacidadeKg, 0);
 
@@ -145,6 +193,26 @@ export default function Caminhoes(): React.ReactElement {
           </button>
         </div>
 
+        {/* O caminhão sem janela de limite deixou de ser detalhe de
+            configuração em 27/08/2026: como o peso não recusa mais nada, ele
+            passou a ser o caminhão que o sistema não segura de jeito nenhum.
+            Isto aqui é a lista de trabalho para fechar esse buraco — por isso
+            some sozinha quando todos tiverem teto. */}
+        {!carregandoTetos && semTeto.length > 0 && (
+          <div className="rounded-lg border border-trigo/40 bg-trigo-claro px-3 py-2.5 text-sm text-trigo-escuro">
+            <strong className="font-semibold">
+              {semTeto.length === 1
+                ? '1 caminhão ativo está sem teto de entregas por dia'
+                : `${semTeto.length} de ${ativos.length} caminhões ativos estão sem teto de entregas por dia`}
+            </strong>
+            {': '}
+            {semTeto.map((c) => c.nome).join(', ')}. Nesses, nada limita a
+            quantidade de viagens — a capacidade em toneladas aparece na agenda,
+            mas não recusa agendamento. Use "Entregas/dia" na linha de cada um
+            para cadastrar o teto.
+          </div>
+        )}
+
         {erroAcao && (
           <div
             role="alert"
@@ -168,12 +236,13 @@ export default function Caminhoes(): React.ReactElement {
           </p>
         ) : (
           <div className="overflow-x-auto rounded-xl2 border border-linha bg-papel shadow-carta">
-            <table className="w-full min-w-[820px] border-collapse text-left text-sm">
+            <table className="w-full min-w-[920px] border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-linha text-[11px] font-semibold uppercase tracking-wide text-tinta-suave">
                   <th className="px-4 py-3">Nome</th>
                   <th className="px-4 py-3">Placa</th>
                   <th className="px-4 py-3">Capacidade</th>
+                  <th className="px-4 py-3">Entregas/dia</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3 text-right">Ações</th>
                 </tr>
@@ -183,6 +252,9 @@ export default function Caminhoes(): React.ReactElement {
                   const ocupado =
                     statusMutacao.isPending &&
                     statusMutacao.variables?.id === c.id;
+                  const teto = tetoPorCaminhao.has(c.id)
+                    ? tetoPorCaminhao.get(c.id)
+                    : undefined;
                   return (
                     <tr
                       key={c.id}
@@ -201,6 +273,26 @@ export default function Caminhoes(): React.ReactElement {
                       </td>
                       <td className="px-4 py-3 font-display font-semibold text-mata-escuro">
                         {formatarToneladas(c.capacidadeKg)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {teto === undefined ? (
+                          <span className="text-xs text-pedra">…</span>
+                        ) : teto === null ? (
+                          <span
+                            className="inline-flex rounded-full bg-trigo-claro px-2.5 py-0.5 text-xs font-bold text-trigo-escuro"
+                            title="Este caminhão não tem limite de entregas por dia. Desde 09/2026 o peso não recusa mais agendamento — sem uma janela cadastrada, nada limita este caminhão."
+                          >
+                            sem teto
+                          </span>
+                        ) : (
+                          <span className="text-sm font-semibold text-tinta">
+                            {teto}
+                            <span className="font-normal text-tinta-suave">
+                              {' '}
+                              /dia
+                            </span>
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <span
