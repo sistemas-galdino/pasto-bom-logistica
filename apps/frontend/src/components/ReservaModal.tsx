@@ -48,6 +48,20 @@ import { SeletorSlot } from './SeletorSlot';
 interface Props {
   /** Ausente = nova reserva. Presente = edição da reserva existente. */
   reserva?: Reserva | null;
+  /**
+   * Slot já escolhido, quando a reserva foi aberta por uma VAGA da tela de
+   * Agendamento. Só vale para reserva NOVA — numa edição, quem manda é a
+   * reserva que está sendo editada.
+   *
+   * Aplicado nos INICIALIZADORES de `useState`, sem `useEffect`: o modal é
+   * montado e desmontado a cada abertura. Mantê-lo montado trocando o
+   * `slotInicial` exigiria uma `key`.
+   */
+  slotInicial?: {
+    data: string;
+    periodo: PeriodoEntrega;
+    caminhaoId?: string;
+  };
   enviando: boolean;
   erro: string | null;
   /** Recebe o corpo do POST (nova) ou o PATCH parcial (edição). */
@@ -88,6 +102,7 @@ const campoCls =
 
 export function ReservaModal({
   reserva = null,
+  slotInicial,
   enviando,
   erro,
   onConfirmar,
@@ -115,11 +130,15 @@ export function ReservaModal({
   );
   const [cidade, setCidade] = useState(reserva?.cidade ?? '');
   const [produtos, setProdutos] = useState(reserva?.produtos ?? '');
-  const [data, setData] = useState(reserva?.dataAgendada.slice(0, 10) ?? hojeISO());
-  const [periodo, setPeriodo] = useState<PeriodoEntrega>(
-    reserva?.periodo ?? 'manha',
+  const [data, setData] = useState(
+    reserva?.dataAgendada.slice(0, 10) ?? slotInicial?.data ?? hojeISO(),
   );
-  const [caminhaoId, setCaminhaoId] = useState(reserva?.caminhaoId ?? '');
+  const [periodo, setPeriodo] = useState<PeriodoEntrega>(
+    reserva?.periodo ?? slotInicial?.periodo ?? 'manha',
+  );
+  const [caminhaoId, setCaminhaoId] = useState(
+    reserva?.caminhaoId ?? slotInicial?.caminhaoId ?? '',
+  );
   const [motoristaId, setMotoristaId] = useState(reserva?.motoristaId ?? '');
   // Peso como TEXTO, como no agendamento: guardar número atrapalha quem está no
   // meio de digitar "1," ou apagou o campo para redigitar.

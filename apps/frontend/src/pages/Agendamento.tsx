@@ -26,14 +26,22 @@
 // desenho — `new Date('YYYY-MM-DD')` seria UTC e voltaria um dia.
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { CalendarDays, Info, Truck } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { CalendarDays, CalendarPlus, Info, Truck } from 'lucide-react';
 import { filtrarSlotsPorCaminhao } from '@pastobom/shared';
-import type { AgendaSlot } from '@pastobom/shared';
-import { api } from '../lib/api';
+import type {
+  AgendaSlot,
+  AtualizarReservaRequest,
+  CriarReservaRequest,
+} from '@pastobom/shared';
+import { api, ApiError } from '../lib/api';
+import { AgendarEntregaModal } from '../components/AgendarEntregaModal';
 import { EntregaDetalheModal } from '../components/EntregaDetalheModal';
+import { ReservaModal } from '../components/ReservaModal';
+import { SeletorPedidoPendente } from '../components/SeletorPedidoPendente';
 import {
   chaveSlot,
+  FaixaVagas,
   intervaloParaTela,
   NavegadorPeriodo,
   tituloDoPeriodo,
@@ -41,11 +49,23 @@ import {
   VisaoMes,
   VisaoSemana,
 } from '../components/agenda';
-import type { Visao } from '../components/agenda';
+import type { AlvoVaga, Visao } from '../components/agenda';
+import { useAuth } from '../auth/AuthProvider';
+import { invalidarAgendamento } from '../lib/cache';
 import { addDias, addMeses, hojeLocal, isoDeData } from '../lib/datas';
+import type { PedidoComSaldo } from '../lib/saldo-pedidos';
 import { pilulaFiltro } from '../lib/pilula';
 
+function mensagemDeErro(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) return err.message;
+  if (err instanceof Error) return err.message;
+  return fallback;
+}
+
 export default function Agendamento(): React.ReactElement {
+  const { podeEscrever } = useAuth();
+  const queryClient = useQueryClient();
+
   // Semana é o padrão: é a pergunta que a Natália faz mais ("o que esse
   // caminhão tem essa semana?"). Mês serve para enxergar folga adiante.
   const [visao, setVisao] = useState<Visao>('semana');
@@ -54,6 +74,24 @@ export default function Agendamento(): React.ReactElement {
   const [caminhaoId, setCaminhaoId] = useState<string | null>(null);
   // Viagem cujo detalhe está aberto. A busca é sob demanda, dentro do modal.
   const [detalheId, setDetalheId] = useState<string | null>(null);
+
+  // O CAMINHO DA VAGA, em três passos e dois estados:
+  //   vaga clicada  -> `vagaEscolhida` abre o seletor de pedidos
+  //   pedido escolhido -> `agendando` abre o modal de agendar já preenchido
+  // Guardar os dois separados (em vez de um estado com "etapa") deixa o
+  // `slotInicial` disponível nos dois passos sem ninguém precisar lembrar de
+  // carregá-lo adiante.
+  const [vagaEscolhida, setVagaEscolhida] = useState<AlvoVaga | null>(null);
+  const [agendando, setAgendando] = useState<
+    (PedidoComSaldo & { alvo: AlvoVaga }) | null
+  >(null);
+  const [erroAgendar, setErroAgendar] = useState<string | null>(null);
+
+  // Reserva aberta pela faixa (E7) ou pelo botão do cabeçalho.
+  const [reservando, setReservando] = useState<
+    { data: string; caminhaoId?: string } | null
+  >(null);
+  const [erroReserva, setErroReserva] = useState<string | null>(null);
 
   const ancoraIso = isoDeData(ancora);
   const intervalo = useMemo(
@@ -128,6 +166,87 @@ export default function Agendamento(): React.ReactElement {
   });
   const climaPorPedido = climaQuery.data ?? {};
 
+  const isoHoje = isoDeData(hojeLocal());
+
+  // --- escrever -------------------------------------------------------------
+  //
+  // As MESMAS rotas e as MESMAS invalidações do Quadro (lib/cache.ts). Esta
+  // tela não tem regra própria de agendamento: ela só encurta o caminho até a
+  // mesma chamada.
+
+  const agendarMutacao = useMutation({
+    mutationFn: (body: Parameters<typeof api.criarEntrega>[0]) =>
+      api.criarEntrega(body),
+    onSuccess: () => {
+      invalidarAgendamento(queryClient);
+      setAgendando(null);
+      setErroAgendar(null);
+    },
+    onError: (err) =>
+      setErroAgendar(mensagemDeErro(err, 'Falha ao agendar a entrega.')),
+  });
+
+  const reservaMutacao = useMutation({
+    mutationFn: (body: CriarReservaRequest | AtualizarReservaRequest) =>
+      api.criarReserva(body as CriarReservaRequest),
+    onSuccess: () => {
+      invalidarAgendamento(queryClient);
+      setReservando(null);
+      setErroReserva(null);
+    },
+    onError: (err) =>
+      setErroReserva(mensagemDeErro(err, 'Falha ao reservar o caminhão.')),
+  });
+
+  const nomeDoCaminhao = (id: string): string =>
+    caminhoes.find((c) => c.id === id)?.nome || 'Caminhão';
+
+  /**
+   * A faixa de vagas de um dia.
+   *
+   * Os SLOTS COMPLETOS, nunca `slotsVisiveis`: `filtrarSlotsPorCaminhao`
+   * descarta o slot sem entrega e sem reserva daquele caminhão, e o dia mais
+   * livre — o que tem TODAS as vagas — é justamente o que sumiria. Já a FROTA
+   * respeita o filtro: quem escolheu um caminhão está perguntando dele.
+   *
+   * `onAgendar` só existe para quem escreve. Sem ele a faixa vira texto, e é o
+   * que o vendedor e o almoxarifado veem.
+   */
+  function renderVagas(dataIso: string, variante: 'compacta' | 'completa') {
+    return (
+      <FaixaVagas
+        data={dataIso}
+        slots={slots}
+        limites={agendaQuery.data?.limites ?? []}
+        caminhoes={
+          filtroAtivo === null
+            ? caminhoes
+            : caminhoes.filter((c) => c.id === filtroAtivo)
+        }
+        variante={variante}
+        // Passado não recebe convite: ninguém agenda para trás, e a pílula ali
+        // só produziria um 422 (ou, pior, uma viagem marcada para ontem).
+        somenteLeitura={dataIso < isoHoje}
+        onAgendar={
+          podeEscrever
+            ? (alvo) => {
+                setErroAgendar(null);
+                setVagaEscolhida(alvo);
+              }
+            : undefined
+        }
+        onReservar={
+          podeEscrever
+            ? (alvo) => {
+                setErroReserva(null);
+                setReservando(alvo);
+              }
+            : undefined
+        }
+      />
+    );
+  }
+
   const porSlot = useMemo(() => {
     const mapa = new Map<string, AgendaSlot>();
     for (const slot of slotsVisiveis) {
@@ -167,7 +286,6 @@ export default function Agendamento(): React.ReactElement {
     0,
   );
 
-  const isoHoje = isoDeData(hojeLocal());
   const titulo = tituloDoPeriodo(visao, intervalo, ancoraIso);
   const nomeSelecionado =
     caminhoes.find((c) => c.id === filtroAtivo)?.nome ?? null;
@@ -253,6 +371,25 @@ export default function Agendamento(): React.ReactElement {
                   </button>
                 );
               })}
+              {/* RESERVAR fica aqui e TAMBÉM continua no Quadro. Ela disse "se
+                  você quiser tirar ele daqui e deixar ele só lá também pode, aí
+                  fica critério" — isso não é pedido de remoção, e tirar um botão
+                  que a equipe usa hoje seria regressão com ganho zero. O atalho
+                  bom é o da faixa de vagas, que já sabe o dia e o caminhão; este
+                  aqui é para quem chegou sem nenhum dos dois. */}
+              {podeEscrever && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setErroReserva(null);
+                    setReservando({ data: ancoraIso });
+                  }}
+                  className="ml-auto flex items-center gap-1.5 rounded-full border border-linha bg-papel px-3 py-1.5 text-xs font-semibold text-tinta-suave transition hover:border-mata/30 hover:text-mata"
+                >
+                  <CalendarPlus className="h-3.5 w-3.5" aria-hidden="true" />
+                  Reservar caminhão
+                </button>
+              )}
             </div>
 
             {/*
@@ -299,16 +436,24 @@ export default function Agendamento(): React.ReactElement {
                 porSlot={porSlot}
                 onAbrir={setDetalheId}
                 climaPorPedido={climaPorPedido}
+                renderVagas={(iso) => renderVagas(iso, 'compacta')}
               />
             )}
 
             {visao === 'dia' && (
-              <VisaoDia
-                data={isoDeData(ancora)}
-                porSlot={porSlot}
-                onAbrir={setDetalheId}
-                climaPorPedido={climaPorPedido}
-              />
+              <>
+                {/* A faixa entra como IRMÃ dos dois períodos, e não dentro da
+                    VisaoDia: a vaga é do DIA (o teto da 0020 é diário), e
+                    desenhá-la dentro de cada período diria que cabem N de manhã
+                    E N à tarde. */}
+                {renderVagas(ancoraIso, 'completa')}
+                <VisaoDia
+                  data={ancoraIso}
+                  porSlot={porSlot}
+                  onAbrir={setDetalheId}
+                  climaPorPedido={climaPorPedido}
+                />
+              </>
             )}
           </div>
         )}
@@ -318,6 +463,63 @@ export default function Agendamento(): React.ReactElement {
         <EntregaDetalheModal
           entregaId={detalheId}
           onFechar={() => setDetalheId(null)}
+        />
+      )}
+
+      {/* Passo 2 do caminho da vaga: QUAL pedido vai nesta viagem. */}
+      {vagaEscolhida !== null && (
+        <SeletorPedidoPendente
+          data={vagaEscolhida.data}
+          periodo={vagaEscolhida.periodo}
+          nomeCaminhao={nomeDoCaminhao(vagaEscolhida.caminhaoId)}
+          onFechar={() => setVagaEscolhida(null)}
+          onEscolher={(escolhido) => {
+            setAgendando({ ...escolhido, alvo: vagaEscolhida });
+            setVagaEscolhida(null);
+          }}
+        />
+      )}
+
+      {/* Passo 3: o MESMO modal do Quadro, já com data, período e caminhão. */}
+      {agendando !== null && (
+        <AgendarEntregaModal
+          pedido={agendando.pedido}
+          saldo={agendando.saldo}
+          slotInicial={agendando.alvo}
+          enviando={agendarMutacao.isPending}
+          erro={erroAgendar}
+          onCancelar={() => {
+            if (!agendarMutacao.isPending) {
+              setAgendando(null);
+              setErroAgendar(null);
+            }
+          }}
+          onConfirmar={(dados) =>
+            agendarMutacao.mutate({ pedidoId: agendando.pedido.id, ...dados })
+          }
+        />
+      )}
+
+      {reservando !== null && (
+        <ReservaModal
+          slotInicial={
+            reservando.caminhaoId
+              ? {
+                  data: reservando.data,
+                  periodo: 'manha',
+                  caminhaoId: reservando.caminhaoId,
+                }
+              : { data: reservando.data, periodo: 'manha' }
+          }
+          enviando={reservaMutacao.isPending}
+          erro={erroReserva}
+          onFechar={() => {
+            if (!reservaMutacao.isPending) {
+              setReservando(null);
+              setErroReserva(null);
+            }
+          }}
+          onConfirmar={(body) => reservaMutacao.mutate(body)}
         />
       )}
     </div>
