@@ -7,10 +7,16 @@
 // rota" perderia a confiança no quadro. A borda tracejada é o MESMO desenho do
 // card de reserva da agenda: o mesmo objeto tem de se reconhecer nas duas telas.
 //
-// Este componente é do QUADRO e vive na faixa acima das colunas. O da agenda
-// (components/agenda/CardReserva.tsx) é outro: lá o card é só leitura, cabe num
-// slot estreito e tem modo compacto; aqui ele carrega as ações de Editar e
-// Cancelar, que só a logística vê.
+// Este componente é do QUADRO e vive DENTRO da coluna Agendada, entre os
+// cartões de viagem (até 09/2026 ele morava numa faixa horizontal acima das
+// colunas; a faixa comia a altura de todas elas e travava o scroll do grid). O
+// da agenda (components/agenda/CardReserva.tsx) é outro: lá o card é só
+// leitura, cabe num slot estreito e tem modo compacto; aqui ele carrega as
+// ações de Editar e Cancelar, que só a logística vê.
+//
+// Sem largura própria: a faixa rolava na horizontal e precisava de
+// `min-w`/`max-w`/`shrink-0`; a coluna já dá a largura, e forçar 260px aqui
+// deixaria o cartão de reserva estreito no meio dos de entrega.
 //
 // O CADEADO não é enfeite. É a diferença entre "o caminhão está reservado" e "o
 // caminhão vai fazer isso e ainda entrega" — quem lê o quadro para prometer
@@ -54,7 +60,7 @@ export function ReservaCard({
     reserva.fornecedorNome?.trim() || reserva.cidade?.trim() || '';
 
   return (
-    <article className="animate-sobe w-full min-w-[260px] max-w-[320px] shrink-0 rounded-xl border border-dashed border-pedra bg-creme-50 p-3.5 transition duration-200 hover:-translate-y-0.5 hover:shadow-carta">
+    <article className="animate-sobe w-full rounded-xl border border-dashed border-pedra bg-creme-50 p-3.5 transition duration-200 hover:-translate-y-0.5 hover:shadow-carta">
       <div className="flex items-start justify-between gap-2">
         <h3 className="flex min-w-0 items-center gap-1.5 font-display text-[15px] font-semibold leading-tight text-tinta">
           {reserva.bloqueiaCaminhao && (

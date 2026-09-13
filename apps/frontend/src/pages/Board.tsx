@@ -30,6 +30,7 @@ import type {
   Reserva,
   StatusEntrega,
 } from '@pastobom/shared';
+import { ordenarCartoesAgendada } from '@pastobom/shared';
 import { api, ApiError } from '../lib/api';
 import {
   agruparEntregasPorPedido,
@@ -164,16 +165,21 @@ export function Board(): React.ReactElement {
   });
 
   /**
-   * Janela das reservas mostradas na faixa.
+   * Janela das reservas, agora MESMO CRITÉRIO da coluna Agendada.
    *
-   * Segue o filtro de DATA DA ENTREGA: quem recorta o quadro para "o que sai
-   * hoje" espera que a reserva do mesmo dia venha junto. Sem filtro, de hoje em
-   * diante — reserva da semana passada não é trabalho a fazer, e a faixa existe
-   * para o dia à frente não parecer vago.
+   * Enquanto a reserva morava numa faixa própria, cortar em "de hoje em diante"
+   * fazia sentido: a faixa existia para o dia à frente não parecer vago. Dentro
+   * da coluna esse corte vira incoerência visível — a coluna Agendada NÃO tem
+   * janela (agendado para trás continua na fila, é trabalho que não aconteceu),
+   * então a entrega de ontem apareceria e a reserva de ontem, não, lado a lado.
+   *
+   * Reserva ativa com data passada é exatamente isso: um caminhão bloqueado que
+   * ninguém resolveu. Ela some quando for cancelada, como a entrega some quando
+   * for entregue.
    */
   const filtroReservas = useMemo(() => {
     const f: { de?: string; ate?: string } = {};
-    f.de = entregaDe !== '' ? entregaDe : isoMenosDias(0);
+    if (entregaDe !== '') f.de = entregaDe;
     if (entregaAte !== '') f.ate = entregaAte;
     return f;
   }, [entregaDe, entregaAte]);
@@ -472,10 +478,10 @@ export function Board(): React.ReactElement {
   );
 
   /**
-   * Reservas da faixa, obedecendo a MESMA busca dos cards.
+   * Reservas da coluna Agendada, obedecendo a MESMA busca dos cards.
    *
    * Quem digita "oficina" espera achar a reserva; quem digita o nome de um
-   * cliente não espera ver reserva nenhuma. Deixar a faixa fora da busca faria
+   * cliente não espera ver reserva nenhuma. Deixar a reserva fora da busca faria
    * o quadro filtrado mostrar cartões que não casam com o termo.
    */
   const reservasVisiveis = useMemo(() => {
@@ -492,6 +498,18 @@ export function Board(): React.ReactElement {
       ].some((c) => normalizar(c).includes(termo)),
     );
   }, [reservasQuery.data, termo]);
+
+  /**
+   * A pilha da coluna Agendada: entregas e reservas na ordem do calendário.
+   *
+   * A regra de ordem é pura e testada (`ordenarCartoesAgendada`) porque ela é
+   * o que a mudança de lugar da reserva de fato decide — ver o cabeçalho do
+   * arquivo em packages/shared.
+   */
+  const cartoesAgendada = useMemo(
+    () => ordenarCartoesAgendada(entregasPorStatus.agendada, reservasVisiveis),
+    [entregasPorStatus, reservasVisiveis],
+  );
 
   const entregaSeparacao = useMemo(
     () => entregas.find((e) => e.id === separandoId) ?? null,
@@ -567,6 +585,58 @@ export function Board(): React.ReactElement {
     return `até ${formatarData(entregaAte)}`;
   }
 
+  /**
+   * Nota do cabeçalho da coluna.
+   *
+   * A Agendada ganha a decomposição quando tem reserva: o badge passou a contar
+   * CARTÕES, e sem esta linha o número mente para quem conta viagens. Sem
+   * reserva nenhuma a coluna não diz nada — "3 entregas" abaixo de um badge
+   * escrito 3 é repetição.
+   */
+  function notaDaColuna(status: StatusEntrega, reservas: number): string | undefined {
+    const janela =
+      status === 'nao_realizado'
+        ? notaJanela(DIAS_NAO_REALIZADO)
+        : status === 'entregue'
+          ? notaJanela(DIAS_ENTREGUE)
+          : notaJanela();
+    if (reservas === 0) return janela;
+
+    const entregas = entregasPorStatus[status].length;
+    const partes = [
+      `${entregas} ${entregas === 1 ? 'entrega' : 'entregas'}`,
+      `${reservas} ${reservas === 1 ? 'reserva' : 'reservas'}`,
+    ];
+    return janela ? [janela, ...partes].join(' · ') : partes.join(' · ');
+  }
+
+  /** O cartão de viagem, que agora é renderizado de dois lugares. */
+  function cartaoEntrega(e: Entrega): React.ReactElement {
+    return (
+      <EntregaCard
+        key={e.id}
+        entrega={e}
+        clima={climaPorPedido[e.pedidoId] ?? null}
+        podeEscrever={podeEscrever}
+        podeSeparar={podeSeparar}
+        onTransicionar={abrirTransicaoEntrega}
+        onSeparar={(entrega) => {
+          setErroSeparacao(null);
+          setSeparandoId(entrega.id);
+        }}
+        onReverter={abrirReversaoEntrega}
+        onReagendar={(entrega) => {
+          setErroReagendar(null);
+          setReagendando(entrega);
+        }}
+        onNaoRealizado={(entrega) => {
+          setErroNaoRealizado(null);
+          setAlvoNaoRealizado(entrega);
+        }}
+      />
+    );
+  }
+
   const abaCls = (ativo: boolean) =>
     `rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
       ativo
@@ -633,6 +703,18 @@ export function Board(): React.ReactElement {
               ? `${cancelados.length} descartados`
               : `${totalNoFluxo} no fluxo`}
           </span>
+          {/* A reserva não entra no "no fluxo": ela não é pedido nem viagem,
+              não caminha pelas colunas. Mas ela sumiu da faixa própria e passou
+              a dividir a coluna Agendada — sem este número, quem conta viagens
+              pelo badge da coluna conta errado e não tem onde conferir. */}
+          {!verCancelados && reservasVisiveis.length > 0 && (
+            <span className="text-tinta-suave">
+              ·{' '}
+              {reservasVisiveis.length === 1
+                ? '1 reserva'
+                : `${reservasVisiveis.length} reservas`}
+            </span>
+          )}
           {(pedidosQuery.isFetching || entregasQuery.isFetching) && (
             <span className="text-xs text-pedra">atualizando…</span>
           )}
@@ -877,56 +959,13 @@ export function Board(): React.ReactElement {
           </div>
         ) : (
           <div className="flex h-full flex-col">
-            {/* FAIXA DE RESERVAS, acima das colunas.
-
-                Por que fora das colunas, e não dentro de "Agendada": a `Coluna`
-                se esvazia por `quantidade` (quantidade === 0 vira "Nada aqui."
-                em lugar dos children), então uma reserva posta ali desapareceria
-                em todo dia sem nenhuma entrega — justamente o dia que o Johnny
-                quer ver ocupado. E é mais honesto: reserva não é entrega, não
-                caminha pelo fluxo.
-
-                A faixa só existe quando há reserva: uma faixa vazia permanente
-                só roubaria altura das colunas. */}
-            {reservasVisiveis.length > 0 && (
-              <section className="border-b border-linha bg-creme-50/40 px-4 py-3 sm:px-6">
-                <div className="flex items-baseline gap-2">
-                  <h3 className="font-display text-sm font-semibold text-mata-escuro">
-                    Caminhão reservado
-                  </h3>
-                  <span className="text-[11px] text-pedra">
-                    {reservasVisiveis.length === 1
-                      ? '1 reserva'
-                      : `${reservasVisiveis.length} reservas`}{' '}
-                    · não é entrega a cliente
-                  </span>
-                </div>
-                <div className="scroll-suave mt-2 flex gap-3 overflow-x-auto pb-1">
-                  {reservasVisiveis.map((r) => (
-                    <ReservaCard
-                      key={r.id}
-                      reserva={r}
-                      podeEscrever={podeEscrever}
-                      onEditar={(reserva) => {
-                        setErroReserva(null);
-                        setReservaEdicao(reserva);
-                      }}
-                      onCancelar={(reserva) => {
-                        setErroCancelarReserva(null);
-                        setCancelandoReserva(reserva);
-                      }}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
-
             <div className="scroll-suave flex min-h-0 flex-1 gap-3 overflow-x-auto p-4 sm:p-6">
               {/* Coluna PENDENTE: pedidos com saldo. */}
             <Coluna
               rotulo="Pendente"
               faixa={STATUS_META.pendente.faixa}
               quantidade={pendentesVisiveis.length}
+              vazia={pendentesVisiveis.length === 0}
               nota={
                 // Pedido pendente não TEM data de entrega — é o que ainda não
                 // foi agendado. Esconder a coluna esconderia o trabalho a
@@ -951,46 +990,50 @@ export function Board(): React.ReactElement {
               ))}
             </Coluna>
 
-            {/* Colunas de VIAGEM. */}
-            {COLUNAS_ENTREGA.map((status) => (
-              <Coluna
-                key={status}
-                rotulo={STATUS_ENTREGA_META[status].rotulo}
-                faixa={STATUS_ENTREGA_META[status].faixa}
-                quantidade={entregasPorStatus[status].length}
-                nota={
-                  status === 'nao_realizado'
-                    ? notaJanela(DIAS_NAO_REALIZADO)
-                    : status === 'entregue'
-                      ? notaJanela(DIAS_ENTREGUE)
-                      : notaJanela()
-                }
-              >
-                {entregasPorStatus[status].map((e) => (
-                  <EntregaCard
-                    key={e.id}
-                    entrega={e}
-                    clima={climaPorPedido[e.pedidoId] ?? null}
-                    podeEscrever={podeEscrever}
-                    podeSeparar={podeSeparar}
-                    onTransicionar={abrirTransicaoEntrega}
-                    onSeparar={(entrega) => {
-                      setErroSeparacao(null);
-                      setSeparandoId(entrega.id);
-                    }}
-                    onReverter={abrirReversaoEntrega}
-                    onReagendar={(entrega) => {
-                      setErroReagendar(null);
-                      setReagendando(entrega);
-                    }}
-                    onNaoRealizado={(entrega) => {
-                      setErroNaoRealizado(null);
-                      setAlvoNaoRealizado(entrega);
-                    }}
-                  />
-                ))}
-              </Coluna>
-            ))}
+            {/* Colunas de VIAGEM.
+
+                A RESERVA mora na Agendada desde 09/2026 (pedido da Natália na
+                reunião de 27/08: a faixa acima das colunas comia a altura e
+                travava o scroll do grid). Ela não caminha pelo fluxo — não é
+                separada, não vai em rota —, então fica só nesta coluna, que é
+                onde o caminhão está comprometido e nada aconteceu ainda. */}
+            {COLUNAS_ENTREGA.map((status) => {
+              const ehAgendada = status === 'agendada';
+              const reservas = ehAgendada ? reservasVisiveis.length : 0;
+              const cartoes = entregasPorStatus[status].length + reservas;
+              return (
+                <Coluna
+                  key={status}
+                  rotulo={STATUS_ENTREGA_META[status].rotulo}
+                  faixa={STATUS_ENTREGA_META[status].faixa}
+                  quantidade={cartoes}
+                  vazia={cartoes === 0}
+                  nota={notaDaColuna(status, reservas)}
+                >
+                  {ehAgendada
+                    ? cartoesAgendada.map((c) =>
+                        c.tipo === 'reserva' ? (
+                          <ReservaCard
+                            key={`reserva:${c.reserva.id}`}
+                            reserva={c.reserva}
+                            podeEscrever={podeEscrever}
+                            onEditar={(reserva) => {
+                              setErroReserva(null);
+                              setReservaEdicao(reserva);
+                            }}
+                            onCancelar={(reserva) => {
+                              setErroCancelarReserva(null);
+                              setCancelandoReserva(reserva);
+                            }}
+                          />
+                        ) : (
+                          cartaoEntrega(c.entrega)
+                        ),
+                      )
+                    : entregasPorStatus[status].map((e) => cartaoEntrega(e))}
+                </Coluna>
+              );
+            })}
             </div>
           </div>
         )}
@@ -1187,7 +1230,19 @@ export function Board(): React.ReactElement {
 interface ColunaProps {
   rotulo: string;
   faixa: string;
+  /** O número do badge. Conta CARTÕES — na Agendada, entregas + reservas. */
   quantidade: number;
+  /**
+   * Se a coluna está vazia, dito por quem sabe — e não deduzido de
+   * `quantidade`.
+   *
+   * Era `quantidade === 0`, e isso funcionou enquanto cada coluna tinha um tipo
+   * de cartão só. Com a reserva dentro da Agendada, deduzir voltaria a esconder
+   * os children no dia que só tem reserva — exatamente o dia que a Onda C
+   * existia para não perder — se um dia alguém resolvesse não contar a reserva
+   * no badge. Separar os dois tira a armadilha do caminho.
+   */
+  vazia: boolean;
   /** Nota do cabeçalho (ex.: a janela de dias das colunas de desfecho). */
   nota?: string;
   children: React.ReactNode;
@@ -1197,6 +1252,7 @@ function Coluna({
   rotulo,
   faixa,
   quantidade,
+  vazia,
   nota,
   children,
 }: ColunaProps): React.ReactElement {
@@ -1219,7 +1275,7 @@ function Coluna({
       </header>
 
       <div className="scroll-suave flex flex-1 flex-col gap-3 overflow-y-auto p-3">
-        {quantidade === 0 ? (
+        {vazia ? (
           <p className="px-1 py-10 text-center text-xs text-pedra">
             Nada aqui.
           </p>
