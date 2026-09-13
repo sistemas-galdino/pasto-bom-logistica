@@ -270,7 +270,6 @@ export async function criarReserva(args: CriarReservaArgs): Promise<Reserva> {
     periodo: args.periodo,
     motoristaId: args.motoristaId ?? null,
     caminhaoId: args.caminhaoId,
-    pesoDaCargaKg: args.pesoPrevistoKg ?? 0,
     exigeExclusividade: bloqueiaCaminhao,
   });
 
@@ -350,7 +349,6 @@ export async function atualizarReserva(
     periodo,
     motoristaId: motoristaId ?? null,
     caminhaoId,
-    pesoDaCargaKg: pesoPrevistoKg ?? 0,
     exigeExclusividade: bloqueiaCaminhao,
   });
 

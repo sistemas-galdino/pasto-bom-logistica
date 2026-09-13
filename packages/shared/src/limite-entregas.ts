@@ -5,6 +5,12 @@
 //  de tonelagem. A validação deverá considerar as duas regras
 //  simultaneamente."
 //
+// A SEGUNDA METADE DESSE PEDIDO CAIU EM 27/08/2026. Na reunião com o consultor
+// ela fechou o contrário: "você trava os agendamentos do dia em cima da
+// quantidade e não do peso". A tonelagem virou sinalização — mostrada na
+// agenda, no quadro e no modal, sem recusar nada. ESTE ARQUIVO PASSOU A SER A
+// ÚNICA REGRA QUE RECUSA AGENDAMENTO DE CLIENTE.
+//
 // Duas coisas que este arquivo resolve e que a tela e o backend NÃO podem
 // responder cada um do seu jeito:
 //
@@ -92,11 +98,15 @@ export interface ResultadoLimiteEntregas {
  *
  * SEM janela cadastrada, cabe — e de propósito: nenhum default foi pedido, e
  * inventar um (digamos, 5) faria o sistema começar a recusar agendamento que
- * hoje passa, sem ninguém ter configurado nada. Quem não cadastra continua
- * limitado só pela tonelagem, exatamente como antes.
+ * hoje passa, sem ninguém ter configurado nada.
  *
- * Esta função NÃO olha peso. A tonelagem é a outra metade da regra e vive em
- * services/carga.ts; as duas valem juntas, e nenhuma substitui a outra.
+ * ATENÇÃO AO QUE ISSO SIGNIFICA DESDE 27/08/2026: quem não cadastra janela não
+ * tem teto NENHUM. Antes a tonelagem segurava esse caso; ela não segura mais. O
+ * tratamento escolhido foi tornar o caso VISÍVEL (a tela Caminhões marca "sem
+ * teto"), e NÃO adivinhar um número.
+ *
+ * Esta função NÃO olha peso — e não existe mais "a outra metade da regra": o
+ * peso é sinal, em services/carga.ts e nas barras de ocupação.
  */
 export function avaliarLimiteEntregas(
   entrada: EntradaLimiteEntregas,

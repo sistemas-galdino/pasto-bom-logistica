@@ -8,8 +8,10 @@
 //   - Dentro de um slot, o par motorista<->caminhão é ÚNICO: um caminhão não sai
 //     com dois motoristas, e um motorista não leva dois caminhões. Várias
 //     entregas compartilham o mesmo par — isso É a rota.
-//   - A soma do peso das entregas de um caminhão no slot não pode passar da
-//     capacidade dele.
+//   - A soma do peso das entregas de um caminhão no slot é MOSTRADA em toda
+//     tela (agenda, quadro, modal de agendar) e não recusa nada. Quem recusa é
+//     o teto de QUANTIDADE de viagens por dia (migração 0020). Decisão da
+//     Natália em 27/08/2026 — ver validarCargaDoAgendamento.
 //
 // O peso vem da tabela `produtos_peso` (peso UNITÁRIO por produto), preenchida
 // pelo parser do nome (origem='auto') ou digitada pela equipe (origem='manual').
@@ -446,23 +448,39 @@ export async function carregarCaminhao(id: string): Promise<Caminhao> {
   };
 }
 
-function formatarT(kg: number): string {
-  return `${(kg / 1000).toLocaleString('pt-BR', {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 2,
-  })} t`;
-}
-
 /**
  * Valida as travas de quem ocupa um caminhão num slot. Lança TransicaoError 422
  * com mensagem pronta para a tela.
  *
  *   1) o caminhão não pode estar reservado para outro serviço (oficina etc.);
  *   2) uma reserva exclusiva não pode cair sobre um caminhão que já tem viagem;
- *   3) capacidade do caminhão no slot (a carga do dia não pode estourar);
- *   4) número de entregas do caminhão no DIA, quando há limite configurado;
- *   5) o caminhão não pode sair com dois motoristas no mesmo slot;
- *   6) o motorista não pode levar dois caminhões no mesmo slot.
+ *   3) número de entregas do caminhão no DIA, quando há limite configurado;
+ *   4) o caminhão não pode sair com dois motoristas no mesmo slot;
+ *   5) o motorista não pode levar dois caminhões no mesmo slot.
+ *
+ * O PESO NÃO ESTÁ NESTA LISTA, E ISSO É A DECISÃO — NÃO UM ESQUECIMENTO.
+ * ---------------------------------------------------------------------------
+ * Até 08/2026 havia aqui uma trava de capacidade: a soma do peso do slot não
+ * podia passar de `caminhoes.capacidade_kg`. Ela saiu por decisão da Natália
+ * com o consultor, na reunião de 27/08/2026:
+ *
+ *   "por mais que o consultor colocou que o cargo 816 pode ser agendado quatro
+ *    vezes no dia, ele tá ainda seguindo a regra do peso. A hora que lotou o
+ *    caminhão, ele não deixou agendar mais."
+ *   "o peso não tem problema. Você pode deixar ele mostrando em todos os
+ *    lugares, mostrando na agenda, mas que ele não seja um impeditivo de
+ *    agendamento, mas que ele sinalize para ele se aquele caminhão já tá lotado
+ *    ou não."
+ *
+ * O peso continua sendo CALCULADO e continua viajando na resposta da agenda
+ * (`AgendaOcupacao.usadoKg`) — ele virou sinal, não porteiro. A comparação com
+ * a capacidade vive em `avaliarCapacidade` (@pastobom/shared), um lugar só.
+ *
+ * CONSEQUÊNCIA QUE VOCÊ PRECISA SABER ANTES DE MEXER AQUI: caminhão SEM janela
+ * em `caminhao_limites` não tem teto nenhum. Antes o peso o segurava; agora,
+ * nada o segura. Isso é visível de propósito (a tela Caminhões marca "sem
+ * teto") e NÃO deve ser resolvido inventando um default — ver
+ * lerLimitesDoCaminhao.
  *
  * Ponto único: agendar, reagendar e reservar passam todos por aqui. Se você
  * criar outro caminho de escrita de `entregas` ou de `reservas`, chame esta
@@ -484,8 +502,6 @@ export async function validarCargaDoAgendamento(args: {
   /** Nulável porque reserva pode não ter motorista (o caminhão vai à oficina). */
   motoristaId: string | null;
   caminhaoId: string;
-  /** Peso das quantidades DESTA viagem, não o do pedido inteiro. */
-  pesoDaCargaKg: number;
   /** Reserva que pede o caminhão inteiro no período (`bloqueia_caminhao`). */
   exigeExclusividade?: boolean;
 }): Promise<void> {
@@ -497,7 +513,6 @@ export async function validarCargaDoAgendamento(args: {
     periodo,
     motoristaId,
     caminhaoId,
-    pesoDaCargaKg,
     exigeExclusividade = false,
   } = args;
 
@@ -536,32 +551,16 @@ export async function validarCargaDoAgendamento(args: {
     );
   }
 
-  // 3) Capacidade.
-  const jaUsado = noCaminhao?.usadoKg ?? 0;
-  const totalKg = jaUsado + pesoDaCargaKg;
-  if (totalKg > caminhao.capacidadeKg) {
-    const excedente = totalKg - caminhao.capacidadeKg;
-    throw new TransicaoError(
-      422,
-      'capacidade_excedida',
-      `A carga não cabe: o ${caminhao.nome} comporta ${formatarT(
-        caminhao.capacidadeKg,
-      )} e ficaria com ${formatarT(totalKg)} (excedeu ${formatarT(
-        excedente,
-      )}). Escolha outro caminhão, outro período ou outro dia.`,
-    );
-  }
-
-  // 4) Quantidade de entregas no DIA (as duas regras valem juntas, como ela
-  //    pediu: tonelagem E número de entregas).
+  // 3) Quantidade de entregas no DIA. Desde 27/08/2026 esta é a ÚNICA trava que
+  //    recusa agendamento de cliente — a tonelagem virou sinal visual.
   //
   //    Atenção ao escopo: o teto é por DIA e o slot é dia x turno, então a
   //    contagem soma manhã e tarde. Contar só o slot deixaria o caminhão levar
   //    5 de manhã e 5 à tarde com teto de 5.
   //
   //    RESERVA não passa por aqui: o teto é de entregas a cliente, e a reserva
-  //    já bloqueia por outro caminho (trava 1 e tonelagem). Por isso
-  //    `contarEntregasNoDia` continua olhando só a tabela `entregas`.
+  //    já bloqueia pela trava 1. Por isso `contarEntregasNoDia` continua
+  //    olhando só a tabela `entregas`.
   const limites =
     alvo === 'entrega' ? await lerLimitesDoCaminhao(caminhaoId) : [];
   if (limites.length > 0) {
@@ -586,7 +585,7 @@ export async function validarCargaDoAgendamento(args: {
   // motorista não têm o que comparar.
   if (motoristaId === null) return;
 
-  // 5) O caminhão já está com OUTRO motorista neste período?
+  // 4) O caminhão já está com OUTRO motorista neste período?
   const outrosMotoristas = [...(noCaminhao?.motoristaIds ?? [])].filter(
     (id) => id !== motoristaId,
   );
@@ -599,7 +598,7 @@ export async function validarCargaDoAgendamento(args: {
     );
   }
 
-  // 6) O motorista já está em OUTRO caminhão neste período?
+  // 5) O motorista já está em OUTRO caminhão neste período?
   for (const [outroCaminhaoId, u] of uso) {
     if (outroCaminhaoId === caminhaoId) continue;
     if (u.motoristaIds.has(motoristaId)) {
@@ -618,11 +617,22 @@ export async function validarCargaDoAgendamento(args: {
 /**
  * Janelas de limite de um caminhão.
  *
- * Lê todas e deixa a escolha da vigente para a regra pura em
- * @pastobom/shared — assim a tela decide igual ao servidor. Lista vazia = sem
- * teto de quantidade, e o caminhão segue limitado só pela tonelagem (nenhum
- * default foi pedido; inventar um faria o sistema recusar agendamento que hoje
- * passa, sem ninguém ter configurado nada).
+ * Lê todas e deixa a escolha da vigente para a regra pura em @pastobom/shared —
+ * assim a tela decide igual ao servidor.
+ *
+ * LISTA VAZIA = SEM TETO, E ISSO AGORA É SÉRIO. Até 08/2026 o caminhão sem
+ * janela continuava limitado pela tonelagem; desde que o peso virou sinal
+ * (27/08/2026), caminhão sem janela não tem limite NENHUM. Continuamos não
+ * inventando default: um teto que ninguém configurou começaria a recusar
+ * agendamento que hoje passa, e ninguém saberia de onde veio o número. O
+ * tratamento é tornar o caso VISÍVEL (a tela Caminhões marca "sem teto"), não
+ * adivinhar.
+ *
+ * FALHA DE LEITURA LANÇA, não degrada. Antes devolvíamos [] e seguíamos, porque
+ * a tonelagem era a rede embaixo. Não é mais: engolir o erro aqui liberaria o
+ * caminhão inteiro por causa de um blip do Supabase, em silêncio. É a mesma
+ * postura de `contarEntregasNoDia`, logo abaixo, que sempre lançou — o caminho
+ * já era meio fechado, e a promessa de degradação nunca foi inteira.
  */
 export async function lerLimitesDoCaminhao(
   caminhaoId: string,
@@ -633,13 +643,14 @@ export async function lerLimitesDoCaminhao(
     .eq('caminhao_id', caminhaoId);
 
   if (error) {
-    // Degrada em vez de derrubar: o limite de quantidade é uma regra a MAIS, e
-    // uma falha de leitura aqui não pode impedir a operação de agendar. A
-    // tonelagem, que é a regra antiga, continua valendo.
     log.error(
       `[carga] Falha ao ler os limites do caminhão ${caminhaoId}: ${error.message}`,
     );
-    return [];
+    throw new TransicaoError(
+      500,
+      'erro_banco',
+      'Não foi possível conferir o limite de entregas deste caminhão. Tente de novo em alguns segundos.',
+    );
   }
 
   return (data ?? []).map((l) => ({

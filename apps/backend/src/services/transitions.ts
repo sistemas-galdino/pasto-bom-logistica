@@ -6,8 +6,13 @@
 //   2) valida a máquina de estados (podeTransicionar) — senão erro 409;
 //   3) se para==='agendada': exige data, período, motorista, caminhão e o peso de
 //      TODOS os itens (422); RF-1.8: exige propriedadeCodigo quando o cliente tem
-//      >1 propriedade; aplica as travas de carga (services/carga.ts) e grava
-//      data_agendada/periodo/motorista_id/caminhao_id/propriedade_codigo;
+//      >1 propriedade; grava data_agendada/periodo/motorista_id/caminhao_id/
+//      propriedade_codigo. NÃO aplica as travas de slot: este é o caminho ANTIGO
+//      (pedido inteiro), substituído na Onda 2 por criarEntrega/reagendarEntrega
+//      em services/entregas.ts, que são quem chama validarCargaDoAgendamento.
+//      Nenhuma tela manda 'agendada' por aqui — conferido em 09/2026: o único
+//      api.transicionar do frontend é { para: 'cancelada' }. O import da função
+//      estava aqui sem uso, prometendo uma trava que nunca rodou;
 //   4) atualiza status_logistico + atualizado_em;
 //   5) registra evento em eventos_status (de, para, ator);
 //   6) EXACTLY-ONCE: se a transição dispara um template, cria UMA linha em
@@ -36,7 +41,6 @@ import {
   itensSemPeso,
   lerPesosProdutos,
   pesoTotalDoPedido,
-  validarCargaDoAgendamento,
 } from './carga.js';
 import { enviarTexto } from '../whatsapp/evolution.js';
 import { renderTemplate } from '../whatsapp/templates.js';

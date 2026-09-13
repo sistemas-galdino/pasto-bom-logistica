@@ -650,11 +650,12 @@ export async function criarEntrega(args: CriarEntregaArgs): Promise<Entrega> {
     });
 
   // Depois da checagem acima toda linha tem peso; o null aqui seria um furo na
-  // regra, não um caso de operação — por isso a mensagem é genérica.
-  const peso = pesoDaCarga(
-    linhas.map((l) => ({ qtd: l.qtd, pesoUnitKg: l.pesoUnitKg })),
-  );
-  if (peso === null) {
+  // regra, não um caso de operação — por isso a mensagem é genérica. O peso não
+  // alimenta mais trava nenhuma (ver validarCargaDoAgendamento), mas continua
+  // exigido: item sem peso entra na agenda pesando ZERO e faz o caminhão
+  // aparecer mais vazio do que está, justamente na barra que a equipe usa para
+  // decidir se manda a carga.
+  if (linhas.some((l) => l.pesoUnitKg === null)) {
     throw new TransicaoError(
       422,
       'peso_pendente',
@@ -682,14 +683,14 @@ export async function criarEntrega(args: CriarEntregaArgs): Promise<Entrega> {
     );
   }
 
-  // 4) Travas de carga do slot (capacidade e os pares motorista/caminhão).
+  // 4) Travas de slot: reserva, teto de entregas do dia e os pares
+  //    motorista/caminhão. A tonelagem NÃO está mais aqui — virou sinal.
   await carregarCaminhao(caminhaoId); // 422 se inválido/inativo
   await validarCargaDoAgendamento({
     data: dataAgendada,
     periodo,
     motoristaId,
     caminhaoId,
-    pesoDaCargaKg: peso,
   });
 
   // 5) Guarda o peso digitado NO CADASTRO, para sugerir no próximo pedido.
@@ -853,27 +854,22 @@ export async function reagendarEntrega(
     );
   }
 
-  const peso = pesoDaCarga(
-    entrega.itens.map((i) => ({ qtd: i.qtd, pesoUnitKg: i.pesoUnitKg })),
-  );
-  if (peso === null) {
-    throw new TransicaoError(
-      422,
-      'peso_pendente',
-      'Algum produto desta viagem está sem peso. Informe o peso antes de reagendar.',
-    );
-  }
+  // O peso desta viagem NÃO é exigido nem revalidado aqui. Ele está congelado
+  // desde a criação (migração 0019) e, desde 27/08/2026, não recusa agendamento
+  // nenhum. Exigi-lo no reagendamento só criava atrito para viagem legada
+  // anterior à 0019: recusava mudar de DIA uma carga que já saiu do galpão.
+  // Viagem sem peso reagenda e continua aparecendo como "peso pendente" na
+  // agenda, que é onde isso precisa ser visto.
 
   // `entregaId` aqui é o que faz a viagem não competir consigo mesma pela
-  // capacidade — sem ele, trocar só o motorista no mesmo slot daria
-  // "capacidade excedida" por causa da própria carga.
+  // ocupação do slot — sem ele, trocar só o motorista no mesmo slot faria a
+  // própria carga contar duas vezes.
   await validarCargaDoAgendamento({
     entregaId,
     data: novaData,
     periodo: novoPeriodo,
     motoristaId: novoMotorista,
     caminhaoId: novoCaminhao,
-    pesoDaCargaKg: peso,
   });
 
   const mudouData =
