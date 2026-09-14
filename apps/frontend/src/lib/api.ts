@@ -34,6 +34,9 @@ import type {
   CriarReservaRequest,
   AtualizarReservaRequest,
   Fornecedor,
+  RotaCidade,
+  CriarRotaCidadeRequest,
+  AtualizarRotaCidadeRequest,
 } from '@pastobom/shared';
 import { supabase } from './supabase';
 
@@ -332,6 +335,37 @@ export const api = {
       `/api/reservas/${encodeURIComponent(id)}/cancelar`,
       { method: 'POST' },
     );
+  },
+
+  // --- rotas de cidade ------------------------------------------------------
+  //
+  // O caminho é /api/rotas-cidade: /api/rotas colidiria com a página /rotas e
+  // com a tabela stub `rotas` da migração 0001.
+
+  /** TODAS, ativas e pausadas — a tela de configuração precisa das duas. */
+  async listarRotasCidade(signal?: AbortSignal): Promise<RotaCidade[]> {
+    return request<RotaCidade[]>('/api/rotas-cidade', { signal });
+  },
+
+  async criarRotaCidade(body: CriarRotaCidadeRequest): Promise<RotaCidade> {
+    return request<RotaCidade>('/api/rotas-cidade', { method: 'POST', body });
+  },
+
+  /** Só pausa e observação: mudar dia ou vigência é rota NOVA. */
+  async atualizarRotaCidade(
+    id: string,
+    body: AtualizarRotaCidadeRequest,
+  ): Promise<RotaCidade> {
+    return request<RotaCidade>(`/api/rotas-cidade/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body,
+    });
+  },
+
+  async removerRotaCidade(id: string): Promise<void> {
+    await request<void>(`/api/rotas-cidade/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
   },
 
   /** Reservas do motorista logado, de hoje em diante — só leitura. */

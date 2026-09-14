@@ -9,18 +9,34 @@
 // que permite a tela de Rota reusá-las com a sua própria navegação.
 
 import React from 'react';
-import type { AgendaSlot, PrevisaoClima } from '@pastobom/shared';
+import type {
+  AgendaSlot,
+  PrevisaoClima,
+  RotaCidadeNoSlot,
+} from '@pastobom/shared';
 import { avaliarCapacidade } from '@pastobom/shared';
 import { DIAS_CURTOS, isoDeData } from '../../lib/datas';
 import { emToneladas } from '../../lib/format';
 import { BlocoSlot } from './BlocoSlot';
-import { chaveSlot, PERIODO_ROTULO, PERIODOS } from './slots';
+import { FaixaRotasCidade } from './ChipRotaCidade';
+import { chaveSlot, PERIODO_ROTULO, PERIODOS, rotasDoDia } from './slots';
+
+/**
+ * Rotas de cidade por slot — OBRIGATÓRIO nas três visões.
+ *
+ * Obrigatório de propósito: as duas telas de calendário montam as mesmas
+ * visões, e uma prop opcional esquecida numa delas faria o chip aparecer numa
+ * tela e sumir na outra, sem erro nenhum. Foi exatamente assim que a onda das
+ * reservas falhou. Sem rota nenhuma, passe um Map vazio.
+ */
+type RotasPorSlot = Map<string, RotaCidadeNoSlot[]>;
 
 export interface VisaoMesProps {
   dias: Date[];
   mesAtual: number;
   isoHoje: string;
   porSlot: Map<string, AgendaSlot>;
+  rotasPorSlot: RotasPorSlot;
 }
 
 export function VisaoMes({
@@ -28,6 +44,7 @@ export function VisaoMes({
   mesAtual,
   isoHoje,
   porSlot,
+  rotasPorSlot,
 }: VisaoMesProps): React.ReactElement {
   return (
     <div className="overflow-x-auto">
@@ -65,6 +82,10 @@ export function VisaoMes({
             const reservas =
               (manha?.reservas.length ?? 0) + (tarde?.reservas.length ?? 0);
             const itens = entregas + reservas;
+            // A rota do dia (manhã + tarde). Ela NÃO entra em `itens`: um dia
+            // que só tem rota realmente não tem entrega nem reserva marcada —
+            // o que ela muda é o travessão, logo abaixo.
+            const rotas = rotasDoDia(rotasPorSlot, iso);
             const foraDoMes = d.getMonth() !== mesAtual;
             const ehHoje = iso === isoHoje;
             // O agregado do dia: a soma das capacidades de TODOS os caminhões
@@ -118,8 +139,19 @@ export function VisaoMes({
                   )}
                 </div>
 
+                {rotas.length > 0 && (
+                  <div className="mt-1">
+                    <FaixaRotasCidade rotas={rotas} compacto />
+                  </div>
+                )}
+
+                {/* O travessão é "não há NADA aqui". Com um chip de rota logo
+                    acima ele vira contradição na mesma célula — some, e o chip
+                    fala pelo dia. */}
                 {itens === 0 ? (
-                  <p className="mt-3 text-center text-[11px] text-pedra">—</p>
+                  rotas.length === 0 ? (
+                    <p className="mt-3 text-center text-[11px] text-pedra">—</p>
+                  ) : null
                 ) : (
                   <div className="mt-2 space-y-1.5">
                     <div className="flex items-center gap-1.5 text-[11px] text-tinta-suave">
@@ -213,6 +245,7 @@ export interface VisaoSemanaProps {
    * que a visão não tem por que conhecer. Assim a semana continua sem estado.
    */
   renderVagas?: (dataIso: string) => React.ReactNode;
+  rotasPorSlot: RotasPorSlot;
 }
 
 export function VisaoSemana({
@@ -222,6 +255,7 @@ export function VisaoSemana({
   onAbrir,
   climaPorPedido,
   renderVagas,
+  rotasPorSlot,
 }: VisaoSemanaProps): React.ReactElement {
   return (
     <div className="overflow-x-auto">
@@ -270,15 +304,21 @@ export function VisaoSemana({
             <div className="grid grid-cols-7 items-start gap-2">
               {dias.map((d) => {
                 const iso = isoDeData(d);
+                const rotas = rotasPorSlot.get(chaveSlot(iso, periodo)) ?? [];
                 return (
-                  <BlocoSlot
-                    key={iso}
-                    slot={porSlot.get(chaveSlot(iso, periodo))}
-                    periodo={periodo}
-                    compacto
-                    onAbrir={onAbrir}
-                    climaPorPedido={climaPorPedido}
-                  />
+                  <div key={iso} className="space-y-1">
+                    {/* O chip ACIMA do bloco, e fora dele: a rota é do
+                        dia/período, não de um caminhão — e BlocoSlot é a
+                        estrutura que se recorta por caminhão. */}
+                    <FaixaRotasCidade rotas={rotas} compacto />
+                    <BlocoSlot
+                      slot={porSlot.get(chaveSlot(iso, periodo))}
+                      periodo={periodo}
+                      compacto
+                      onAbrir={onAbrir}
+                      climaPorPedido={climaPorPedido}
+                    />
+                  </div>
                 );
               })}
             </div>
@@ -298,6 +338,7 @@ export interface VisaoDiaProps {
    * (não desenha cartão nenhum) e as páginas só buscam nas visões que mostram.
    */
   climaPorPedido?: Record<string, PrevisaoClima | null>;
+  rotasPorSlot: RotasPorSlot;
 }
 
 export function VisaoDia({
@@ -305,19 +346,25 @@ export function VisaoDia({
   porSlot,
   onAbrir,
   climaPorPedido,
+  rotasPorSlot,
 }: VisaoDiaProps): React.ReactElement {
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      {PERIODOS.map((periodo) => (
-        <BlocoSlot
-          key={periodo}
-          slot={porSlot.get(chaveSlot(data, periodo))}
-          periodo={periodo}
-          mostrarTitulo
-          onAbrir={onAbrir}
-          climaPorPedido={climaPorPedido}
-        />
-      ))}
+      {PERIODOS.map((periodo) => {
+        const rotas = rotasPorSlot.get(chaveSlot(data, periodo)) ?? [];
+        return (
+          <div key={periodo} className="space-y-2">
+            <FaixaRotasCidade rotas={rotas} />
+            <BlocoSlot
+              slot={porSlot.get(chaveSlot(data, periodo))}
+              periodo={periodo}
+              mostrarTitulo
+              onAbrir={onAbrir}
+              climaPorPedido={climaPorPedido}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }

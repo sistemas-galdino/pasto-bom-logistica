@@ -28,7 +28,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarDays, CalendarPlus, Info, Truck } from 'lucide-react';
-import { filtrarSlotsPorCaminhao } from '@pastobom/shared';
+import {
+  expandirRotasCidade,
+  filtrarSlotsPorCaminhao,
+} from '@pastobom/shared';
 import type {
   AgendaSlot,
   AtualizarReservaRequest,
@@ -40,7 +43,9 @@ import { EntregaDetalheModal } from '../components/EntregaDetalheModal';
 import { ReservaModal } from '../components/ReservaModal';
 import { SeletorPedidoPendente } from '../components/SeletorPedidoPendente';
 import {
+  AcaoRotasCidade,
   chaveSlot,
+  indexarRotasPorSlot,
   FaixaVagas,
   intervaloParaTela,
   NavegadorPeriodo,
@@ -262,6 +267,39 @@ export default function Agendamento(): React.ReactElement {
     return mapa;
   }, [slotsVisiveis]);
 
+  /**
+   * ROTAS DE CIDADE do período mostrado.
+   *
+   * As configurações vêm CRUAS no payload da agenda (campo irmão de `slots` —
+   * ver o tipo) e quem as expande em ocorrências é a regra pura, com a borda
+   * de vigência inclusiva escrita num lugar só.
+   */
+  const rotasPorSlot = useMemo(
+    () =>
+      indexarRotasPorSlot(
+        expandirRotasCidade(agendaQuery.data?.rotas ?? [], de, ate),
+      ),
+    [agendaQuery.data, de, ate],
+  );
+
+  /**
+   * Cidades vistas nesta janela, para o autocomplete do cadastro de rota.
+   *
+   * Sem requisição nova: a agenda já devolve a cidade de cada entrega. `GET
+   * /api/cidades` fica recusado por ora — a fonte seria o espelho do Órix, que
+   * já tem as três grafias misturadas.
+   */
+  const cidadesSugeridas = useMemo(() => {
+    const vistas = new Set<string>();
+    for (const slot of agendaQuery.data?.slots ?? []) {
+      for (const e of slot.entregas) {
+        const c = e.cidade.trim();
+        if (c !== '') vistas.add(c);
+      }
+    }
+    return [...vistas];
+  }, [agendaQuery.data]);
+
   // Contagem por caminhão para o número na pílula: quem bate o olho já vê onde
   // está o movimento do período, sem clicar em cada um. Entrega e reserva somam
   // porque as duas OCUPAM o caminhão.
@@ -384,19 +422,22 @@ export default function Agendamento(): React.ReactElement {
                   que a equipe usa hoje seria regressão com ganho zero. O atalho
                   bom é o da faixa de vagas, que já sabe o dia e o caminhão; este
                   aqui é para quem chegou sem nenhum dos dois. */}
-              {podeEscrever && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setErroReserva(null);
-                    setReservando({ data: ancoraIso });
-                  }}
-                  className="ml-auto flex items-center gap-1.5 rounded-full border border-linha bg-papel px-3 py-1.5 text-xs font-semibold text-tinta-suave transition hover:border-mata/30 hover:text-mata"
-                >
-                  <CalendarPlus className="h-3.5 w-3.5" aria-hidden="true" />
-                  Reservar caminhão
-                </button>
-              )}
+              <span className="ml-auto flex items-center gap-2">
+                <AcaoRotasCidade cidadesSugeridas={cidadesSugeridas} />
+                {podeEscrever && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setErroReserva(null);
+                      setReservando({ data: ancoraIso });
+                    }}
+                    className="flex items-center gap-1.5 rounded-full border border-linha bg-papel px-3 py-1.5 text-xs font-semibold text-tinta-suave transition hover:border-mata/30 hover:text-mata"
+                  >
+                    <CalendarPlus className="h-3.5 w-3.5" aria-hidden="true" />
+                    Reservar caminhão
+                  </button>
+                )}
+              </span>
             </div>
 
             {/*
@@ -415,6 +456,12 @@ export default function Agendamento(): React.ReactElement {
               relatórios.
             </p>
 
+            {/* A ROTA DE CIDADE NÃO ENTRA NESTA CONTA, e isto não é
+                esquecimento: uma semana que só tem rota realmente não tem
+                entrega agendada. A frase é verdadeira, e o chip aparece logo
+                abaixo dizendo o que aquele dia tem. Não "conserte" isto
+                somando as rotas — passaria a dizer que há entrega onde não há.
+            */}
             {totalEntregas === 0 && totalReservas === 0 && (
               <p className="flex items-center justify-center gap-2 rounded-xl2 border border-dashed border-linha bg-papel/60 py-6 text-sm text-tinta-suave">
                 <CalendarDays
@@ -429,6 +476,7 @@ export default function Agendamento(): React.ReactElement {
 
             {visao === 'mes' && (
               <VisaoMes
+                rotasPorSlot={rotasPorSlot}
                 dias={intervalo.diasData}
                 mesAtual={ancora.getMonth()}
                 isoHoje={isoHoje}
@@ -438,6 +486,7 @@ export default function Agendamento(): React.ReactElement {
 
             {visao === 'semana' && (
               <VisaoSemana
+                rotasPorSlot={rotasPorSlot}
                 dias={intervalo.diasData}
                 isoHoje={isoHoje}
                 porSlot={porSlot}
@@ -455,6 +504,7 @@ export default function Agendamento(): React.ReactElement {
                     E N à tarde. */}
                 {renderVagas(ancoraIso, 'completa')}
                 <VisaoDia
+                  rotasPorSlot={rotasPorSlot}
                   data={ancoraIso}
                   porSlot={porSlot}
                   onAbrir={setDetalheId}

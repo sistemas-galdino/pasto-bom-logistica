@@ -5,7 +5,10 @@
 // parte em dois blocos, e o que interessa em cada bloco é quanto de carga já
 // está em cada caminhão (é assim que o vendedor decide se "cabe mais uma").
 //
-// SOMENTE LEITURA para todos os papéis: quem agenda é a logística, no quadro.
+// SOMENTE LEITURA das entregas, para todos os papéis: quem agenda é a
+// logística, na tela de Agendamento. A única ação de escrita que mora aqui é o
+// cadastro de ROTA DE CIDADE — e ele só aparece para a logística, porque a rota
+// é um letreiro do calendário e não uma viagem (ver AcaoRotasCidade).
 //
 // Fuso: as datas vêm como 'YYYY-MM-DD'. Toda conversão passa por dataDeIso/
 // isoDeData (Date local) — `new Date('YYYY-MM-DD')` viraria UTC e volta um dia.
@@ -19,10 +22,13 @@ import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { CalendarDays } from 'lucide-react';
 import type { AgendaSlot } from '@pastobom/shared';
+import { expandirRotasCidade } from '@pastobom/shared';
 import { api } from '../lib/api';
 import { EntregaDetalheModal } from '../components/EntregaDetalheModal';
 import {
+  AcaoRotasCidade,
   chaveSlot,
+  indexarRotasPorSlot,
   intervaloParaTela,
   NavegadorPeriodo,
   tituloDoPeriodo,
@@ -59,6 +65,39 @@ export default function Agenda(): React.ReactElement {
       mapa.set(chaveSlot(slot.data, slot.periodo), slot);
     }
     return mapa;
+  }, [agendaQuery.data]);
+
+  /**
+   * ROTAS DE CIDADE do período mostrado.
+   *
+   * As configurações vêm CRUAS no payload da agenda (campo irmão de `slots` —
+   * ver o tipo) e quem as expande em ocorrências é a regra pura, com a borda
+   * de vigência inclusiva escrita num lugar só.
+   */
+  const rotasPorSlot = useMemo(
+    () =>
+      indexarRotasPorSlot(
+        expandirRotasCidade(agendaQuery.data?.rotas ?? [], de, ate),
+      ),
+    [agendaQuery.data, de, ate],
+  );
+
+  /**
+   * Cidades vistas nesta janela, para o autocomplete do cadastro de rota.
+   *
+   * Sem requisição nova: a agenda já devolve a cidade de cada entrega. `GET
+   * /api/cidades` fica recusado por ora — a fonte seria o espelho do Órix, que
+   * já tem as três grafias misturadas.
+   */
+  const cidadesSugeridas = useMemo(() => {
+    const vistas = new Set<string>();
+    for (const slot of agendaQuery.data?.slots ?? []) {
+      for (const e of slot.entregas) {
+        const c = e.cidade.trim();
+        if (c !== '') vistas.add(c);
+      }
+    }
+    return [...vistas];
   }, [agendaQuery.data]);
 
 
@@ -148,10 +187,24 @@ export default function Agenda(): React.ReactElement {
           </div>
         ) : (
           <div className="mx-auto max-w-[1600px] space-y-4 p-4 animate-sobe sm:p-6">
+            {/* Cadastrar rota de cidade é ação de logística; para os demais
+                papéis o componente inteiro devolve null (o invólucro junto) e
+                esta tela segue só leitura, como o cabeçalho do arquivo diz. */}
+            <AcaoRotasCidade
+              cidadesSugeridas={cidadesSugeridas}
+              className="flex justify-end"
+            />
+
             {/* Só é "nenhuma entrega" quando também não há RESERVA. Contar só
                 entregas fazia o período da oficina exibir o aviso de vazio e,
                 logo embaixo, os cards da reserva — a mesma armadilha que o
                 BlocoSlot já resolve um nível abaixo, reaparecendo aqui. */}
+            {/* A ROTA DE CIDADE NÃO ENTRA NESTA CONTA, e isto não é
+                esquecimento: uma semana que só tem rota realmente não tem
+                entrega agendada. A frase é verdadeira, e o chip aparece logo
+                abaixo dizendo o que aquele dia tem. Não "conserte" isto
+                somando as rotas — passaria a dizer que há entrega onde não há.
+            */}
             {totalEntregas === 0 && totalReservas === 0 && (
               <p className="flex items-center justify-center gap-2 rounded-xl2 border border-dashed border-linha bg-papel/60 py-6 text-sm text-tinta-suave">
                 <CalendarDays
@@ -164,6 +217,7 @@ export default function Agenda(): React.ReactElement {
 
             {visao === 'mes' && (
               <VisaoMes
+                rotasPorSlot={rotasPorSlot}
                 dias={intervalo.diasData}
                 mesAtual={ancora.getMonth()}
                 isoHoje={isoHoje}
@@ -173,6 +227,7 @@ export default function Agenda(): React.ReactElement {
 
             {visao === 'semana' && (
               <VisaoSemana
+                rotasPorSlot={rotasPorSlot}
                 dias={intervalo.diasData}
                 isoHoje={isoHoje}
                 porSlot={porSlot}
@@ -183,6 +238,7 @@ export default function Agenda(): React.ReactElement {
 
             {visao === 'dia' && (
               <VisaoDia
+                rotasPorSlot={rotasPorSlot}
                 data={isoDeData(ancora)}
                 porSlot={porSlot}
                 onAbrir={setDetalheId}
