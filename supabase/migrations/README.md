@@ -30,40 +30,51 @@ abaixo) e contra o ledger `supabase_migrations.schema_migrations`.
 | Migração | Aplicada em produção? |
 |---|---|
 | 0001 – 0022 | sim |
-| **0023** | **NÃO — escrita em 13/09/2026, esperando autorização do David** |
-| **0024** | **NÃO — escrita em 14/09/2026, esperando autorização do David** |
+| 0023 – 0024 | sim (14/09/2026) |
 
-A **0024 (`produtos_estoque`) ainda NÃO foi aplicada.** Aditiva (tabela nova),
-mas o deploy não pode vir antes dela: o worker de produtos escreve nela e
-`GET /api/estoque` a lê. Depois de aplicar, rode a carga inicial — senão o
-alerta nasce mudo (tabela vazia = "não sei" em todo produto):
+A **0023 e a 0024 rodaram em 14/09/2026**, com autorização do David, pelo MCP do
+Supabase (que voltou a responder — ver a pendência antiga abaixo). Conferidas
+depois de aplicar, objeto por objeto:
+
+| | RLS | políticas | índices | checks | FKs | colunas |
+|---|---|---|---|---|---|---|
+| `rotas_cidade` | ativa | 2 | 2 | 4 | 1 | 10 |
+| `produtos_estoque` | ativa | 2 | 1 | 0 | 0 | 6 |
+
+Os quatro checks da 0023 são os do arquivo: cidade não vazia, `dias_semana` em
+0..6, `periodos` com 1 ou 2 itens, vigência coerente. A FK é `criado_por ->
+auth.users`. Os **zeros da 0024 são de propósito**: nenhum check em
+`quantidade` (estoque negativo é o caso que a operação precisa ver) e nenhuma FK
+para `produtos_peso` (são dois espelhos independentes do mesmo ERP, e um não
+pode derrubar o outro).
+
+**O deploy do código ainda não subiu.** As duas tabelas estão de pé e ninguém as
+lê: `GET /api/agenda` só consulta `rotas_cidade` na versão nova, e o alerta de
+estoque idem. A ordem foi respeitada — migration ANTES do deploy.
+
+A CARGA INICIAL DO ESTOQUE JÁ RODOU (14/09/2026, 17:14): ciclo completo, 31/31
+páginas, **15.418 produtos gravados** em 114 s. Sem ela o alerta nasceria mudo
+(tabela vazia = "não sei" em todo produto). Para repetir:
 
 ```
 node --import tsx --env-file-if-exists=.env \
   apps/backend/src/scripts/sincronizar-estoque.ts
 ```
 
-O script imprime um placar de COBERTURA. Ele é o critério que autoriza a
-feature: medido contra a API de produção em 14/09/2026, o cadastro tem 15.418
-produtos (9.759 ativos) e 6.478 com `quantidade > 0`; entre os 632 produtos que
-a operação realmente entrega, 100% estão no `/Produtos` e 86% têm quantidade.
+O script imprime um placar de COBERTURA, e é ele o critério que autoriza (ou
+retira) a feature. Medido no banco depois da carga:
+
+- 6.461 produtos com `quantidade > 0` no cadastro inteiro.
+- Dos **632 produtos que a operação realmente entrega**: **632 casaram** com o
+  espelho (nenhum vira "não sei"), **539 com estoque**, 93 em zero, 0 negativo.
+- Os dois zerados mais frequentes são o `11930` (126 pedidos) e o `11931` — os
+  itens de PRESTAÇÃO DE SERVIÇO, que `GET /api/estoque` corta do alerta pela
+  lista `produtos_servico`. Os demais zerados são produto de verdade em falta
+  (adubo, milho, gesso), que é exatamente o que o alerta deve apontar.
+
 Se um dia vier tudo zero, **não suba o alerta** — um aviso que grita em todo
 item ensina a equipe a ignorá-lo, e o aviso verdadeiro passa batido junto.
 
-Conferir depois de aplicar: a tabela existe, RLS ativa, 2 políticas, PK em
-`produto_codigo`. Não há check em `quantidade` de propósito — estoque negativo
-é o caso que a operação precisa ver.
-
-A **0023 (`rotas_cidade`) ainda NÃO foi aplicada.** Ela é puramente aditiva —
-tabela nova, nada existente é tocado — e pode ser aplicada a qualquer momento
-sem efeito nenhum enquanto o código não subir. O DEPLOY, porém, não pode vir
-antes dela: `GET /api/agenda` passa a consultar `rotas_cidade`. A leitura
-degrada para lista vazia com log de erro (o calendário não pode sumir por causa
-de um chip), mas isso é rede de segurança, não plano.
-
-Conferir depois de aplicar: a tabela existe, RLS ativa, 2 políticas, 1 índice,
-4 checks (cidade não vazia, dias_semana em 0..6, periodos com 1 ou 2 itens,
-vigência coerente).
 
 A **0007 rodou em 24/08/2026**, com autorização do David, depois de dois meses
 pulada — ele aplicou pelo SQL Editor. Conferido após aplicar: as duas colunas
