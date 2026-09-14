@@ -30,6 +30,18 @@ abaixo) e contra o ledger `supabase_migrations.schema_migrations`.
 | Migração | Aplicada em produção? |
 |---|---|
 | 0001 – 0022 | sim |
+| **0023** | **NÃO — escrita em 13/09/2026, esperando autorização do David** |
+
+A **0023 (`rotas_cidade`) ainda NÃO foi aplicada.** Ela é puramente aditiva —
+tabela nova, nada existente é tocado — e pode ser aplicada a qualquer momento
+sem efeito nenhum enquanto o código não subir. O DEPLOY, porém, não pode vir
+antes dela: `GET /api/agenda` passa a consultar `rotas_cidade`. A leitura
+degrada para lista vazia com log de erro (o calendário não pode sumir por causa
+de um chip), mas isso é rede de segurança, não plano.
+
+Conferir depois de aplicar: a tabela existe, RLS ativa, 2 políticas, 1 índice,
+4 checks (cidade não vazia, dias_semana em 0..6, periodos com 1 ou 2 itens,
+vigência coerente).
 
 A **0007 rodou em 24/08/2026**, com autorização do David, depois de dois meses
 pulada — ele aplicou pelo SQL Editor. Conferido após aplicar: as duas colunas
