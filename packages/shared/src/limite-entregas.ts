@@ -138,10 +138,27 @@ export function avaliarLimiteEntregas(
 }
 
 /**
- * Duas janelas do mesmo caminhão se sobrepõem?
+ * O mínimo para ser uma janela de vigência: começo, e talvez fim.
  *
- * Usada pela rota de cadastro para recusar 01/09–30/09 em cima de 15/09–15/10,
- * que deixaria a operação sem saber qual teto vale.
+ * Existe para `janelasSeSobrepoem` não exigir `maxEntregasDia` de quem não tem
+ * teto nenhum — a rota de cidade (0023) tem a MESMA vigência inclusiva e a
+ * mesma pergunta de sobreposição. Por tipagem estrutural, `LimiteCaminhao`
+ * continua servindo sem uma linha alterada nos chamadores.
+ */
+export interface JanelaVigencia {
+  /** Data ISO (YYYY-MM-DD) inicial, inclusiva. */
+  validoDe: string;
+  /** Data ISO final, inclusiva. null = vigência aberta. */
+  validoAte: string | null;
+}
+
+/**
+ * Duas janelas se sobrepõem?
+ *
+ * Usada pela rota de cadastro do TETO para recusar 01/09–30/09 em cima de
+ * 15/09–15/10, que deixaria a operação sem saber qual limite vale; e pela rota
+ * de CIDADE, para recusar o mesmo Cabo Verde cadastrado duas vezes na mesma
+ * terça.
  *
  * Vigência aberta (`validoAte: null`) colide com qualquer janela que TERMINE em
  * ou depois do início dela — inclusive uma que tenha começado antes. As bordas
@@ -149,8 +166,8 @@ export function avaliarLimiteEntregas(
  * outra começa) também colidem.
  */
 export function janelasSeSobrepoem(
-  a: LimiteCaminhao,
-  b: LimiteCaminhao,
+  a: JanelaVigencia,
+  b: JanelaVigencia,
 ): boolean {
   const aFim = a.validoAte ?? '9999-12-31';
   const bFim = b.validoAte ?? '9999-12-31';

@@ -20,6 +20,7 @@ import type {
   AgendaSlot,
   Caminhao,
   PeriodoEntrega,
+  RotaCidade,
   StatusEntrega,
 } from '@pastobom/shared';
 
@@ -153,6 +154,19 @@ interface LimiteAgendaRow {
   max_entregas_dia: number | string | null;
 }
 
+/** Linha de `rotas_cidade` (migração 0023). */
+interface RotaCidadeRow {
+  id: string;
+  cidade: string | null;
+  dias_semana: number[] | null;
+  periodos: PeriodoEntrega[] | null;
+  valido_de: string;
+  valido_ate: string | null;
+  ativo: boolean | null;
+  observacoes: string | null;
+  criado_em: string;
+}
+
 /** Peso da viagem: total agregado (desconhecido = 0) e o exibível (null se faltar peso). */
 interface PesoDoPedido {
   agregadoKg: number;
@@ -210,7 +224,7 @@ export async function agendaRoutes(app: FastifyInstance): Promise<void> {
       // As reservas entram aqui e não junto da query de entregas porque não
       // dependem dela: um slot pode ter reserva e nenhuma entrega — é o caso da
       // manhã da oficina, e é exatamente o que a tela precisa mostrar.
-      const [frota, motoristas, clientes, pesos, reservas, limites] =
+      const [frota, motoristas, clientes, pesos, reservas, limites, rotas] =
         await Promise.all([
           lerFrota(),
           resolverNomesMotorista(linhas),
@@ -222,6 +236,7 @@ export async function agendaRoutes(app: FastifyInstance): Promise<void> {
           ),
           lerReservas(de, ate),
           lerLimites(de, ate),
+          lerRotasCidade(),
         ]);
 
       const slots = montarSlots(
@@ -236,6 +251,7 @@ export async function agendaRoutes(app: FastifyInstance): Promise<void> {
         slots,
         caminhoes: [...frota.values()].filter((c) => c.ativo),
         limites,
+        rotas,
       };
       return reply.send(resposta);
     } catch (err) {
@@ -364,6 +380,44 @@ async function lerReservas(
   ]);
 
   return { linhas, motoristas, fornecedores };
+}
+
+/**
+ * Rotas de cidade ATIVAS — TODAS, sem filtro de data.
+ *
+ * Sem filtro de propósito: a tabela tem dezenas de linhas, e deixar o recorte
+ * da janela para `expandirRotasCidade` mantém a borda inclusiva escrita num
+ * lugar só. Filtrar aqui duplicaria a mesma regra em SQL e em TypeScript, e
+ * essas duas cópias divergem na primeira correção.
+ *
+ * Degrada para `[]` com log.error, como `lerReservas`: um chip que não aparece
+ * é bem menos grave que um calendário em branco. E `montarSlots` não muda uma
+ * linha — a rota é campo IRMÃO de `slots`, nunca campo dentro deles.
+ */
+async function lerRotasCidade(): Promise<RotaCidade[]> {
+  const { data, error } = await supabase
+    .from('rotas_cidade')
+    .select(
+      'id, cidade, dias_semana, periodos, valido_de, valido_ate, ativo, observacoes, criado_em',
+    )
+    .eq('ativo', true);
+
+  if (error) {
+    log.error(`[agenda] Falha ao ler as rotas de cidade: ${error.message}`);
+    return [];
+  }
+
+  return ((data ?? []) as unknown as RotaCidadeRow[]).map((r) => ({
+    id: r.id,
+    cidade: r.cidade ?? '',
+    diasSemana: (r.dias_semana ?? []).map(Number),
+    periodos: r.periodos ?? [],
+    validoDe: r.valido_de,
+    validoAte: r.valido_ate,
+    ativo: r.ativo === true,
+    observacoes: r.observacoes,
+    criadoEm: r.criado_em,
+  }));
 }
 
 /**

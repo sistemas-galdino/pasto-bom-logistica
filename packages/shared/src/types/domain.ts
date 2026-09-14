@@ -379,6 +379,73 @@ export interface AgendaResposta {
    * significa SEM TETO, não teto zero.
    */
   limites: AgendaLimite[];
+  /**
+   * Rotas de cidade ATIVAS, CRUAS (a configuração, não as ocorrências).
+   *
+   * CAMPO IRMÃO DE `slots`, e não campo dentro de `AgendaSlot` — esta é a
+   * decisão que manda na feature inteira. `filtrarSlotsPorCaminhao` descarta o
+   * slot que não tem entrega nem reserva DAQUELE caminhão; a rota dentro do
+   * slot seria apagada exatamente onde ela foi pedida ("na hora que ele vier
+   * aqui na agenda do caminhão, vai mostrar para ele"). A rota não é de um
+   * caminhão, então não pode morar numa estrutura filtrada por caminhão.
+   *
+   * Cruas, e não expandidas por dia, pelo mesmo motivo de `limites`: a tabela
+   * tem dezenas de linhas e a janela é recortada por `expandirRotasCidade`, que
+   * mantém a borda inclusiva escrita num lugar só (filtrar no PostgREST
+   * duplicaria a regra em SQL e em TS).
+   *
+   * Obrigatório: esquecer de preencher tem de ser erro de compilação.
+   */
+  rotas: RotaCidade[];
+}
+
+/**
+ * Uma configuração de rota de cidade — "toda terça e quinta, Cabo Verde, de
+ * manhã, a partir de 15/09".
+ *
+ * É um AVISO NO CALENDÁRIO: não reserva caminhão, não ocupa slot, não consome
+ * teto de entregas e não impede agendar outra cidade no mesmo período. A regra
+ * que expande isto em ocorrências é `expandirRotasCidade` (rota-cidade.ts).
+ */
+export interface RotaCidade {
+  id: string;
+  /** A grafia digitada — é a que o chip mostra. */
+  cidade: string;
+  /** 0 = domingo … 6 = sábado (Date#getDay / extract(dow)). */
+  diasSemana: number[];
+  /** Dia inteiro = ['manha','tarde']. Não existe um terceiro valor no enum. */
+  periodos: PeriodoEntrega[];
+  /** Data ISO inicial, inclusiva. */
+  validoDe: string;
+  /** Data ISO final, inclusiva. null = vigência aberta. */
+  validoAte: string | null;
+  /** Pausada some do calendário e continua cadastrada. */
+  ativo: boolean;
+  observacoes: string | null;
+  criadoEm: string;
+}
+
+/** Corpo de POST /api/rotas-cidade. */
+export interface CriarRotaCidadeRequest {
+  cidade: string;
+  diasSemana: number[];
+  periodos: PeriodoEntrega[];
+  validoDe: string;
+  validoAte?: string | null;
+  observacoes?: string | null;
+}
+
+/**
+ * Corpo de PATCH /api/rotas-cidade/:id — SÓ pausa e observação.
+ *
+ * Mudar cidade, dia, período ou vigência é ROTA NOVA: configuração datada não
+ * se reescreve, pela mesma razão que fez a 0020 virar tabela com vigência em
+ * vez de coluna. Quem editasse "terça" para "quinta" apagaria o registro de que
+ * às terças, até ontem, o caminhão ia para Cabo Verde.
+ */
+export interface AtualizarRotaCidadeRequest {
+  ativo?: boolean;
+  observacoes?: string | null;
 }
 
 /** Uma janela de teto de entregas/dia, como a agenda a publica. */

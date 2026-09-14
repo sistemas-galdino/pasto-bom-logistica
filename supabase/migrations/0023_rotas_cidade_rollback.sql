@@ -1,0 +1,24 @@
+-- 0023_rotas_cidade_rollback.sql
+-- Desfaz a 0023.
+--
+-- O QUE SE PERDE: as configurações de rota de cidade cadastradas ("toda terça e
+-- quinta, Cabo Verde, de manhã, a partir de 15/09"). Não há onde guardá-las no
+-- modelo anterior. Exporte antes se houver algo cadastrado:
+--
+--   select cidade, dias_semana, periodos, valido_de, valido_ate, ativo, observacoes
+--     from rotas_cidade
+--    order by cidade, valido_de;
+--
+-- O QUE NÃO SE PERDE: NADA de operação. A rota de cidade é um aviso no
+-- calendário — ela não reserva caminhão, não ocupa slot, não consome teto de
+-- entregas e não é referenciada por entrega, reserva ou pedido nenhum. Nenhuma
+-- viagem muda de estado por causa deste rollback.
+--
+-- ATENÇÃO: a versão atual do sistema LÊ `rotas_cidade` em GET /api/agenda. A
+-- leitura degrada para lista vazia com log de erro (o calendário não pode
+-- sumir por causa de um chip), então derrubar a tabela com o código no ar
+-- apenas apaga os chips e enche o log. Ainda assim, rode este rollback junto
+-- com o deploy de uma versão anterior — degradação é rede de segurança, não
+-- plano.
+
+drop table if exists rotas_cidade cascade;
