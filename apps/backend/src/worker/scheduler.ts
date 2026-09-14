@@ -24,6 +24,11 @@ import {
   sincronizarFornecedoresOnce,
   CHAVE_SYNC as CHAVE_SYNC_FORNECEDORES,
 } from './fornecedores.js';
+import {
+  registrarSincronizacaoProdutos,
+  sincronizarProdutosOnce,
+  CHAVE_SYNC as CHAVE_SYNC_PRODUTOS,
+} from './produtos.js';
 import { supabase } from '../db/supabase.js';
 import { env } from '../config/env.js';
 import { log } from '../log.js';
@@ -32,6 +37,7 @@ import { log } from '../log.js';
 export { pollOnce, varreduraProfundaOnce } from './poll.js';
 export { reconciliarOnce } from './reconciliar.js';
 export { sincronizarFornecedoresOnce } from './fornecedores.js';
+export { sincronizarProdutosOnce } from './produtos.js';
 
 let tarefa: cron.ScheduledTask | null = null;
 let executando = false;
@@ -44,6 +50,9 @@ let varrendo = false;
 
 let tarefaFornecedores: cron.ScheduledTask | null = null;
 let espelhandoFornecedores = false;
+
+let tarefaProdutos: cron.ScheduledTask | null = null;
+let espelhandoProdutos = false;
 
 /** Executa um tick protegido (sem nunca lançar / derrubar o processo). */
 async function tickProtegido(): Promise<void> {
@@ -257,6 +266,88 @@ async function tickFornecedores(): Promise<void> {
 }
 
 /**
+ * Lê o heartbeat do espelho de estoque. Em erro de leitura devolve null, o que
+ * faz o espelho rodar: o upsert é idempotente, e o contrário seria deixar o
+ * estoque envelhecer por causa de uma leitura que falhou.
+ */
+async function lerEstadoProdutos(): Promise<{
+  ultimoSucesso?: string | null;
+} | null> {
+  const { data, error } = await supabase
+    .from('sync_state')
+    .select('valor')
+    .eq('chave', CHAVE_SYNC_PRODUTOS)
+    .maybeSingle();
+  if (error) {
+    log.warn(
+      `[scheduler] Falha ao ler o estado do espelho de estoque: ${error.message}`,
+    );
+    return null;
+  }
+  return (data?.valor as { ultimoSucesso?: string | null } | undefined) ?? null;
+}
+
+/**
+ * Verificação horária do espelho de ESTOQUE: roda só se faz mais de
+ * ESTOQUE_INTERVALO_HORAS (3) que não espelha com sucesso.
+ *
+ * Reaproveita `deveVarrer()` pela mesma razão do espelho de fornecedores — a
+ * decisão é literalmente a mesma ("faz tempo demais desde o último sucesso?").
+ * O intervalo é que muda: estoque é MOVIMENTO e envelhece em horas, cadastro de
+ * fornecedor não.
+ *
+ * Lock próprio: 31 páginas × até 30 s de timeout passam de uma hora no pior
+ * caso, e dois ciclos simultâneos gravariam a mesma coisa duas vezes.
+ */
+async function tickProdutos(): Promise<void> {
+  if (espelhandoProdutos) {
+    log.warn(
+      '[scheduler] Espelho de estoque anterior ainda em execução; pulando este ciclo.',
+    );
+    return;
+  }
+
+  const estado = await lerEstadoProdutos();
+  if (
+    !deveVarrer({
+      ultimoSucesso: estado?.ultimoSucesso ?? null,
+      agora: new Date().toISOString(),
+      horasIntervalo: env.ESTOQUE_INTERVALO_HORAS,
+    })
+  ) {
+    log.debug(
+      `[scheduler] Espelho de estoque ainda no prazo (último sucesso: ` +
+        `${estado?.ultimoSucesso ?? 'nunca'}); pulando.`,
+    );
+    return;
+  }
+
+  espelhandoProdutos = true;
+  try {
+    const resultado = await sincronizarProdutosOnce();
+    await registrarSincronizacaoProdutos(resultado);
+  } catch (err) {
+    log.error(
+      '[scheduler] Erro inesperado no espelho de estoque (contido):',
+      err,
+    );
+    await registrarSincronizacaoProdutos({
+      ok: false,
+      paginasTotal: 0,
+      paginasLidas: 0,
+      registros: 0,
+      gravados: 0,
+      semCodigo: 0,
+      comQuantidade: 0,
+      zerados: 0,
+      negativos: 0,
+    }).catch(() => {});
+  } finally {
+    espelhandoProdutos = false;
+  }
+}
+
+/**
  * Inicia o agendador. Idempotente: se já houver tarefa registrada, não duplica.
  */
 export function start(): void {
@@ -312,6 +403,34 @@ export function start(): void {
     log.info(
       `[scheduler] Espelho de fornecedores ativo (verifica com cron=` +
         `"${cronFornecedores}", roda a cada ${env.FORNECEDORES_INTERVALO_HORAS}h).`,
+    );
+  }
+
+  // --- Espelho de ESTOQUE (migração 0024) ---
+  //
+  // Registrado AQUI, junto do de fornecedores e ANTES dos `return` dos blocos
+  // abaixo, pelo motivo já documentado ali: um RECONCILIAR_CRON digitado errado
+  // no Easypanel faria `return` no meio de start() e derrubaria em silêncio
+  // toda tarefa registrada depois. O alerta de estoque pararia de receber dado
+  // novo sem ninguém entender por quê.
+  //
+  // E o erro AQUI só loga — nunca `return` —, para que um ESTOQUE_CRON inválido
+  // não leve junto a reconciliação e a varredura.
+  const cronEstoque = env.ESTOQUE_CRON;
+  if (!cron.validate(cronEstoque)) {
+    log.error(
+      `[scheduler] ESTOQUE_CRON inválido ("${cronEstoque}"); espelho de estoque ` +
+        'NÃO iniciado. O alerta de estoque no agendamento vai continuar ' +
+        'mostrando o que já está no banco (nada é apagado), com a idade do dado ' +
+        'aparecendo na tela — mas sem receber número novo do Órix.',
+    );
+  } else {
+    tarefaProdutos = cron.schedule(cronEstoque, () => {
+      void tickProdutos();
+    });
+    log.info(
+      `[scheduler] Espelho de estoque ativo (verifica com cron="${cronEstoque}", ` +
+        `roda a cada ${env.ESTOQUE_INTERVALO_HORAS}h).`,
     );
   }
 
@@ -374,5 +493,10 @@ export function stop(): void {
     tarefaFornecedores.stop();
     tarefaFornecedores = null;
     log.info('[scheduler] Espelho de fornecedores parado.');
+  }
+  if (tarefaProdutos) {
+    tarefaProdutos.stop();
+    tarefaProdutos = null;
+    log.info('[scheduler] Espelho de estoque parado.');
   }
 }

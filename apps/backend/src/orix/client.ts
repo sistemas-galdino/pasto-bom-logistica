@@ -99,6 +99,45 @@ export interface OrixFornecedor {
   [k: string]: unknown;
 }
 
+/**
+ * Registro de GET /Produtos/{empresa}. Campos CONFERIDOS contra a API em
+ * 14/09/2026 (15.418 produtos, 31 páginas) — não são chute de manual.
+ *
+ * `quantidade` é o campo que a Natália escolheu, e a conferência confirmou a
+ * escolha: ele é EXATAMENTE a soma de deposito_1..deposito_5 nos 9.759 ativos,
+ * sem exceção. Já `estoque_fisico` é maior que ele em 61% dos casos (produto
+ * 00028: quantidade 14, estoque_fisico 710) — não é estoque atual, e usá-lo
+ * faria o alerta calar justamente quando devia falar.
+ *
+ * Todos opcionais e com index signature, como `OrixFornecedor`: o DTO cru mora
+ * no backend e preserva o que não mapeamos.
+ */
+export interface OrixProduto {
+  codigo?: string | number;
+  nome?: string;
+  /** Soma dos cinco depósitos. PODE SER NEGATIVA. */
+  quantidade?: number | string;
+  unidade?: string;
+  /** 'S' / 'N' no Órix. A normalização para boolean é do worker. */
+  ativo?: string;
+  [k: string]: unknown;
+}
+
+/** Uma página de GET /Produtos, no mesmo formato da de fornecedores. */
+export interface PaginaProdutos {
+  registros: OrixProduto[];
+  paginaAtual: number;
+  paginas: number;
+}
+
+export interface GetProdutosParams {
+  /** 1-based, como o Órix conta. */
+  pagina: number;
+  limite: number;
+  /** Código da empresa — diferente de /Fornecedores, ele vai no CAMINHO. */
+  empresa: number;
+}
+
 /** Uma página de GET /Fornecedores, já com os números da paginação legíveis. */
 export interface PaginaFornecedores {
   registros: OrixFornecedor[];
@@ -307,6 +346,43 @@ export class OrixClient {
     const corpo =
       await this.parseJson<RespostaRegistros<OrixPropriedade>>(resp);
     return corpo?.registros ?? [];
+  }
+
+  /**
+   * GET /Produtos/{empresa}?pagina=&limite= — UMA página do cadastro de produtos.
+   *
+   * São ~15.400 produtos (31 páginas de 500, medido em 14/09/2026). Como em
+   * `getFornecedores`, NÃO percorre as páginas aqui: quem decide o passo, o que
+   * fazer com página que falha e se o ciclo conta como completo é o worker.
+   *
+   * A EMPRESA VAI NO CAMINHO, e essa é a diferença em relação a /Fornecedores
+   * (que não leva empresa nenhuma) e a /PedidosPorProdutos (que leva no corpo).
+   * Errar isso devolve 404, que aqui seria lido como "acabaram as páginas" —
+   * ou seja, um ciclo vazio silencioso em vez de um erro.
+   */
+  async getProdutos(p: GetProdutosParams): Promise<PaginaProdutos> {
+    const pagina = Math.max(1, Math.trunc(p.pagina));
+    const limite = Math.max(1, Math.trunc(p.limite));
+    const empresa = Math.max(1, Math.trunc(p.empresa));
+
+    const resp = await this.requestAutenticada(
+      `/Produtos/${empresa}?pagina=${pagina}&limite=${limite}`,
+      { method: 'GET' },
+    );
+
+    // 404 aqui não é erro: é página além do fim. Mesmo contrato de
+    // getFornecedores — devolver lista vazia deixa o worker encerrar o loop.
+    if (resp.status === 404) {
+      return { registros: [], paginaAtual: pagina, paginas: pagina };
+    }
+
+    const corpo = await this.parseJson<RespostaPaginada<OrixProduto>>(resp);
+
+    return {
+      registros: corpo?.registros ?? [],
+      paginaAtual: numeroOuPadrao(corpo?.paginaAtual, pagina),
+      paginas: numeroOuPadrao(corpo?.paginas, 1),
+    };
   }
 
   /**

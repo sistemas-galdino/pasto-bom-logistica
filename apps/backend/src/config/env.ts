@@ -55,6 +55,17 @@ const envSchema = z.object({
   FORNECEDORES_CRON: z.string().min(1).default('37 * * * *'),
   // Cadastro de fornecedor muda devagar (é cadastro, não movimento): 24 h basta.
   FORNECEDORES_INTERVALO_HORAS: z.coerce.number().positive().default(24),
+
+  // Espelho de ESTOQUE dos produtos do Órix (migração 0024), que alimenta o
+  // alerta "você está mandando 100 e tem 40" no modal de agendar.
+  //
+  // MINUTO 43: os minutos já ocupados são os múltiplos de 5 (poll), o 15
+  // (varredura) e o 37 (fornecedores). 43 não colide com nenhum — três rotinas
+  // no mesmo tick contra o mesmo servidor instável é pedir timeout.
+  ESTOQUE_CRON: z.string().min(1).default('43 * * * *'),
+  // 3 h, e não 24 como fornecedores: estoque é MOVIMENTO, não cadastro. Um
+  // número de ontem faria o alerta mentir nos dois sentidos.
+  ESTOQUE_INTERVALO_HORAS: z.coerce.number().positive().default(3),
   API_PORT: z.coerce.number().int().positive().default(3333),
   // URL do frontend — usada no link de convite (definir senha). NÃO envia
   // e-mail: o link é copiado na tela Usuários e mandado pela logística.
