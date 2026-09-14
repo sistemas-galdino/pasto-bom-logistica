@@ -34,6 +34,7 @@ import type {
   CriarReservaRequest,
   AtualizarReservaRequest,
   Fornecedor,
+  EstoqueProduto,
   RotaCidade,
   CriarRotaCidadeRequest,
   AtualizarRotaCidadeRequest,
@@ -335,6 +336,23 @@ export const api = {
       `/api/reservas/${encodeURIComponent(id)}/cancelar`,
       { method: 'POST' },
     );
+  },
+
+  /**
+   * Estoque em lote: mapa produtoCodigo -> estoque (ou null).
+   *
+   * `null` é "não sei", nunca zero — produto não espelhado, código que não casa
+   * ou item de prestação de serviço. Quem interpreta é `avaliarEstoque`.
+   */
+  async estoqueProdutos(
+    produtoCodigos: string[],
+    signal?: AbortSignal,
+  ): Promise<Record<string, EstoqueProduto | null>> {
+    if (produtoCodigos.length === 0) return {};
+    const qs = `?produtos=${encodeURIComponent(produtoCodigos.join(','))}`;
+    return request<Record<string, EstoqueProduto | null>>(`/api/estoque${qs}`, {
+      signal,
+    });
   },
 
   // --- rotas de cidade ------------------------------------------------------

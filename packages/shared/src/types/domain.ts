@@ -425,6 +425,23 @@ export interface RotaCidade {
   criadoEm: string;
 }
 
+/**
+ * O estoque de um produto, como o espelho do Órix (0024) o publica.
+ *
+ * A resposta de `GET /api/estoque?produtos=` é `Record<codigo, EstoqueProduto |
+ * null>`, e o `null` significa NÃO SEI — produto nunca espelhado, código que
+ * não casa, ou item de prestação de serviço (que não tem estoque). Nunca zero:
+ * confundir os dois faria o alerta gritar em tudo.
+ */
+export interface EstoqueProduto {
+  produtoCodigo: string;
+  /** Soma dos cinco depósitos do Órix. PODE SER NEGATIVA. */
+  quantidade: number;
+  unidade: string | null;
+  /** Quando o espelho leu — a tela mostra a idade junto do número. */
+  atualizadoEm: string;
+}
+
 /** Corpo de POST /api/rotas-cidade. */
 export interface CriarRotaCidadeRequest {
   cidade: string;

@@ -36,8 +36,10 @@ import type {
 } from '@pastobom/shared';
 import {
   avaliarCapacidade,
+  avaliarEstoque,
   avaliarLimiteEntregas,
   avaliarPesoAgendamento,
+  horasDesde,
   intervaloDaVisao,
   ocupacaoDoCaminhaoNoDia,
   pesoDaCarga,
@@ -111,6 +113,19 @@ function dataCurta(iso: string | null | undefined): string | null {
   return `${String(d.getDate()).padStart(2, '0')}/${String(
     d.getMonth() + 1,
   ).padStart(2, '0')}`;
+}
+
+/**
+ * "atualizado agora", "há 2 h", "há 3 dias" — a idade do espelho de estoque.
+ *
+ * Fica na tela e não no shared porque é pt-BR: a regra pura devolve HORAS
+ * (`horasDesde`), e escrever a frase é trabalho de interface.
+ */
+function textoIdade(horas: number): string {
+  if (horas < 1) return 'atualizado agora';
+  if (horas < 24) return `há ${Math.floor(horas)} h`;
+  const dias = Math.floor(horas / 24);
+  return `há ${dias} ${dias === 1 ? 'dia' : 'dias'}`;
 }
 
 /** Aceita vírgula decimal — a equipe digita 1,5 e não 1.5. */
@@ -282,6 +297,35 @@ export function AgendarEntregaModal({
   });
 
   /**
+   * ESTOQUE dos produtos deste pedido — pedido da Natália na reunião de 27/08:
+   * "é a quantidade de produto que vai me falar se eu tenho aquele produto para
+   * entregar para aquele cliente ou não".
+   *
+   * É AVISO, JAMAIS BLOQUEIO — ela foi explícita, e `bloqueado` abaixo não
+   * olha para cá. Travar o agendamento por estoque pararia a operação num ERP
+   * que erra cadastro.
+   *
+   * A chave depende só dos CÓDIGOS, não das quantidades digitadas: o estoque do
+   * produto não muda porque a pessoa mudou quanto vai mandar, e pôr a
+   * quantidade na chave faria uma requisição por tecla.
+   */
+  const codigosEstoque = useMemo(
+    () => comSaldo.map((s) => s.produtoCodigo).sort(),
+    [comSaldo],
+  );
+  const codigosEstoqueKey = codigosEstoque.join(',');
+
+  const estoqueQuery = useQuery({
+    queryKey: ['estoque', codigosEstoqueKey],
+    queryFn: ({ signal }) => api.estoqueProdutos(codigosEstoque, signal),
+    enabled: codigosEstoque.length > 0,
+    // O espelho roda a cada 3 h; 5 min de cache poupa a consulta a cada
+    // reabertura do modal sem deixar o número envelhecer de forma perceptível.
+    staleTime: 5 * 60 * 1000,
+  });
+  const estoquePorProduto = estoqueQuery.data ?? {};
+
+  /**
    * Ocupação do caminhão escolhido: kg no turno e nº de entregas NO DIA.
    *
    * A REGRESSÃO QUE ESTA LINHA EVITA: isto já foi um laço aqui dentro que
@@ -356,6 +400,11 @@ export function AgendarEntregaModal({
     // um esquecimento: "que ele não seja um impeditivo de agendamento, mas que
     // ele sinalize". Passar da capacidade pinta a linha de peso e mostra o
     // aviso — e deixa agendar.
+    //
+    // O ESTOQUE TAMBÉM NÃO ENTRA, pela mesma decisão e por um motivo a mais: o
+    // número vem de um ERP que erra cadastro e de um espelho que pode estar
+    // horas atrasado. Bloquear com base nisso pararia a operação por causa de
+    // um dado que a própria tela apresenta com ressalva ("há 5 h").
     !limiteDia.cabe;
 
   function definirQtd(codigo: string, valor: string): void {
@@ -457,13 +506,29 @@ export function AgendarEntregaModal({
               );
               const quando = dataCurta(item.pesoAtualizadoEm);
 
+              // ESTOQUE: aviso, nunca bloqueio. `null` (produto não espelhado,
+              // código que não casa, item de serviço) é "não sei" e não avisa.
+              const estoque = estoquePorProduto[codigo] ?? null;
+              const situacaoEstoque = avaliarEstoque({
+                quantidadeEstoque: estoque?.quantidade ?? null,
+                quantidadePedida: valor,
+              });
+              const idadeEstoque = horasDesde(estoque?.atualizadoEm, Date.now());
+
               return (
                 <li
                   key={codigo}
+                  // `trigo` é pendência que TRAVA (falta peso, falta conferir);
+                  // `terra` é "passou do que tem, mas não impede" — a mesma
+                  // semântica que a capacidade do caminhão já usa nesta tela.
+                  // Cores diferentes porque as ações são diferentes: uma pede
+                  // para digitar, a outra pede para conferir antes de mandar.
                   className={`rounded-lg border px-3 py-2 ${
                     falta || precisaConfirmar
                       ? 'border-trigo/50 bg-trigo-claro/40'
-                      : 'border-linha bg-creme-50'
+                      : situacaoEstoque.avisar
+                        ? 'border-terra/40 bg-terra-claro/40'
+                        : 'border-linha bg-creme-50'
                   }`}
                 >
                   <div className="flex items-center gap-3">
@@ -490,6 +555,28 @@ export function AgendarEntregaModal({
                           </span>
                         )}
                       </p>
+
+                      {/* O AVISO DE ESTOQUE, com a IDADE do dado junto.
+                          "estoque 40" sem idade é um palpite com cara de fato:
+                          o espelho roda a cada 3 h e o Órix fica fora à noite,
+                          então um número de ontem precisa se apresentar como
+                          tal — senão o aviso vira falso alarme e perde a
+                          credibilidade que ele existe para ter. */}
+                      {situacaoEstoque.avisar && estoque !== null && (
+                        <p className="mt-0.5 text-[11px] font-semibold text-terra-escuro">
+                          {situacaoEstoque.nivel === 'negativo'
+                            ? `Estoque negativo: ${formatarQtd(estoque.quantidade)}`
+                            : `Estoque: ${formatarQtd(estoque.quantidade)}${
+                                estoque.unidade ? ` ${estoque.unidade}` : ''
+                              } — você está mandando ${formatarQtd(valor)}`}
+                          {idadeEstoque !== null && (
+                            <span className="font-normal text-tinta-suave">
+                              {' '}
+                              ({textoIdade(idadeEstoque)})
+                            </span>
+                          )}
+                        </p>
+                      )}
                     </div>
                     <input
                       type="number"

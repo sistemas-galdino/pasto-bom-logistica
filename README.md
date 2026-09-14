@@ -154,6 +154,10 @@ cp .env.example apps/backend/.env
 | `RECONCILIAR_CRON` | não (default `*/30 * * * *`) | Reconciliação com o Órix |
 | `VARREDURA_CHECK_CRON` | não (default `15 * * * *`) | De quanto em quanto tempo VERIFICA se está na hora da varredura profunda |
 | `VARREDURA_INTERVALO_HORAS` | não (default `20`) | Intervalo mínimo entre varreduras profundas bem-sucedidas |
+| `FORNECEDORES_CRON` | não (default `37 * * * *`) | De quanto em quanto tempo VERIFICA se está na hora de espelhar os fornecedores |
+| `FORNECEDORES_INTERVALO_HORAS` | não (default `24`) | Intervalo mínimo entre espelhamentos de fornecedor bem-sucedidos (é cadastro: muda devagar) |
+| `ESTOQUE_CRON` | não (default `43 * * * *`) | De quanto em quanto tempo VERIFICA se está na hora de espelhar o estoque. Minuto 43 não colide com poll (5), varredura (15) nem fornecedores (37) |
+| `ESTOQUE_INTERVALO_HORAS` | não (default `3`) | Intervalo mínimo entre espelhamentos de estoque bem-sucedidos (é movimento: envelhece em horas) |
 | `API_PORT` | não (default 3333) | Porta da API |
 | `ALLOW_NO_AUTH` | não (default `true`) | Em dev, libera rotas sem JWT (assume papel `logistica`) |
 
