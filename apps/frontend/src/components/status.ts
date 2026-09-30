@@ -165,6 +165,41 @@ export function textoReversaoEntrega(de: StatusEntrega): {
   };
 }
 
+/**
+ * Texto do modal de CONFIRMAÇÃO de uma ação de um clique sobre a viagem: pôr em
+ * rota, desfazer o agendamento e voltar uma etapa.
+ *
+ * Mora aqui, e não em cada tela, porque o Quadro e o detalhe do card na agenda
+ * oferecem os mesmos botões (pedido da Natália, 24/09/2026) — e o mesmo botão
+ * não pode prometer uma coisa numa tela e outra na outra. "Marcar entregue" e
+ * "Não realizado" não passam por aqui: têm formulário próprio
+ * (ConcluirEntregaModal e NaoRealizadoModal).
+ */
+export function textoConfirmacaoEntrega(
+  de: StatusEntrega,
+  para: StatusEntrega,
+  reversao: boolean,
+): { titulo: string; descricao: string; rotulo: string; perigo: boolean } {
+  if (reversao) {
+    return { ...textoReversaoEntrega(de), rotulo: 'Voltar', perigo: false };
+  }
+  if (para === 'cancelada') {
+    return {
+      titulo: 'Desfazer o agendamento',
+      descricao:
+        'A carga volta para a fila do pedido e a vaga de peso deste caminhão é liberada. O cliente não é avisado.',
+      rotulo: rotuloAcaoEntrega(de, para),
+      perigo: true,
+    };
+  }
+  return {
+    titulo: rotuloAcaoEntrega(de, para),
+    descricao: 'O cliente recebe a mensagem de que o pedido saiu para entrega.',
+    rotulo: rotuloAcaoEntrega(de, para),
+    perigo: false,
+  };
+}
+
 /** Colunas de VIAGEM no quadro. A coluna Pendente mostra pedidos com saldo. */
 export const COLUNAS_ENTREGA: StatusEntrega[] = [
   'agendada',

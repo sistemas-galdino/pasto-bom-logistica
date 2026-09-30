@@ -59,7 +59,7 @@ import {
   STATUS_ENTREGA_META,
   STATUS_META,
   STATUS_ORIX_META,
-  textoReversaoEntrega,
+  textoConfirmacaoEntrega,
 } from '../components/status';
 
 const STATUS_ORIX_OPCOES = STATUS_ORIX_META;
@@ -702,39 +702,13 @@ export function Board(): React.ReactElement {
   const campoCls =
     'rounded-lg border border-linha bg-papel px-2 py-1 text-xs text-tinta outline-none transition focus:border-mata/40';
 
-  /** Texto do modal de confirmação conforme a transição escolhida. */
-  function textoConfirmacao(alvo: AlvoEntrega): {
-    titulo: string;
-    descricao: string;
-    rotulo: string;
-    perigo: boolean;
-  } {
-    if (alvo.reversao) {
-      return {
-        ...textoReversaoEntrega(alvo.entrega.status),
-        rotulo: 'Voltar',
-        perigo: false,
-      };
-    }
-    if (alvo.para === 'cancelada') {
-      return {
-        titulo: 'Desfazer o agendamento',
-        descricao:
-          'A carga volta para a fila do pedido e a vaga de peso deste caminhão é liberada. O cliente não é avisado.',
-        rotulo: 'Desfazer',
-        perigo: true,
-      };
-    }
-    // Sobra só o 'em_rota'. O antigo ramo final ("Marcar como entregue") saiu:
-    // 'entregue' é desviado para o ConcluirEntregaModal em abrirTransicaoEntrega
-    // e nunca chega aqui; 'nao_realizado' tem modal próprio (NaoRealizadoModal).
-    return {
-      titulo: 'Pôr em rota',
-      descricao:
-        'O cliente recebe a mensagem de que o pedido saiu para entrega.',
-      rotulo: 'Pôr em rota',
-      perigo: false,
-    };
+  /** Texto do modal de confirmação — fonte única em components/status.ts. */
+  function textoConfirmacao(alvo: AlvoEntrega) {
+    return textoConfirmacaoEntrega(
+      alvo.entrega.status,
+      alvo.para,
+      alvo.reversao === true,
+    );
   }
 
   return (
