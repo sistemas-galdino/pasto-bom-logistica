@@ -45,10 +45,27 @@ interface Props {
   aviso?: string;
 }
 
-/** "12,5" -> 12.5; vazio -> null (a regra trata como "não declarado"). */
-function lerQuantidade(texto: string): number | null {
-  const limpo = texto.trim().replace(/\s/g, '').replace(',', '.');
-  if (limpo === '') return null;
+/**
+ * Lê a quantidade digitada, em pt-BR.
+ *
+ *   "12,5" -> 12.5     "1.200" -> 1200     "1.200,5" -> 1200.5     "6.5" -> 6.5
+ *
+ * Com vírgula, o ponto é separador de milhar. Sem vírgula, o ponto só é milhar
+ * no formato inequívoco (1 a 3 dígitos e grupos de exatamente 3): "1.200" é mil
+ * e duzentos, e ler 1,2 ali faria sumir 1.198,8 unidades.
+ *
+ * Campo VAZIO é NaN, não null: a regra pura lê null como "não declarado, vale o
+ * carregado", e quem apagou o "40" estava querendo dizer outra coisa — não
+ * "recebeu tudo". NaN bloqueia o envio pedindo a quantidade.
+ */
+function lerQuantidade(texto: string): number {
+  let limpo = texto.trim().replace(/\s/g, '');
+  if (limpo === '') return Number.NaN;
+  if (limpo.includes(',')) {
+    limpo = limpo.replace(/\./g, '').replace(',', '.');
+  } else if (/^\d{1,3}(\.\d{3})+$/.test(limpo)) {
+    limpo = limpo.replace(/\./g, '');
+  }
   const n = Number(limpo);
   return Number.isFinite(n) ? n : Number.NaN;
 }
@@ -71,7 +88,7 @@ export function ConcluirEntregaModal({
   const [observacao, setObservacao] = useState('');
 
   const declarado = useMemo(() => {
-    const r: Record<string, number | null> = {};
+    const r: Record<string, number> = {};
     for (const [codigo, texto] of Object.entries(textos)) {
       r[codigo] = lerQuantidade(texto);
     }
@@ -246,8 +263,9 @@ export function ConcluirEntregaModal({
                       Não quer mais
                     </span>
                     <span className="text-xs text-tinta-suave">
-                      O pedido é encerrado, e os {formatarQuantidade(totalRestante)}{' '}
-                      ficam registrados como não realizados.
+                      O restante desta viagem é encerrado: os{' '}
+                      {formatarQuantidade(totalRestante)} ficam registrados como
+                      não realizados e não voltam para o pedido.
                     </span>
                   </span>
                 </label>

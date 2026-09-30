@@ -272,8 +272,15 @@ export function Dashboard(): React.ReactElement {
     [entregasNoPeriodo],
   );
 
+  // O card do RESTANTE RECUSADO (encerraSaldo, 0025) não é viagem que falhou: é
+  // a metade que o cliente não quis de uma entrega que aconteceu. Contá-lo aqui
+  // faria cada entrega parcial com recusa aparecer como "1 entregue + 1 falha"
+  // e derrubaria a taxa de sucesso por uma viagem que deu certo.
   const naoRealizadas = useMemo(
-    () => entregasNoPeriodo.filter((e) => e.status === 'nao_realizado').length,
+    () =>
+      entregasNoPeriodo.filter(
+        (e) => e.status === 'nao_realizado' && !e.encerraSaldo,
+      ).length,
     [entregasNoPeriodo],
   );
 
@@ -295,7 +302,11 @@ export function Dashboard(): React.ReactElement {
       nao_realizado: 0,
       cancelada: 0,
     };
-    for (const e of entregasNoPeriodo) contagem[e.status] += 1;
+    // Sem o card do restante recusado, pelo mesmo motivo de `naoRealizadas`:
+    // ele não é uma viagem.
+    for (const e of entregasNoPeriodo) {
+      if (!e.encerraSaldo) contagem[e.status] += 1;
+    }
     return ORDEM_STATUS.map((s) => ({
       status: s,
       nome: STATUS_META[s].rotulo,

@@ -90,7 +90,7 @@ export function avaliarConclusao(
     if (typeof bruto !== 'number' || !Number.isFinite(bruto) || bruto < 0) {
       erros.push({
         produtoCodigo: item.produtoCodigo,
-        mensagem: `Quantidade inválida para ${nome}.`,
+        mensagem: `Informe quanto de ${nome} o cliente recebeu (0 se nada).`,
       });
       continue;
     }

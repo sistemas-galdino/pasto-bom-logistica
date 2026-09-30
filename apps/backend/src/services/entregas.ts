@@ -955,6 +955,16 @@ export async function reagendarEntrega(
       motivo,
     }),
   };
+  // A ordem da parada é do DIA DO MOTORISTA (0022). Mudou o dia ou o motorista,
+  // o número antigo não significa nada no destino — e, desde que a logística
+  // arrasta e o dia inteiro é numerado 1..N, chegaria lá como "Parada 4" à
+  // frente de todas as não sequenciadas, ou colidindo com outro 4.
+  if (
+    novaData !== entrega.dataAgendada ||
+    novoMotorista !== entrega.motoristaId
+  ) {
+    patch.ordem_rota = null;
+  }
 
   const { error } = await supabase
     .from('entregas')
@@ -1160,19 +1170,38 @@ export async function transicionarEntrega(
   const patch: Record<string, unknown> = { status: para, atualizado_em: agora };
   if (para === 'entregue') {
     patch.data_entregue = agora;
-    if (observacao) patch.observacoes = observacao;
+    // ANEXA, não substitui: `observacoes` guarda também o histórico de
+    // reagendamento ("Reagendada de…"), que não tem outra cópia.
+    if (observacao) {
+      const anterior = entrega.observacoes?.trim();
+      patch.observacoes = anterior ? `${anterior}\n${observacao}` : observacao;
+    }
   }
   if (para === 'nao_realizado') patch.motivo_nao_entrega = motivoLimpo;
 
-  const { error } = await supabase
+  // `.eq('status', de)`: guarda contra a conclusão DUPLA em paralelo — o
+  // motorista e a logística concluindo a mesma viagem, ou um clique repetido.
+  // Os dois leram em_rota; só um pode gravar. Antes da 0025 isso era inofensivo;
+  // agora o segundo criaria um segundo card de restante recusado e consumiria o
+  // restante duas vezes.
+  const { data: gravadas, error } = await supabase
     .from('entregas')
     .update(patch)
-    .eq('id', entregaId);
+    .eq('id', entregaId)
+    .eq('status', de)
+    .select('id');
   if (error) {
     throw new TransicaoError(
       500,
       'erro_banco',
       `Falha ao atualizar a entrega: ${error.message}`,
+    );
+  }
+  if ((gravadas ?? []).length === 0) {
+    throw new TransicaoError(
+      409,
+      'transicao_concorrente',
+      'Esta viagem acabou de ser atualizada por outra pessoa. Recarregue para ver como ela ficou.',
     );
   }
 
@@ -1265,8 +1294,36 @@ export async function reverterEntrega(args: {
     );
   }
 
+  // Pedido descartado (ou cancelado no Órix) não recebe viagem de volta à
+  // estrada: o descarte só barra viagens agendada/em rota, então sem isto um
+  // nao_realizado antigo voltaria a em_rota num pedido que não existe mais — e
+  // sincronizarStatusDoPedido ignora pedido cancelado, ninguém consertaria.
+  const { data: pedido } = await supabase
+    .from('pedidos')
+    .select('status_logistico')
+    .eq('id', entrega.pedidoId)
+    .maybeSingle<{ status_logistico: string }>();
+  if (pedido?.status_logistico === 'cancelada') {
+    throw new TransicaoError(
+      409,
+      'pedido_cancelado',
+      'O pedido desta viagem foi descartado. Restaure o pedido antes de desfazer.',
+    );
+  }
+
   if (de === 'nao_realizado' || de === 'entregue') {
     await exigirSaldoParaReverter(entrega);
+  }
+
+  // Desfazer a conclusão desfaz a declaração inteira — as quantidades (senão a
+  // tag amarela continua acesa numa viagem em rota) e o card do restante
+  // recusado, que só existia por causa dela. ANTES do status, de propósito: se
+  // o status falhar depois, sobra uma viagem entregue sem declaração (consome o
+  // carregado) e nenhuma recusa — consistente. Na ordem inversa, uma falha ao
+  // cancelar a recusa deixaria a viagem em rota E a recusa consumindo, com mais
+  // mercadoria comprometida do que vendida.
+  if (de === 'entregue') {
+    await desfazerDeclaracaoDaConclusao(entrega, atorUserId);
   }
 
   const patch: Record<string, unknown> = {
@@ -1277,17 +1334,32 @@ export async function reverterEntrega(args: {
   // reagendamento ("de 12/08 manhã para 14/08 tarde"), e apagar isso para
   // desfazer um clique seria perder informação que não tem outra cópia.
   if (de === 'entregue') patch.data_entregue = null;
-  if (de === 'nao_realizado') patch.motivo_nao_entrega = null;
+  // O número da parada de um nao_realizado é velho: o arrasto só renumera
+  // agendada/em rota, então ele colidiria com o de outra parada do dia. Volta
+  // sem número, no fim da fila das não sequenciadas.
+  if (de === 'nao_realizado') {
+    patch.motivo_nao_entrega = null;
+    patch.ordem_rota = null;
+  }
 
-  const { error } = await supabase
+  const { data: revertidas, error } = await supabase
     .from('entregas')
     .update(patch)
-    .eq('id', entregaId);
+    .eq('id', entregaId)
+    .eq('status', de)
+    .select('id');
   if (error) {
     throw new TransicaoError(
       500,
       'erro_banco',
       `Falha ao reverter a entrega: ${error.message}`,
+    );
+  }
+  if ((revertidas ?? []).length === 0) {
+    throw new TransicaoError(
+      409,
+      'transicao_concorrente',
+      'Esta viagem acabou de ser atualizada por outra pessoa. Recarregue para ver como ela ficou.',
     );
   }
 
@@ -1298,13 +1370,6 @@ export async function reverterEntrega(args: {
     para,
     atorUserId,
   });
-
-  // Desfazer a conclusão desfaz a declaração inteira: as quantidades (senão a
-  // tag amarela continua acesa numa viagem em rota) e o card do restante
-  // recusado, que só existia por causa dela.
-  if (de === 'entregue') {
-    await desfazerDeclaracaoDaConclusao(entrega, atorUserId);
-  }
 
   await sincronizarStatusDoPedido(entrega.pedidoId);
   return carregarEntrega(entregaId);
@@ -1359,8 +1424,8 @@ async function criarRestanteRecusado(args: {
       500,
       'erro_banco',
       'A entrega foi concluída, mas o restante recusado não pôde ser registrado ' +
-        'e voltou para o pedido como pendente. Descarte-o pelo quadro se o ' +
-        `cliente não quer mesmo. (${detalhe})`,
+        'e voltou para o pedido como pendente. Para registrar a recusa, use ' +
+        `"Voltar" nesta viagem e conclua de novo. (${detalhe})`,
     );
   };
 
