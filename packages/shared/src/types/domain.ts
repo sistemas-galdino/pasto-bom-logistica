@@ -106,6 +106,12 @@ export interface EntregaItem {
   nomeProduto: string;
   /** Quanto deste produto sai NESTA entrega (não é o total do pedido). */
   qtd: number;
+  /**
+   * Quanto o cliente de fato recebeu, declarado na conclusão (0025). null = não
+   * declarado, e vale `qtd` — é o caso de toda entrega anterior à migração e de
+   * toda viagem que ainda não terminou. Menor que `qtd` = entrega parcial.
+   */
+  qtdEntregue: number | null;
   separado: boolean;
   separadoEm: string | null;
   /**
@@ -150,6 +156,27 @@ export interface Entrega {
   dataEntregue: string | null;
   motivoNaoEntrega: string | null;
   observacoes: string | null;
+  /**
+   * Só em nao_realizado: é o RESTANTE RECUSADO pelo cliente numa entrega parcial
+   * (0025). Encerra o saldo em vez de devolvê-lo — ver `qtdConsumida`.
+   */
+  encerraSaldo: boolean;
+  /** A viagem cuja conclusão parcial gerou este card; null nas demais. */
+  origemEntregaId: string | null;
+  /**
+   * O PEDIDO desta viagem já teve alguma entrega que entregou menos do que levou
+   * (`temDivergencia`). É o que pinta de amarelo a tag do número do pedido —
+   * pedido da Natália, 24/09/2026.
+   *
+   * É do pedido, não da viagem, de propósito: o card que mais precisa do aviso é
+   * o do RESTANTE, reagendado depois, e ele em si não divergiu de nada. A divisão
+   * planejada no agendamento continua cinza: sem divergência declarada, não é
+   * parcial.
+   *
+   * Calculado no servidor sobre TODAS as viagens do pedido, para não depender da
+   * janela de datas que a tela carregou.
+   */
+  pedidoParcial: boolean;
 
   // --- dados do pedido, resolvidos para o cartão ---
   orixNumero: string;
@@ -298,6 +325,10 @@ export interface AgendaEntrega {
   caminhaoNome: string | null;
   pesoTotalKg: number | null;
   status: StatusEntrega;
+  /** Ordem da parada no dia do motorista (0022); null = não sequenciada. */
+  ordemRota: number | null;
+  /** O PEDIDO já teve uma entrega parcial de verdade (ver `Entrega.pedidoParcial`). */
+  pedidoParcial: boolean;
 }
 
 /** Ocupação de um caminhão dentro de um slot (data + período). */

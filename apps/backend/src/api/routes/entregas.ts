@@ -110,6 +110,10 @@ const transicaoSchema = z.object({
   para: statusEnum,
   observacao: z.string().max(2000).optional(),
   motivo: z.string().max(1000).optional(),
+  // Entrega parcial declarada (0025) — só com para: 'entregue'.
+  entregues: z.record(z.string(), z.number()).optional(),
+  restanteRecusado: z.boolean().optional(),
+  motivoRecusa: z.string().max(1000).optional(),
 });
 
 const reverterSchema = z.object({ para: statusEnum });
@@ -255,6 +259,9 @@ export async function entregasRoutes(app: FastifyInstance): Promise<void> {
         para: parsed.data.para,
         observacao: parsed.data.observacao,
         motivo: parsed.data.motivo,
+        entregues: parsed.data.entregues,
+        restanteRecusado: parsed.data.restanteRecusado,
+        motivoRecusa: parsed.data.motivoRecusa,
         atorUserId: req.usuario?.id ?? undefined,
         atorPapel: req.usuario?.papel,
       });

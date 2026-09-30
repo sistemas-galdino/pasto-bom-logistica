@@ -50,7 +50,9 @@ export function pedidosComSaldo(
       e.itens.map((i) => ({
         produtoCodigo: i.produtoCodigo,
         qtd: i.qtd,
+        qtdEntregue: i.qtdEntregue,
         statusEntrega: e.status,
+        encerraSaldo: e.encerraSaldo,
       })),
     );
     const saldo = calcularSaldo(

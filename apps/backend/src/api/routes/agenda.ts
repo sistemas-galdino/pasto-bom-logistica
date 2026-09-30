@@ -27,6 +27,7 @@ import type {
 import { supabase } from '../../db/supabase.js';
 import { log } from '../../log.js';
 import { lerPesosProdutos } from '../../services/carga.js';
+import { pedidosComEntregaParcial } from '../../services/entregas.js';
 
 // ---------------------------------------------------------------------------
 // Schemas de validação (zod)
@@ -88,6 +89,8 @@ interface EntregaAgendaRow {
   caminhao_id: string | null;
   status: StatusEntrega;
   pedido_id: string;
+  /** Ordem da parada no dia do motorista (0022). */
+  ordem_rota: number | string | null;
   entrega_itens?:
     | {
         produto_codigo: string | null;
@@ -142,7 +145,7 @@ const SELECT_RESERVA =
   'motorista_id, caminhao_id, peso_previsto_kg, bloqueia_caminhao';
 
 const SELECT_AGENDA =
-  'id, pedido_id, data_agendada, periodo, motorista_id, caminhao_id, status, ' +
+  'id, pedido_id, data_agendada, periodo, motorista_id, caminhao_id, status, ordem_rota, ' +
   'entrega_itens(produto_codigo, qtd, peso_unit_kg), ' +
   'pedidos(orix_numero, cliente_codigo, cliente_nome, cidade_cliente)';
 
@@ -224,8 +227,16 @@ export async function agendaRoutes(app: FastifyInstance): Promise<void> {
       // As reservas entram aqui e não junto da query de entregas porque não
       // dependem dela: um slot pode ter reserva e nenhuma entrega — é o caso da
       // manhã da oficina, e é exatamente o que a tela precisa mostrar.
-      const [frota, motoristas, clientes, pesos, reservas, limites, rotas] =
-        await Promise.all([
+      const [
+        frota,
+        motoristas,
+        clientes,
+        pesos,
+        reservas,
+        limites,
+        rotas,
+        parciais,
+      ] = await Promise.all([
           lerFrota(),
           resolverNomesMotorista(linhas),
           resolverClientes(linhas),
@@ -237,6 +248,7 @@ export async function agendaRoutes(app: FastifyInstance): Promise<void> {
           lerReservas(de, ate),
           lerLimites(de, ate),
           lerRotasCidade(),
+          pedidosComEntregaParcial(linhas.map((l) => l.pedido_id)),
         ]);
 
       const slots = montarSlots(
@@ -246,6 +258,7 @@ export async function agendaRoutes(app: FastifyInstance): Promise<void> {
         clientes,
         pesos,
         reservas,
+        parciais,
       );
       const resposta: AgendaResposta = {
         slots,
@@ -566,6 +579,13 @@ function pesoDaLinha(
   };
 }
 
+/** Ordem da parada, ou null (zero/negativo é dado corrompido — check é > 0). */
+function ordemDaParada(v: number | string | null | undefined): number | null {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+}
+
 function montarSlots(
   linhas: EntregaAgendaRow[],
   frota: Map<string, Caminhao>,
@@ -573,6 +593,8 @@ function montarSlots(
   clientes: Map<string, { bairro: string | null; cidade: string | null }>,
   pesos: Map<string, number>,
   reservas: ReservasCarregadas,
+  /** Pedidos com entrega parcial de verdade — a tag amarela (0025). */
+  parciais: Set<string>,
 ): AgendaSlot[] {
   interface Acumulador {
     data: string;
@@ -628,6 +650,8 @@ function montarSlots(
       caminhaoId: linha.caminhao_id,
       caminhaoNome: caminhao?.nome ?? null,
       pesoTotalKg: peso.totalKg,
+      ordemRota: ordemDaParada(linha.ordem_rota),
+      pedidoParcial: parciais.has(linha.pedido_id),
       status: linha.status,
     });
 

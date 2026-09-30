@@ -4,6 +4,7 @@ import {
   REVERSOES_ENTREGA,
   podeTransicionarEntrega,
   podeReverterEntrega,
+  reversoesDaEntrega,
   templateDaTransicaoEntrega,
 } from './entrega-state-machine.js';
 import type { StatusEntrega } from './types/domain.js';
@@ -116,5 +117,17 @@ describe('WhatsApp', () => {
         }
       }
     }
+  });
+});
+
+describe('reversoesDaEntrega', () => {
+  it('uma viagem comum oferece a reversão do seu status', () => {
+    expect(reversoesDaEntrega({ status: 'nao_realizado', encerraSaldo: false })).toEqual(['em_rota']);
+    expect(reversoesDaEntrega({ status: 'em_rota', encerraSaldo: false })).toEqual(['agendada']);
+  });
+
+  // O restante recusado se desfaz pela viagem de origem, nunca sozinho.
+  it('o card do restante recusado não tem volta própria', () => {
+    expect(reversoesDaEntrega({ status: 'nao_realizado', encerraSaldo: true })).toEqual([]);
   });
 });

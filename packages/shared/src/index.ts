@@ -24,4 +24,5 @@ export * from './reconciliacao.js';
 export * from './janela-poll.js';
 export * from './link-acesso.js';
 export * from './saldo.js';
+export * from './parcial-entrega.js';
 export * from './entrega-state-machine.js';

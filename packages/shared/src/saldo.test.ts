@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   calcularSaldo,
   consomeSaldo,
+  qtdConsumida,
   temSaldo,
   apenasComSaldo,
   pesoDaCarga,
@@ -46,7 +47,7 @@ describe('calcularSaldo — o caso da reunião (180, entrega 100)', () => {
 
   it('com 100 agendados, restam 80', () => {
     const saldo = calcularSaldo(PEDIDO_180, [
-      { produtoCodigo: 'ADU1', qtd: 100, statusEntrega: 'agendada' },
+      { produtoCodigo: 'ADU1', qtd: 100, qtdEntregue: null, statusEntrega: 'agendada', encerraSaldo: false },
     ]);
     expect(saldo[0]?.qtdSaldo).toBe(80);
     expect(saldo[0]?.qtdComprometida).toBe(100);
@@ -54,15 +55,15 @@ describe('calcularSaldo — o caso da reunião (180, entrega 100)', () => {
 
   it('entregues os 100, ainda restam 80 (entregue continua consumindo)', () => {
     const saldo = calcularSaldo(PEDIDO_180, [
-      { produtoCodigo: 'ADU1', qtd: 100, statusEntrega: 'entregue' },
+      { produtoCodigo: 'ADU1', qtd: 100, qtdEntregue: null, statusEntrega: 'entregue', encerraSaldo: false },
     ]);
     expect(saldo[0]?.qtdSaldo).toBe(80);
   });
 
   it('as duas viagens concluídas zeram o saldo', () => {
     const saldo = calcularSaldo(PEDIDO_180, [
-      { produtoCodigo: 'ADU1', qtd: 100, statusEntrega: 'entregue' },
-      { produtoCodigo: 'ADU1', qtd: 80, statusEntrega: 'entregue' },
+      { produtoCodigo: 'ADU1', qtd: 100, qtdEntregue: null, statusEntrega: 'entregue', encerraSaldo: false },
+      { produtoCodigo: 'ADU1', qtd: 80, qtdEntregue: null, statusEntrega: 'entregue', encerraSaldo: false },
     ]);
     expect(saldo[0]?.qtdSaldo).toBe(0);
     expect(temSaldo(saldo)).toBe(false);
@@ -71,7 +72,7 @@ describe('calcularSaldo — o caso da reunião (180, entrega 100)', () => {
   // O COMPORTAMENTO MAIS IMPORTANTE DO MODELO.
   it('a viagem que não deu certo devolve a carga para a fila', () => {
     const saldo = calcularSaldo(PEDIDO_180, [
-      { produtoCodigo: 'ADU1', qtd: 100, statusEntrega: 'nao_realizado' },
+      { produtoCodigo: 'ADU1', qtd: 100, qtdEntregue: null, statusEntrega: 'nao_realizado', encerraSaldo: false },
     ]);
     expect(saldo[0]?.qtdSaldo).toBe(180);
     expect(saldo[0]?.qtdComprometida).toBe(0);
@@ -79,7 +80,7 @@ describe('calcularSaldo — o caso da reunião (180, entrega 100)', () => {
 
   it('desfazer o agendamento devolve a carga para a fila', () => {
     const saldo = calcularSaldo(PEDIDO_180, [
-      { produtoCodigo: 'ADU1', qtd: 100, statusEntrega: 'cancelada' },
+      { produtoCodigo: 'ADU1', qtd: 100, qtdEntregue: null, statusEntrega: 'cancelada', encerraSaldo: false },
     ]);
     expect(saldo[0]?.qtdSaldo).toBe(180);
   });
@@ -87,9 +88,9 @@ describe('calcularSaldo — o caso da reunião (180, entrega 100)', () => {
   // O CASO QUE ESCOLHEU O MODELO: vários caminhões ao mesmo tempo.
   it('três caminhões simultâneos somam no comprometido', () => {
     const saldo = calcularSaldo(PEDIDO_180, [
-      { produtoCodigo: 'ADU1', qtd: 60, statusEntrega: 'em_rota' },
-      { produtoCodigo: 'ADU1', qtd: 60, statusEntrega: 'em_rota' },
-      { produtoCodigo: 'ADU1', qtd: 40, statusEntrega: 'agendada' },
+      { produtoCodigo: 'ADU1', qtd: 60, qtdEntregue: null, statusEntrega: 'em_rota', encerraSaldo: false },
+      { produtoCodigo: 'ADU1', qtd: 60, qtdEntregue: null, statusEntrega: 'em_rota', encerraSaldo: false },
+      { produtoCodigo: 'ADU1', qtd: 40, qtdEntregue: null, statusEntrega: 'agendada', encerraSaldo: false },
     ]);
     expect(saldo[0]?.qtdComprometida).toBe(160);
     expect(saldo[0]?.qtdSaldo).toBe(20);
@@ -97,10 +98,10 @@ describe('calcularSaldo — o caso da reunião (180, entrega 100)', () => {
 
   it('mistura de viagens boas e ruins conta só as que valem', () => {
     const saldo = calcularSaldo(PEDIDO_180, [
-      { produtoCodigo: 'ADU1', qtd: 100, statusEntrega: 'entregue' },
-      { produtoCodigo: 'ADU1', qtd: 50, statusEntrega: 'nao_realizado' },
-      { produtoCodigo: 'ADU1', qtd: 30, statusEntrega: 'cancelada' },
-      { produtoCodigo: 'ADU1', qtd: 20, statusEntrega: 'agendada' },
+      { produtoCodigo: 'ADU1', qtd: 100, qtdEntregue: null, statusEntrega: 'entregue', encerraSaldo: false },
+      { produtoCodigo: 'ADU1', qtd: 50, qtdEntregue: null, statusEntrega: 'nao_realizado', encerraSaldo: false },
+      { produtoCodigo: 'ADU1', qtd: 30, qtdEntregue: null, statusEntrega: 'cancelada', encerraSaldo: false },
+      { produtoCodigo: 'ADU1', qtd: 20, qtdEntregue: null, statusEntrega: 'agendada', encerraSaldo: false },
     ]);
     expect(saldo[0]?.qtdComprometida).toBe(120);
     expect(saldo[0]?.qtdSaldo).toBe(60);
@@ -127,7 +128,7 @@ describe('calcularSaldo — casos do mundo real', () => {
         { produtoCodigo: 'ADU1', nomeProduto: 'ADUBO', qtd: 100 },
         { produtoCodigo: 'SEM1', nomeProduto: 'SEMENTE', qtd: 20 },
       ],
-      [{ produtoCodigo: 'ADU1', qtd: 100, statusEntrega: 'entregue' }],
+      [{ produtoCodigo: 'ADU1', qtd: 100, qtdEntregue: null, statusEntrega: 'entregue', encerraSaldo: false }],
     );
     expect(saldo).toHaveLength(2);
     expect(saldo[0]?.qtdSaldo).toBe(0);
@@ -150,14 +151,14 @@ describe('calcularSaldo — casos do mundo real', () => {
     // Saíram 180, e depois o Órix passou a dizer que o pedido é de 100.
     const saldo = calcularSaldo(
       [{ produtoCodigo: 'ADU1', nomeProduto: 'ADUBO', qtd: 100 }],
-      [{ produtoCodigo: 'ADU1', qtd: 180, statusEntrega: 'entregue' }],
+      [{ produtoCodigo: 'ADU1', qtd: 180, qtdEntregue: null, statusEntrega: 'entregue', encerraSaldo: false }],
     );
     expect(saldo[0]?.qtdSaldo).toBe(0);
   });
 
   it('ignora entrega de produto que não está mais no pedido', () => {
     const saldo = calcularSaldo(PEDIDO_180, [
-      { produtoCodigo: 'SUMIU', qtd: 10, statusEntrega: 'entregue' },
+      { produtoCodigo: 'SUMIU', qtd: 10, qtdEntregue: null, statusEntrega: 'entregue', encerraSaldo: false },
     ]);
     expect(saldo).toHaveLength(1);
     expect(saldo[0]?.qtdSaldo).toBe(180);
@@ -166,7 +167,7 @@ describe('calcularSaldo — casos do mundo real', () => {
   it('não deixa resíduo de ponto flutuante em quantidade fracionária', () => {
     const saldo = calcularSaldo(
       [{ produtoCodigo: 'X', nomeProduto: 'X', qtd: 0.3 }],
-      [{ produtoCodigo: 'X', qtd: 0.1, statusEntrega: 'agendada' }],
+      [{ produtoCodigo: 'X', qtd: 0.1, qtdEntregue: null, statusEntrega: 'agendada', encerraSaldo: false }],
     );
     expect(saldo[0]?.qtdSaldo).toBe(0.2);
   });
@@ -202,7 +203,7 @@ describe('pesoDaCarga', () => {
 
 describe('validarQuantidades', () => {
   const saldo = calcularSaldo(PEDIDO_180, [
-    { produtoCodigo: 'ADU1', qtd: 100, statusEntrega: 'entregue' },
+    { produtoCodigo: 'ADU1', qtd: 100, qtdEntregue: null, statusEntrega: 'entregue', encerraSaldo: false },
   ]);
 
   it('aceita quantidade dentro do saldo', () => {
@@ -228,5 +229,86 @@ describe('validarQuantidades', () => {
   it('recusa quantidade negativa ou inválida', () => {
     expect(validarQuantidades(saldo, new Map([['ADU1', -5]])).length).toBeGreaterThan(0);
     expect(validarQuantidades(saldo, new Map([['ADU1', NaN]])).length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Entrega parcial declarada (0025) — reunião de 24/09/2026
+// ---------------------------------------------------------------------------
+
+/** Linha de entrega com os defaults de antes da 0025. */
+function linha(
+  qtd: number,
+  statusEntrega: LinhaItemEntrega['statusEntrega'],
+  extra: Partial<LinhaItemEntrega> = {},
+): LinhaItemEntrega {
+  return { produtoCodigo: 'ADU1', qtd, qtdEntregue: null, statusEntrega, encerraSaldo: false, ...extra };
+}
+
+describe('qtdConsumida', () => {
+  it('entregue sem declaração consome o carregado (toda entrega antiga)', () => {
+    expect(qtdConsumida(linha(100, 'entregue'))).toBe(100);
+  });
+
+  it('entregue com declaração consome o que o cliente recebeu', () => {
+    expect(qtdConsumida(linha(100, 'entregue', { qtdEntregue: 60 }))).toBe(60);
+    expect(qtdConsumida(linha(100, 'entregue', { qtdEntregue: 0 }))).toBe(0);
+  });
+
+  it('em viagem, a declaração não vale — a mercadoria está no caminhão', () => {
+    expect(qtdConsumida(linha(100, 'em_rota', { qtdEntregue: 60 }))).toBe(100);
+  });
+
+  it('nao_realizado comum devolve tudo', () => {
+    expect(qtdConsumida(linha(100, 'nao_realizado'))).toBe(0);
+  });
+
+  it('o restante recusado encerra o saldo', () => {
+    expect(qtdConsumida(linha(100, 'nao_realizado', { encerraSaldo: true }))).toBe(100);
+  });
+
+  it('a marca só vale em nao_realizado', () => {
+    expect(qtdConsumida(linha(100, 'cancelada', { encerraSaldo: true }))).toBe(0);
+  });
+});
+
+describe('calcularSaldo — a parcial do relato (40, cliente aceitou 20)', () => {
+  const PEDIDO_40: LinhaItemPedido[] = [
+    { produtoCodigo: 'ADU1', nomeProduto: 'ADUBO', qtd: 40, pesoUnitKg: 50 },
+  ];
+
+  it('antes da 0025 os 20 que voltaram sumiam do saldo', () => {
+    const [s] = calcularSaldo(PEDIDO_40, [linha(40, 'entregue')]);
+    expect(s?.qtdSaldo).toBe(0);
+  });
+
+  it('"o cliente quer o restante": os 20 voltam para a fila', () => {
+    const [s] = calcularSaldo(PEDIDO_40, [linha(40, 'entregue', { qtdEntregue: 20 })]);
+    expect(s?.qtdComprometida).toBe(20);
+    expect(s?.qtdSaldo).toBe(20);
+  });
+
+  it('"não quer mais": o card irmão encerra o pedido', () => {
+    const [s] = calcularSaldo(PEDIDO_40, [
+      linha(40, 'entregue', { qtdEntregue: 20 }),
+      linha(20, 'nao_realizado', { encerraSaldo: true }),
+    ]);
+    expect(s?.qtdSaldo).toBe(0);
+  });
+
+  it('desfazer a recusa (card irmão cancelado) devolve os 20', () => {
+    const [s] = calcularSaldo(PEDIDO_40, [
+      linha(40, 'entregue', { qtdEntregue: 20 }),
+      linha(20, 'cancelada', { encerraSaldo: true }),
+    ]);
+    expect(s?.qtdSaldo).toBe(20);
+  });
+
+  it('o restante reagendado volta a consumir, sem estourar', () => {
+    const [s] = calcularSaldo(PEDIDO_40, [
+      linha(40, 'entregue', { qtdEntregue: 20 }),
+      linha(20, 'agendada'),
+    ]);
+    expect(s?.qtdSaldo).toBe(0);
   });
 });

@@ -76,6 +76,23 @@ export function podeReverterEntrega(
 }
 
 /**
+ * As reversões que ESTE card oferece — é o que a tela deve usar para desenhar
+ * o botão "Voltar", em vez de ler REVERSOES_ENTREGA direto.
+ *
+ * O card do restante recusado (encerraSaldo, 0025) não tem volta própria: ele
+ * não é uma viagem, é a metade recusada de outra, e "voltar para em rota" o
+ * transformaria numa carga que nunca esteve no caminhão. Desfaz-se pela viagem
+ * de origem — voltar a conclusão dela cancela este card junto.
+ */
+export function reversoesDaEntrega(entrega: {
+  status: StatusEntrega;
+  encerraSaldo: boolean;
+}): StatusEntrega[] {
+  if (entrega.encerraSaldo) return [];
+  return REVERSOES_ENTREGA[entrega.status];
+}
+
+/**
  * Template de WhatsApp de uma transição de entrega.
  *
  *   (criação da entrega)   -> 'agendamento'   (disparado ao agendar, não aqui)

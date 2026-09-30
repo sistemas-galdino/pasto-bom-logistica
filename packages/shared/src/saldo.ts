@@ -41,12 +41,49 @@ export interface LinhaItemPedido {
   pesoUnitKg?: number | null;
 }
 
-/** Uma linha de item de uma ENTREGA já existente do mesmo pedido. */
+/**
+ * Uma linha de item de uma ENTREGA já existente do mesmo pedido.
+ *
+ * `qtdEntregue` e `encerraSaldo` são OBRIGATÓRIOS de propósito (0025): os dois
+ * lugares que montam estas linhas (o saldo do servidor e o do Quadro) não
+ * compilam até preenchê-los. Opcionais, esquecer um deles daria um saldo errado
+ * em produção sem um único erro.
+ */
 export interface LinhaItemEntrega {
   produtoCodigo: string;
+  /** O que foi CARREGADO nesta viagem. */
   qtd: number;
+  /** O que o cliente recebeu, declarado na conclusão; null = não declarado. */
+  qtdEntregue: number | null;
   /** Status da entrega dona desta linha — é ele que decide se conta. */
   statusEntrega: StatusEntrega;
+  /** Só em nao_realizado: o restante recusado, que encerra o saldo. */
+  encerraSaldo: boolean;
+}
+
+/**
+ * Quanto esta linha tira do saldo do pedido.
+ *
+ *   agendada / em_rota      o que foi carregado (a mercadoria está reservada)
+ *   entregue                o que o cliente recebeu; sem declaração, o carregado
+ *   nao_realizado           nada — a mercadoria volta para a fila...
+ *     ...com encerra_saldo  ...a não ser que seja o restante que o cliente
+ *                           RECUSOU: aí o pedido é encerrado, e o saldo também
+ *   cancelada               nada
+ *
+ * Entrega parcial com "o cliente quer o restante" não precisa de nada além da
+ * primeira linha da tabela: declarar 20 de 40 faz os outros 20 voltarem para a
+ * fila sozinhos. Não há um "devolver saldo" em lugar nenhum — continua sendo
+ * consequência da regra, como sempre foi.
+ */
+export function qtdConsumida(linha: LinhaItemEntrega): number {
+  if (linha.statusEntrega === 'entregue') {
+    return linha.qtdEntregue ?? linha.qtd;
+  }
+  if (linha.statusEntrega === 'nao_realizado') {
+    return linha.encerraSaldo ? linha.qtd : 0;
+  }
+  return consomeSaldo(linha.statusEntrega) ? linha.qtd : 0;
 }
 
 /** Soma tolerante a lixo numérico (a API do Órix já mandou string com vírgula). */
@@ -98,10 +135,11 @@ export function calcularSaldo(
   // 2) Comprometido por produto (só as entregas que consomem saldo).
   const comprometido = new Map<string, number>();
   for (const linha of itensDasEntregas) {
-    if (!consomeSaldo(linha.statusEntrega)) continue;
+    const consumida = qtdConsumida(linha);
+    if (consumida === 0) continue;
     const codigo = linha.produtoCodigo;
     if (!codigo) continue;
-    comprometido.set(codigo, somar(comprometido.get(codigo) ?? 0, linha.qtd));
+    comprometido.set(codigo, somar(comprometido.get(codigo) ?? 0, consumida));
   }
 
   // 3) Saldo.

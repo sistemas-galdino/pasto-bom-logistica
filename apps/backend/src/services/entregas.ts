@@ -16,8 +16,10 @@
 //  - Falha de envio não invalida a transição já persistida.
 
 import {
+  avaliarConclusao,
   avaliarPesoAgendamento,
   calcularSaldo,
+  temDivergencia,
   pesoDaCarga,
   podeReverterEntrega,
   podeTransicionarEntrega,
@@ -27,6 +29,7 @@ import {
   type Entrega,
   type DestinoEntrega,
   type EntregaItem,
+  type LinhaItemEntrega,
   type PapelUsuario,
   type PeriodoEntrega,
   type SaldoItem,
@@ -66,6 +69,9 @@ interface EntregaRow {
   data_entregue: string | null;
   motivo_nao_entrega: string | null;
   observacoes: string | null;
+  /** 0025: o restante recusado de uma entrega parcial. */
+  encerra_saldo: boolean | null;
+  origem_entrega_id: string | null;
   criado_em: string;
   atualizado_em: string;
 }
@@ -76,6 +82,8 @@ interface EntregaItemRow {
   produto_codigo: string;
   nome_produto: string | null;
   qtd: number | string | null;
+  /** 0025: quanto o cliente recebeu; null = não declarado. */
+  qtd_entregue: number | string | null;
   separado: boolean | null;
   separado_em: string | null;
   /** Peso unitário congelado no agendamento (0019). Null nas viagens antigas. */
@@ -95,10 +103,18 @@ interface PedidoDaEntregaRow {
 const COLUNAS_ENTREGA =
   'id, pedido_id, status, data_agendada, periodo, motorista_id, caminhao_id, ' +
   'propriedade_codigo, ordem_rota, data_entregue, motivo_nao_entrega, ' +
-  'observacoes, criado_em, atualizado_em';
+  'observacoes, encerra_saldo, origem_entrega_id, criado_em, atualizado_em';
 
 const COLUNAS_ENTREGA_ITEM =
-  'id, entrega_id, produto_codigo, nome_produto, qtd, separado, separado_em, peso_unit_kg';
+  'id, entrega_id, produto_codigo, nome_produto, qtd, qtd_entregue, separado, ' +
+  'separado_em, peso_unit_kg';
+
+/** Quantidade declarada, ou null. Lixo numérico cai para "não declarado". */
+function qtdOuNulo(v: number | string | null | undefined): number | null {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
 
 /**
  * Ordem da parada, ou null. Zero e negativo caem para null: o banco tem check de
@@ -146,7 +162,9 @@ export async function saldoDoPedido(pedidoId: string): Promise<SaldoItem[]> {
         .eq('pedido_id', pedidoId),
       supabase
         .from('entregas')
-        .select('id, status, entrega_itens(produto_codigo, qtd)')
+        .select(
+          'id, status, encerra_saldo, entrega_itens(produto_codigo, qtd, qtd_entregue)',
+        )
         .eq('pedido_id', pedidoId),
     ]);
 
@@ -171,20 +189,25 @@ export async function saldoDoPedido(pedidoId: string): Promise<SaldoItem[]> {
     qtd: num(i.qtd as number | string | null),
   }));
 
-  const linhasEntrega: {
-    produtoCodigo: string;
-    qtd: number;
-    statusEntrega: StatusEntrega;
-  }[] = [];
+  const linhasEntrega: LinhaItemEntrega[] = [];
   for (const e of (entregas ?? []) as unknown as {
     status: StatusEntrega;
-    entrega_itens: { produto_codigo: string; qtd: number | string }[] | null;
+    encerra_saldo: boolean | null;
+    entrega_itens:
+      | {
+          produto_codigo: string;
+          qtd: number | string;
+          qtd_entregue: number | string | null;
+        }[]
+      | null;
   }[]) {
     for (const item of e.entrega_itens ?? []) {
       linhasEntrega.push({
         produtoCodigo: item.produto_codigo,
         qtd: num(item.qtd),
+        qtdEntregue: qtdOuNulo(item.qtd_entregue),
         statusEntrega: e.status,
+        encerraSaldo: e.encerra_saldo === true,
       });
     }
   }
@@ -313,6 +336,44 @@ async function bairrosDeCliente(
 }
 
 /**
+ * Dos pedidos informados, os que já tiveram uma entrega PARCIAL de verdade: uma
+ * viagem entregue em que o cliente recebeu menos do que foi carregado (0025).
+ *
+ * Olha todas as viagens entregues do pedido, sem janela de data — a tag amarela
+ * não pode apagar só porque a tela carregou uma semana diferente. Falha de
+ * leitura devolve vazio: a tag é aviso, e derrubar o quadro por ela seria pior.
+ */
+export async function pedidosComEntregaParcial(
+  pedidoIds: readonly string[],
+): Promise<Set<string>> {
+  const unicos = [...new Set(pedidoIds.filter((i) => i))];
+  if (unicos.length === 0) return new Set();
+  const { data, error } = await supabase
+    .from('entregas')
+    .select('pedido_id, entrega_itens(qtd, qtd_entregue)')
+    .in('pedido_id', unicos)
+    .eq('status', 'entregue');
+  if (error) {
+    log.warn(`[entregas] Falha ao ler as entregas parciais: ${error.message}`);
+    return new Set();
+  }
+  const parciais = new Set<string>();
+  for (const e of (data ?? []) as unknown as {
+    pedido_id: string;
+    entrega_itens:
+      | { qtd: number | string | null; qtd_entregue: number | string | null }[]
+      | null;
+  }[]) {
+    const itens = (e.entrega_itens ?? []).map((i) => ({
+      qtd: num(i.qtd),
+      qtdEntregue: qtdOuNulo(i.qtd_entregue),
+    }));
+    if (temDivergencia(itens)) parciais.add(e.pedido_id);
+  }
+  return parciais;
+}
+
+/**
  * Monta os objetos Entrega completos a partir das linhas cruas, resolvendo
  * pedido, cliente, motorista, caminhão e pesos EM LOTE (sem N+1).
  */
@@ -357,7 +418,7 @@ async function montarEntregas(
     );
   }
 
-  const itens = (itensRows ?? []) as EntregaItemRow[];
+  const itens = (itensRows ?? []) as unknown as EntregaItemRow[];
   const pedidos = new Map(
     ((pedidosRows ?? []) as PedidoDaEntregaRow[]).map((p) => [p.id, p]),
   );
@@ -369,11 +430,12 @@ async function montarEntregas(
       )
     : null;
 
-  const [motoristas, caminhoes, bairros, pesos] = await Promise.all([
+  const [motoristas, caminhoes, bairros, pesos, parciais] = await Promise.all([
     nomesDeMotorista(linhas.map((l) => l.motorista_id ?? '')),
     nomesDeCaminhao(linhas.map((l) => l.caminhao_id ?? '')),
     bairrosDeCliente([...pedidos.values()].map((p) => p.cliente_codigo ?? '')),
     lerPesosProdutos(itens.map((i) => i.produto_codigo)),
+    pedidosComEntregaParcial(idsPedido),
   ]);
 
   const itensPorEntrega = new Map<string, EntregaItem[]>();
@@ -384,6 +446,7 @@ async function montarEntregas(
       produtoCodigo: i.produto_codigo,
       nomeProduto: i.nome_produto ?? '',
       qtd: num(i.qtd),
+      qtdEntregue: qtdOuNulo(i.qtd_entregue),
       separado: i.separado === true,
       separadoEm: i.separado_em,
       // O peso CONGELADO no agendamento manda (0019): é o que de fato saiu no
@@ -416,6 +479,9 @@ async function montarEntregas(
       dataEntregue: l.data_entregue,
       motivoNaoEntrega: l.motivo_nao_entrega,
       observacoes: l.observacoes,
+      encerraSaldo: l.encerra_saldo === true,
+      origemEntregaId: l.origem_entrega_id,
+      pedidoParcial: parciais.has(l.pedido_id),
       orixNumero: pedido?.orix_numero ?? '',
       clienteCodigo: pedido?.cliente_codigo ?? '',
       clienteNome: pedido?.cliente_nome ?? '',
@@ -965,14 +1031,40 @@ export interface TransicionarEntregaArgs {
   observacao?: string;
   /** Obrigatório em para==='nao_realizado'; tem de estar na lista cadastrada. */
   motivo?: string;
+  /**
+   * Só em para==='entregue' (0025): produto_codigo -> quanto o cliente recebeu.
+   * Ausente = comportamento de antes (vale o carregado, nada é gravado).
+   */
+  entregues?: Record<string, number>;
+  /**
+   * Havendo diferença: true = o cliente NÃO quer o restante (vira um card de
+   * não realizado que encerra o saldo); false/ausente = o restante volta para o
+   * pedido e é agendado de novo.
+   */
+  restanteRecusado?: boolean;
+  /** Motivo do card do restante recusado; default 'Cliente recusou o restante'. */
+  motivoRecusa?: string;
   atorUserId?: string;
   atorPapel?: AtorPapel;
 }
 
+/** Motivo semeado pela 0025 para o card do restante recusado. */
+export const MOTIVO_RESTANTE_RECUSADO = 'Cliente recusou o restante';
+
 export async function transicionarEntrega(
   args: TransicionarEntregaArgs,
 ): Promise<Entrega> {
-  const { entregaId, para, observacao, motivo, atorUserId, atorPapel } = args;
+  const {
+    entregaId,
+    para,
+    observacao,
+    motivo,
+    entregues,
+    restanteRecusado,
+    motivoRecusa,
+    atorUserId,
+    atorPapel,
+  } = args;
 
   const entrega = await carregarEntrega(entregaId);
   const de = entrega.status;
@@ -1028,6 +1120,41 @@ export async function transicionarEntrega(
     await exigirMotivoCadastrado(motivoLimpo);
   }
 
+  // Entrega parcial declarada (0025). Toda a validação vem ANTES de qualquer
+  // escrita: a regra pura recusa quantidade maior que a carregada, negativa ou
+  // de produto que não está na viagem.
+  if (entregues !== undefined && para !== 'entregue') {
+    throw new TransicaoError(
+      400,
+      'body_invalido',
+      'Quantidade entregue só se informa ao marcar a entrega como entregue.',
+    );
+  }
+  const conclusao =
+    entregues !== undefined ? avaliarConclusao(entrega.itens, entregues) : null;
+  if (conclusao && conclusao.erros.length > 0) {
+    throw new TransicaoError(
+      422,
+      'quantidade_invalida',
+      conclusao.erros.map((e) => e.mensagem).join(' '),
+    );
+  }
+  const recusaRestante =
+    conclusao !== null && conclusao.divergiu && restanteRecusado === true;
+  const motivoDaRecusa = motivoRecusa?.trim() || MOTIVO_RESTANTE_RECUSADO;
+  if (recusaRestante) await exigirMotivoCadastrado(motivoDaRecusa);
+
+  // A ordem das escritas é a defesa, já que o PostgREST não dá transação:
+  //   1) qtd_entregue nos itens — inofensivo enquanto a viagem está em rota,
+  //      porque em_rota consome o carregado de qualquer jeito (qtdConsumida);
+  //   2) o status;
+  //   3) o card do restante recusado.
+  // Falhar entre 2 e 3 deixa o restante de volta na fila (como se o cliente
+  // quisesse), nunca consumido em dobro.
+  if (conclusao) {
+    await gravarQuantidadesEntregues(entrega, conclusao.entregues);
+  }
+
   const agora = new Date().toISOString();
   const patch: Record<string, unknown> = { status: para, atualizado_em: agora };
   if (para === 'entregue') {
@@ -1055,6 +1182,15 @@ export async function transicionarEntrega(
     para,
     atorUserId,
   });
+
+  if (recusaRestante && conclusao) {
+    await criarRestanteRecusado({
+      origem: entrega,
+      restante: conclusao.restante,
+      motivo: motivoDaRecusa,
+      atorUserId,
+    });
+  }
 
   const atualizada = await carregarEntrega(entregaId);
 
@@ -1117,6 +1253,15 @@ export async function reverterEntrega(args: {
     );
   }
 
+  if (entrega.encerraSaldo) {
+    throw new TransicaoError(
+      409,
+      'reversao_invalida',
+      'Este card é o restante recusado de outra viagem. Para desfazer, use ' +
+        '"Voltar" na viagem de origem — a recusa é cancelada junto.',
+    );
+  }
+
   if (de === 'nao_realizado') {
     await exigirSaldoParaReverter(entrega);
   }
@@ -1150,8 +1295,160 @@ export async function reverterEntrega(args: {
     para,
     atorUserId,
   });
+
+  // Desfazer a conclusão desfaz a declaração inteira: as quantidades (senão a
+  // tag amarela continua acesa numa viagem em rota) e o card do restante
+  // recusado, que só existia por causa dela.
+  if (de === 'entregue') {
+    await desfazerDeclaracaoDaConclusao(entrega, atorUserId);
+  }
+
   await sincronizarStatusDoPedido(entrega.pedidoId);
   return carregarEntrega(entregaId);
+}
+
+/** Grava a quantidade entregue de cada item (0025). */
+async function gravarQuantidadesEntregues(
+  entrega: Entrega,
+  entregues: Record<string, number>,
+): Promise<void> {
+  const resultados = await Promise.all(
+    entrega.itens.map((item) =>
+      supabase
+        .from('entrega_itens')
+        .update({ qtd_entregue: entregues[item.produtoCodigo] ?? item.qtd })
+        .eq('id', item.id),
+    ),
+  );
+  const falha = resultados.find((r) => r.error);
+  if (falha?.error) {
+    throw new TransicaoError(
+      500,
+      'erro_banco',
+      `Falha ao gravar as quantidades entregues: ${falha.error.message}`,
+    );
+  }
+}
+
+/**
+ * Cria o card do RESTANTE RECUSADO: o "duplico o card" da Natália.
+ *
+ * É um nao_realizado com encerra_saldo — o cliente disse que não quer mais, então
+ * a mercadoria NÃO volta para a fila (ver `qtdConsumida`). Herda o dia, o período,
+ * o motorista e o caminhão da viagem de origem: foi ali que a recusa aconteceu.
+ *
+ * Criado aqui dentro, com a chave de serviço, e não por POST /entregas: aquela
+ * rota exige a logística, e o motorista que conclui a entrega na estrada tomaria
+ * 403. A exceção dele em api/auth.ts cobre /transicao, que é por onde isto passa.
+ */
+async function criarRestanteRecusado(args: {
+  origem: Entrega;
+  restante: { produtoCodigo: string; nomeProduto: string; qtd: number }[];
+  motivo: string;
+  atorUserId?: string;
+}): Promise<void> {
+  const { origem, restante, motivo, atorUserId } = args;
+  const falhou = (detalhe: string): never => {
+    log.error(
+      `[entregas] Restante recusado da entrega ${origem.id} não foi gravado: ${detalhe}`,
+    );
+    throw new TransicaoError(
+      500,
+      'erro_banco',
+      'A entrega foi concluída, mas o restante recusado não pôde ser registrado ' +
+        'e voltou para o pedido como pendente. Descarte-o pelo quadro se o ' +
+        `cliente não quer mesmo. (${detalhe})`,
+    );
+  };
+
+  const { data: criada, error: errIns } = await supabase
+    .from('entregas')
+    .insert({
+      pedido_id: origem.pedidoId,
+      status: 'nao_realizado',
+      data_agendada: origem.dataAgendada,
+      periodo: origem.periodo,
+      motorista_id: origem.motoristaId,
+      caminhao_id: origem.caminhaoId,
+      propriedade_codigo: origem.propriedadeCodigo,
+      motivo_nao_entrega: motivo,
+      encerra_saldo: true,
+      origem_entrega_id: origem.id,
+    })
+    .select('id')
+    .single<{ id: string }>();
+  if (errIns || !criada) return falhou(errIns?.message ?? 'sem retorno');
+
+  const pesoPorProduto = new Map(
+    origem.itens.map((i) => [i.produtoCodigo, i.pesoUnitKg]),
+  );
+  const { error: errItens } = await supabase.from('entrega_itens').insert(
+    restante.map((r) => ({
+      entrega_id: criada.id,
+      produto_codigo: r.produtoCodigo,
+      nome_produto: r.nomeProduto,
+      qtd: r.qtd,
+      peso_unit_kg: pesoPorProduto.get(r.produtoCodigo) ?? null,
+    })),
+  );
+  if (errItens) {
+    // Sem itens, o card não encerraria saldo nenhum — é lixo. Desfaz.
+    await supabase.from('entregas').delete().eq('id', criada.id);
+    return falhou(errItens.message);
+  }
+
+  await registrarEvento({
+    pedidoId: origem.pedidoId,
+    entregaId: criada.id,
+    de: null,
+    para: 'nao_realizado',
+    atorUserId,
+  });
+}
+
+/**
+ * Desfaz o que a conclusão declarou: zera as quantidades entregues e cancela o
+ * card do restante recusado, se houver. Cancela em vez de apagar para o histórico
+ * de eventos continuar contando o que aconteceu.
+ */
+async function desfazerDeclaracaoDaConclusao(
+  entrega: Entrega,
+  atorUserId?: string,
+): Promise<void> {
+  const { error: errItens } = await supabase
+    .from('entrega_itens')
+    .update({ qtd_entregue: null })
+    .eq('entrega_id', entrega.id);
+  if (errItens) {
+    log.error(
+      `[entregas] Falha ao limpar as quantidades entregues de ${entrega.id}: ${errItens.message}`,
+    );
+  }
+
+  const { data: irmas, error: errIrmas } = await supabase
+    .from('entregas')
+    .update({ status: 'cancelada', atualizado_em: new Date().toISOString() })
+    .eq('origem_entrega_id', entrega.id)
+    .eq('encerra_saldo', true)
+    .eq('status', 'nao_realizado')
+    .select('id');
+  if (errIrmas) {
+    throw new TransicaoError(
+      500,
+      'erro_banco',
+      'A viagem voltou para em rota, mas o card do restante recusado não foi ' +
+        `cancelado: ${errIrmas.message}`,
+    );
+  }
+  for (const irma of (irmas ?? []) as { id: string }[]) {
+    await registrarEvento({
+      pedidoId: entrega.pedidoId,
+      entregaId: irma.id,
+      de: 'nao_realizado',
+      para: 'cancelada',
+      atorUserId,
+    });
+  }
 }
 
 /**
