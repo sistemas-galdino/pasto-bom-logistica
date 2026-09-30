@@ -1223,9 +1223,11 @@ export async function transicionarEntrega(
  * viagem que ainda vai acontecer. Então cada origem limpa o que ela escreveu.
  *
  * Desfazer um nao_realizado VOLTA A CONSUMIR SALDO — e o fluxo normal, depois de
- * uma não entrega, é justamente reagendar esse saldo noutra viagem. Sem conferir,
- * desfazer deixaria o pedido com mais mercadoria comprometida do que vendida, em
- * silêncio. Recusamos e dizemos qual viagem está no caminho.
+ * uma não entrega, é justamente reagendar esse saldo noutra viagem. O mesmo vale
+ * para desfazer uma entrega PARCIAL (0025): o restante que voltou para a fila
+ * pode já estar noutro caminhão. Sem conferir, desfazer deixaria o pedido com
+ * mais mercadoria comprometida do que vendida, em silêncio. Recusamos e dizemos
+ * qual produto está no caminho.
  */
 export async function reverterEntrega(args: {
   entregaId: string;
@@ -1263,7 +1265,7 @@ export async function reverterEntrega(args: {
     );
   }
 
-  if (de === 'nao_realizado') {
+  if (de === 'nao_realizado' || de === 'entregue') {
     await exigirSaldoParaReverter(entrega);
   }
 
@@ -1453,18 +1455,35 @@ async function desfazerDeclaracaoDaConclusao(
 }
 
 /**
- * Recusa desfazer um nao_realizado se a mercadoria dele já foi comprometida de
- * novo. A entrega em nao_realizado não consome saldo, então o saldo de agora é
- * exatamente o que sobra para ela voltar a ocupar.
+ * Recusa a reversão se a viagem, ao voltar para em rota, passaria a consumir
+ * mercadoria que já foi comprometida de novo noutra viagem.
+ *
+ * Em rota a viagem consome o CARREGADO inteiro. Hoje ela consome:
+ *   - nao_realizado -> nada (a carga voltou para a fila);
+ *   - entregue      -> o que foi declarado como entregue (0025).
+ * A diferença é o que ela vai tomar de volta, e tem de caber no saldo livre.
+ *
+ * O caso da entrega parcial com restante RECUSADO se resolve sozinho: desfazer a
+ * conclusão cancela o card irmão, que devolve exatamente essa diferença. Por
+ * isso o que o card irmão segura conta como livre aqui.
  */
 async function exigirSaldoParaReverter(entrega: Entrega): Promise<void> {
-  const saldo = await saldoDoPedido(entrega.pedidoId);
-  const porProduto = new Map(saldo.map((s) => [s.produtoCodigo, s.qtdSaldo]));
+  const [saldo, irmas] = await Promise.all([
+    saldoDoPedido(entrega.pedidoId),
+    entrega.status === 'entregue'
+      ? itensDoRestanteRecusado(entrega.id)
+      : Promise.resolve(new Map<string, number>()),
+  ]);
+  const livre = new Map(saldo.map((s) => [s.produtoCodigo, s.qtdSaldo]));
 
   const faltando = entrega.itens.filter((item) => {
-    const livre = porProduto.get(item.produtoCodigo) ?? 0;
+    const consomeHoje =
+      entrega.status === 'entregue' ? (item.qtdEntregue ?? item.qtd) : 0;
+    const vaiTomar = item.qtd - consomeHoje;
+    const disponivel =
+      (livre.get(item.produtoCodigo) ?? 0) + (irmas.get(item.produtoCodigo) ?? 0);
     // Tolerância de arredondamento: o saldo é somado na 3ª casa.
-    return item.qtd - livre > 0.0005;
+    return vaiTomar - disponivel > 0.0005;
   });
   if (faltando.length === 0) return;
 
@@ -1477,6 +1496,34 @@ async function exigirSaldoParaReverter(entrega: Entrega): Promise<void> {
     `Não dá para desfazer: ${nomes} já foi reagendado em outra viagem. ` +
       'Cancele a viagem nova primeiro.',
   );
+}
+
+/** produto -> qtd segurada pelos cards de restante recusado desta viagem. */
+async function itensDoRestanteRecusado(
+  entregaId: string,
+): Promise<Map<string, number>> {
+  const { data, error } = await supabase
+    .from('entregas')
+    .select('entrega_itens(produto_codigo, qtd)')
+    .eq('origem_entrega_id', entregaId)
+    .eq('encerra_saldo', true)
+    .eq('status', 'nao_realizado');
+  if (error) {
+    throw new TransicaoError(
+      500,
+      'erro_banco',
+      `Falha ao ler o restante recusado da viagem: ${error.message}`,
+    );
+  }
+  const mapa = new Map<string, number>();
+  for (const e of (data ?? []) as unknown as {
+    entrega_itens: { produto_codigo: string; qtd: number | string }[] | null;
+  }[]) {
+    for (const i of e.entrega_itens ?? []) {
+      mapa.set(i.produto_codigo, (mapa.get(i.produto_codigo) ?? 0) + num(i.qtd));
+    }
+  }
+  return mapa;
 }
 
 // ---------------------------------------------------------------------------
