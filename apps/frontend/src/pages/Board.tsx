@@ -55,6 +55,7 @@ import {
   STATUS_ENTREGA_META,
   STATUS_META,
   STATUS_ORIX_META,
+  textoReversaoEntrega,
 } from '../components/status';
 
 const STATUS_ORIX_OPCOES = STATUS_ORIX_META;
@@ -655,9 +656,7 @@ export function Board(): React.ReactElement {
   } {
     if (alvo.reversao) {
       return {
-        titulo: 'Voltar a entrega para agendada',
-        descricao:
-          'Desfaz o despacho. A carga continua reservada para este caminhão e a viagem volta para a fila de saída.',
+        ...textoReversaoEntrega(alvo.entrega.status),
         rotulo: 'Voltar',
         perigo: false,
       };

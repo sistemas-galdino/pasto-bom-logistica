@@ -43,15 +43,28 @@ export function podeTransicionarEntrega(
 /**
  * Reversões (voltar UMA etapa) — só logística, e NUNCA disparam WhatsApp.
  *
- * `em_rota -> agendada` desfaz um despacho feito por engano. Só isso: de
- * `entregue` não se volta (o cliente recebeu), e de `nao_realizado` também não
- * — a viagem falhou de fato, e o caminho é agendar outra.
+ * `em_rota -> agendada` desfaz um despacho feito por engano.
+ *
+ * `entregue -> em_rota` e `nao_realizado -> em_rota` desfazem um DESFECHO
+ * marcado por engano. Até 09/2026 os dois eram terminais ("a viagem falhou de
+ * fato, o caminho é agendar outra"), e a operação provou que isso estava
+ * errado: a Natália marcou como não realizado um cliente que tinha aceitado
+ * metade da carga, e o card ficou parado sem um botão sequer — "se eu colocar
+ * eu não consigo voltar mais" (reunião de 24/09/2026).
+ *
+ * Voltam para em_rota, e não para agendada: o caminhão saiu de verdade.
+ *
+ * `cancelada` continua sem volta — desfazer o agendamento devolve a vaga e o
+ * saldo, e reagendar é criar outra entrega.
+ *
+ * Desfazer um nao_realizado VOLTA a consumir saldo. O serviço confere se o saldo
+ * ainda cabe antes de gravar (ver services/entregas.ts, reverterEntrega).
  */
 export const REVERSOES_ENTREGA: Record<StatusEntrega, StatusEntrega[]> = {
   agendada: [],
   em_rota: ['agendada'],
-  entregue: [],
-  nao_realizado: [],
+  entregue: ['em_rota'],
+  nao_realizado: ['em_rota'],
   cancelada: [],
 };
 

@@ -111,8 +111,8 @@ export const ACAO_ENTREGA: Record<
 > = {
   agendada: { em_rota: 'Pôr em rota', cancelada: 'Desfazer' },
   em_rota: { entregue: 'Marcar entregue', nao_realizado: 'Não realizado' },
-  // Terminais: não se sai deles por avanço (de nao_realizado, agenda-se outra
-  // viagem; de entregue e cancelada, não se sai).
+  // Sem avanço: de entregue e nao_realizado só se sai pela REVERSÃO (volta para
+  // em rota, ver REVERSOES_ENTREGA); de cancelada não se sai.
   entregue: {},
   nao_realizado: {},
   cancelada: {},
@@ -130,6 +130,39 @@ export function rotuloAcaoEntrega(
   para: StatusEntrega,
 ): string {
   return ACAO_ENTREGA[de][para] ?? STATUS_ENTREGA_META[para].rotulo;
+}
+
+/**
+ * Texto da confirmação de uma REVERSÃO, pelo estado de onde se volta.
+ *
+ * Cada reversão desfaz uma coisa diferente, e o modal precisa dizer qual — o
+ * texto antigo, fixo em "voltar para agendada", mentiria nos dois desfechos que
+ * ganharam volta em 09/2026. O botão continua dizendo "Voltar" nos três casos:
+ * é o mesmo gesto, e a diferença mora aqui, no momento de confirmar.
+ */
+export function textoReversaoEntrega(de: StatusEntrega): {
+  titulo: string;
+  descricao: string;
+} {
+  if (de === 'entregue') {
+    return {
+      titulo: 'Desfazer a entrega',
+      descricao:
+        'A viagem volta para Em rota, como se ainda não tivesse sido concluída. A data de entrega e as quantidades declaradas são apagadas. O cliente não é avisado.',
+    };
+  }
+  if (de === 'nao_realizado') {
+    return {
+      titulo: 'Desfazer o não realizado',
+      descricao:
+        'A viagem volta para Em rota e o motivo é apagado. Se a mercadoria já foi reagendada em outra viagem, o sistema recusa — cancele a viagem nova primeiro.',
+    };
+  }
+  return {
+    titulo: 'Voltar a entrega para agendada',
+    descricao:
+      'Desfaz o despacho. A carga continua reservada para este caminhão e a viagem volta para a fila de saída.',
+  };
 }
 
 /** Colunas de VIAGEM no quadro. A coluna Pendente mostra pedidos com saldo. */

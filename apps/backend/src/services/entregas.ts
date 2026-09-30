@@ -1073,7 +1073,23 @@ export async function transicionarEntrega(
   return atualizada;
 }
 
-/** Reverte a entrega uma etapa (só em_rota -> agendada). Nunca manda WhatsApp. */
+/**
+ * Reverte a entrega uma etapa. Nunca manda WhatsApp.
+ *
+ *   em_rota       -> agendada  (despacho feito por engano)
+ *   entregue      -> em_rota   (conclusão marcada por engano)
+ *   nao_realizado -> em_rota   (idem — reunião de 24/09/2026)
+ *
+ * Voltar não é só trocar o status. O desfecho deixou rastro na linha, e rastro
+ * velho numa viagem que voltou para a estrada mente na tela: a data de entrega
+ * carimbada num card em rota, ou o bloco "Motivo da não entrega" em cima de uma
+ * viagem que ainda vai acontecer. Então cada origem limpa o que ela escreveu.
+ *
+ * Desfazer um nao_realizado VOLTA A CONSUMIR SALDO — e o fluxo normal, depois de
+ * uma não entrega, é justamente reagendar esse saldo noutra viagem. Sem conferir,
+ * desfazer deixaria o pedido com mais mercadoria comprometida do que vendida, em
+ * silêncio. Recusamos e dizemos qual viagem está no caminho.
+ */
 export async function reverterEntrega(args: {
   entregaId: string;
   para: StatusEntrega;
@@ -1101,9 +1117,23 @@ export async function reverterEntrega(args: {
     );
   }
 
+  if (de === 'nao_realizado') {
+    await exigirSaldoParaReverter(entrega);
+  }
+
+  const patch: Record<string, unknown> = {
+    status: para,
+    atualizado_em: new Date().toISOString(),
+  };
+  // `observacoes` fica: além da nota da conclusão, ela guarda o histórico de
+  // reagendamento ("de 12/08 manhã para 14/08 tarde"), e apagar isso para
+  // desfazer um clique seria perder informação que não tem outra cópia.
+  if (de === 'entregue') patch.data_entregue = null;
+  if (de === 'nao_realizado') patch.motivo_nao_entrega = null;
+
   const { error } = await supabase
     .from('entregas')
-    .update({ status: para, atualizado_em: new Date().toISOString() })
+    .update(patch)
     .eq('id', entregaId);
   if (error) {
     throw new TransicaoError(
@@ -1122,6 +1152,33 @@ export async function reverterEntrega(args: {
   });
   await sincronizarStatusDoPedido(entrega.pedidoId);
   return carregarEntrega(entregaId);
+}
+
+/**
+ * Recusa desfazer um nao_realizado se a mercadoria dele já foi comprometida de
+ * novo. A entrega em nao_realizado não consome saldo, então o saldo de agora é
+ * exatamente o que sobra para ela voltar a ocupar.
+ */
+async function exigirSaldoParaReverter(entrega: Entrega): Promise<void> {
+  const saldo = await saldoDoPedido(entrega.pedidoId);
+  const porProduto = new Map(saldo.map((s) => [s.produtoCodigo, s.qtdSaldo]));
+
+  const faltando = entrega.itens.filter((item) => {
+    const livre = porProduto.get(item.produtoCodigo) ?? 0;
+    // Tolerância de arredondamento: o saldo é somado na 3ª casa.
+    return item.qtd - livre > 0.0005;
+  });
+  if (faltando.length === 0) return;
+
+  const nomes = faltando
+    .map((i) => i.nomeProduto || i.produtoCodigo)
+    .join(', ');
+  throw new TransicaoError(
+    409,
+    'saldo_insuficiente',
+    `Não dá para desfazer: ${nomes} já foi reagendado em outra viagem. ` +
+      'Cancele a viagem nova primeiro.',
+  );
 }
 
 // ---------------------------------------------------------------------------

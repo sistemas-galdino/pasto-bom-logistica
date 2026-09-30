@@ -32,11 +32,14 @@ describe('fluxo da viagem', () => {
     expect(podeTransicionarEntrega('agendada', 'entregue')).toBe(false);
   });
 
-  it('entregue, nao_realizado e cancelada são terminais', () => {
+  it('entregue, nao_realizado e cancelada não andam para frente', () => {
     for (const terminal of ['entregue', 'nao_realizado', 'cancelada'] as const) {
       expect(TRANSICOES_ENTREGA[terminal]).toEqual([]);
-      expect(REVERSOES_ENTREGA[terminal]).toEqual([]);
     }
+  });
+
+  it('cancelada não tem volta — reagendar é criar outra entrega', () => {
+    expect(REVERSOES_ENTREGA.cancelada).toEqual([]);
   });
 
   it('só se chega a nao_realizado saindo de em_rota (o caminhão foi)', () => {
@@ -52,10 +55,21 @@ describe('reversões', () => {
     expect(podeReverterEntrega('em_rota', 'agendada')).toBe(true);
   });
 
-  it('não se volta de entregue nem de nao_realizado', () => {
-    expect(podeReverterEntrega('entregue', 'em_rota')).toBe(false);
-    expect(podeReverterEntrega('nao_realizado', 'em_rota')).toBe(false);
+  // Reunião de 24/09/2026: o desfecho marcado por engano precisa ter volta.
+  it('desfaz entregue e nao_realizado, voltando para em rota', () => {
+    expect(podeReverterEntrega('entregue', 'em_rota')).toBe(true);
+    expect(podeReverterEntrega('nao_realizado', 'em_rota')).toBe(true);
+  });
+
+  it('o desfecho volta para em rota, nunca para agendada (o caminhão saiu)', () => {
     expect(podeReverterEntrega('nao_realizado', 'agendada')).toBe(false);
+    expect(podeReverterEntrega('entregue', 'agendada')).toBe(false);
+  });
+
+  it('reverte uma etapa só', () => {
+    for (const de of TODOS) {
+      expect(REVERSOES_ENTREGA[de].length).toBeLessThanOrEqual(1);
+    }
   });
 
   it('reversões e transições para frente são conjuntos disjuntos', () => {
