@@ -43,6 +43,7 @@ import { pilulaFiltro } from '../lib/pilula';
 import { addDias, capitalizar, hojeLocal, isoDeData } from '../lib/datas';
 import { ConfirmacaoModal } from '../components/ConfirmacaoModal';
 import { rotuloAcaoEntrega } from '../components/status';
+import { TagPedido } from '../components/TagPedido';
 
 /**
  * Grupos exibidos. 'sem' cobre o pedido agendado sem turno definido; 'atrasado'
@@ -637,9 +638,7 @@ function CartaoSeparacao({
           </p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
-          <span className="rounded-md bg-creme-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-tinta-suave">
-            nº {pedido.orixNumero || '—'}
-          </span>
+          <TagPedido numero={pedido.orixNumero} parcial={pedido.pedidoParcial} />
           {mostrarData && pedido.dataAgendada && (
             <span
               title="Data para a qual esta entrega foi agendada"

@@ -45,6 +45,10 @@ import { EntregaCard } from '../components/EntregaCard';
 import { PedidoCard } from '../components/PedidoCard';
 import { AgendarEntregaModal } from '../components/AgendarEntregaModal';
 import { ConfirmacaoModal } from '../components/ConfirmacaoModal';
+import {
+  ConcluirEntregaModal,
+  type ConclusaoEntrega,
+} from '../components/ConcluirEntregaModal';
 import { SeparacaoModal } from '../components/SeparacaoModal';
 import { ReagendarEntregaModal } from '../components/ReagendarEntregaModal';
 import { NaoRealizadoModal } from '../components/NaoRealizadoModal';
@@ -104,6 +108,14 @@ export function Board(): React.ReactElement {
   const [erroEntrega, setErroEntrega] = useState<string | null>(null);
   const [reagendando, setReagendando] = useState<Entrega | null>(null);
   const [erroReagendar, setErroReagendar] = useState<string | null>(null);
+
+  // Conclusão da viagem (em rota -> entregue) com as quantidades recebidas.
+  // Fica FORA do alvoEntrega de propósito: aquele estado alimenta a confirmação
+  // genérica de um clique, e a conclusão é um formulário com payload próprio
+  // (entregues, restante recusado). Misturar os dois faria o ConfirmacaoModal
+  // precisar saber de quantidade.
+  const [concluindo, setConcluindo] = useState<Entrega | null>(null);
+  const [erroConcluir, setErroConcluir] = useState<string | null>(null);
 
   // Descarte/restauração do pedido
   const [alvoPedido, setAlvoPedido] = useState<{
@@ -229,6 +241,21 @@ export function Board(): React.ReactElement {
       setErroEntrega(mensagemDeErro(err, 'Falha ao atualizar a entrega.')),
   });
 
+  // A conclusão com quantidades (0025). O servidor refaz a conta com a mesma
+  // `avaliarConclusao` do modal e recusa o que não fecha — o erro volta para
+  // dentro do formulário, com as quantidades digitadas ainda lá.
+  const concluirMutacao = useMutation({
+    mutationFn: ({ id, conclusao }: { id: string; conclusao: ConclusaoEntrega }) =>
+      api.transicionarEntrega(id, { para: 'entregue', ...conclusao }),
+    onSuccess: () => {
+      invalidarTudo();
+      setConcluindo(null);
+      setErroConcluir(null);
+    },
+    onError: (err) =>
+      setErroConcluir(mensagemDeErro(err, 'Falha ao concluir a entrega.')),
+  });
+
   const reagendarMutacao = useMutation({
     mutationFn: ({
       id,
@@ -336,6 +363,25 @@ export function Board(): React.ReactElement {
     () => agruparEntregasPorPedido(entregas),
     [entregas],
   );
+
+  /**
+   * Pedidos que já tiveram entrega parcial de verdade — acendem a tag amarela
+   * do PedidoCard.
+   *
+   * O dado vem pronto em cada Entrega (`pedidoParcial`, calculado no servidor
+   * sobre TODAS as viagens do pedido); o Pedido não o carrega. Basta uma viagem
+   * dizer true para o pedido inteiro ser parcial. Sai da query ['entregas'] já
+   * carregada — sem request novo — e é justamente na coluna Pendente que a cor
+   * mais importa: o card ali é o RESTANTE de uma entrega parcial esperando
+   * ser reagendado.
+   */
+  const pedidosParciais = useMemo(() => {
+    const ids = new Set<string>();
+    for (const e of entregas) {
+      if (e.pedidoParcial) ids.add(e.pedidoId);
+    }
+    return ids;
+  }, [entregas]);
 
   /** Pedidos que ainda têm o que entregar, com o saldo já calculado. */
   const pendentesComSaldo = useMemo<PedidoComSaldo[]>(
@@ -533,6 +579,15 @@ export function Board(): React.ReactElement {
   }
 
   function abrirTransicaoEntrega(entrega: Entrega, para: StatusEntrega): void {
+    // "Marcar entregue" deixou de ser um clique de confirmação: a Natália pediu
+    // (24/09/2026) para declarar quanto o cliente de fato recebeu. As demais
+    // transições (pôr em rota, desfazer o agendamento) seguem na confirmação
+    // simples.
+    if (para === 'entregue') {
+      setErroConcluir(null);
+      setConcluindo(entrega);
+      return;
+    }
     setErroEntrega(null);
     setAlvoEntrega({ entrega, para });
   }
@@ -670,20 +725,14 @@ export function Board(): React.ReactElement {
         perigo: true,
       };
     }
-    if (alvo.para === 'em_rota') {
-      return {
-        titulo: 'Pôr em rota',
-        descricao:
-          'O cliente recebe a mensagem de que o pedido saiu para entrega.',
-        rotulo: 'Pôr em rota',
-        perigo: false,
-      };
-    }
+    // Sobra só o 'em_rota'. O antigo ramo final ("Marcar como entregue") saiu:
+    // 'entregue' é desviado para o ConcluirEntregaModal em abrirTransicaoEntrega
+    // e nunca chega aqui; 'nao_realizado' tem modal próprio (NaoRealizadoModal).
     return {
-      titulo: 'Marcar como entregue',
+      titulo: 'Pôr em rota',
       descricao:
-        'Se ainda sobrar mercadoria no pedido, o restante volta para a coluna Pendente para ser agendado depois.',
-      rotulo: 'Marcar entregue',
+        'O cliente recebe a mensagem de que o pedido saiu para entrega.',
+      rotulo: 'Pôr em rota',
       perigo: false,
     };
   }
@@ -940,6 +989,7 @@ export function Board(): React.ReactElement {
                   <PedidoCard
                     key={p.id}
                     pedido={p}
+                    parcial={pedidosParciais.has(p.id)}
                     podeEscrever={podeEscrever}
                     onAgendar={abrirAgendamento}
                     onDescartar={(pedido) => {
@@ -978,6 +1028,7 @@ export function Board(): React.ReactElement {
                   key={pedido.id}
                   pedido={pedido}
                   saldo={saldo}
+                  parcial={pedidosParciais.has(pedido.id)}
                   podeEscrever={podeEscrever}
                   onAgendar={abrirAgendamento}
                   onDescartar={(p) => {
@@ -1102,6 +1153,23 @@ export function Board(): React.ReactElement {
             />
           );
         })()}
+
+      {concluindo && (
+        <ConcluirEntregaModal
+          entrega={concluindo}
+          enviando={concluirMutacao.isPending}
+          erro={erroConcluir}
+          onCancelar={() => {
+            if (!concluirMutacao.isPending) {
+              setConcluindo(null);
+              setErroConcluir(null);
+            }
+          }}
+          onConfirmar={(conclusao) =>
+            concluirMutacao.mutate({ id: concluindo.id, conclusao })
+          }
+        />
+      )}
 
       {alvoPedido && (
         <ConfirmacaoModal

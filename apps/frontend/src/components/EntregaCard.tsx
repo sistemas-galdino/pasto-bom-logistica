@@ -10,13 +10,11 @@
 
 import React from 'react';
 import type { Entrega, StatusEntrega } from '@pastobom/shared';
-import {
-  TRANSICOES_ENTREGA,
-  REVERSOES_ENTREGA,
-} from '@pastobom/shared';
+import { TRANSICOES_ENTREGA, reversoesDaEntrega } from '@pastobom/shared';
 import { formatarData } from '../lib/format';
 import { STATUS_ENTREGA_META, rotuloAcaoEntrega } from './status';
 import { ClimaResumo } from './ClimaResumo';
+import { TagPedido } from './TagPedido';
 import type { PrevisaoClima } from '@pastobom/shared';
 
 interface Props {
@@ -86,7 +84,10 @@ export function EntregaCard({
   const avancos = TRANSICOES_ENTREGA[entrega.status].filter(
     (p) => p !== 'nao_realizado' && p !== 'cancelada',
   );
-  const reversoes = REVERSOES_ENTREGA[entrega.status];
+  // reversoesDaEntrega, e não REVERSOES_ENTREGA[status]: o card do restante
+  // recusado (encerraSaldo) não tem "Voltar" próprio — desfaz-se voltando a
+  // viagem de origem, que o cancela junto.
+  const reversoes = reversoesDaEntrega(entrega);
 
   return (
     <article className="animate-sobe rounded-xl border border-linha bg-papel p-3.5 shadow-carta transition duration-200 hover:-translate-y-0.5 hover:shadow-flutua">
@@ -94,9 +95,7 @@ export function EntregaCard({
         <h3 className="font-display text-[15px] font-semibold leading-tight text-tinta">
           {entrega.clienteNome || entrega.clienteCodigo || 'Cliente'}
         </h3>
-        <span className="shrink-0 rounded-md bg-creme-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-tinta-suave">
-          nº {entrega.orixNumero || '—'}
-        </span>
+        <TagPedido numero={entrega.orixNumero} parcial={entrega.pedidoParcial} />
       </div>
 
       <p className="mt-1 flex items-center gap-1 text-xs text-tinta-suave">
@@ -116,16 +115,38 @@ export function EntregaCard({
       {/* Itens DESTA viagem */}
       {total > 0 && (
         <ul className="mt-2.5 space-y-0.5 border-t border-linha/70 pt-2 text-xs text-tinta-suave">
-          {entrega.itens.slice(0, 4).map((item) => (
-            <li key={item.id} className="flex items-baseline gap-1.5">
-              <span className="font-bold text-tinta">
-                {formatarQtd(item.qtd)}×
-              </span>
-              <span className="truncate">
-                {item.nomeProduto || item.produtoCodigo}
-              </span>
-            </li>
-          ))}
+          {entrega.itens.slice(0, 4).map((item) => {
+            // Viagem concluída em que o cliente recebeu MENOS do que foi
+            // carregado: as duas quantidades aparecem ("20 de 40"). Só a
+            // carregada mentiria — o saldo já conta os 20 que voltaram. Fora
+            // desse caso (null = não declarado, ou recebeu tudo) fica como era.
+            const entregouMenos =
+              entrega.status === 'entregue' &&
+              item.qtdEntregue !== null &&
+              item.qtdEntregue < item.qtd;
+            return (
+              <li key={item.id} className="flex items-baseline gap-1.5">
+                {entregouMenos && item.qtdEntregue !== null ? (
+                  <span
+                    title="Quantidade que o cliente recebeu, de quanto foi carregado."
+                    className="shrink-0 rounded bg-trigo-claro px-1 text-trigo-escuro"
+                  >
+                    <span className="font-bold">
+                      {formatarQtd(item.qtdEntregue)}
+                    </span>{' '}
+                    de {formatarQtd(item.qtd)}×
+                  </span>
+                ) : (
+                  <span className="font-bold text-tinta">
+                    {formatarQtd(item.qtd)}×
+                  </span>
+                )}
+                <span className="truncate">
+                  {item.nomeProduto || item.produtoCodigo}
+                </span>
+              </li>
+            );
+          })}
           {total > 4 && (
             <li className="text-[11px] text-pedra">
               + {total - 4} outro{total - 4 > 1 ? 's' : ''}
@@ -183,9 +204,21 @@ export function EntregaCard({
           <p className="mt-0.5 text-xs text-brasa-escuro">
             {motivo || 'Não informado.'}
           </p>
-          <p className="mt-1.5 text-[10px] text-brasa-escuro/80">
-            A carga voltou para a fila. Agende uma nova entrega pelo pedido.
-          </p>
+          {/* O card do restante recusado (encerraSaldo) é o "card duplicado"
+              que a Natália viu nascer ao lado da viagem parcial. Sem esta
+              linha ele se passaria por uma viagem que falhou — e o texto
+              padrão ("a carga voltou para a fila") seria mentira: aqui o saldo
+              foi ENCERRADO, nada voltou. */}
+          {entrega.encerraSaldo ? (
+            <p className="mt-1.5 text-[10px] font-semibold text-brasa-escuro/90">
+              Restante recusado pelo cliente — o pedido foi encerrado com o que
+              foi entregue.
+            </p>
+          ) : (
+            <p className="mt-1.5 text-[10px] text-brasa-escuro/80">
+              A carga voltou para a fila. Agende uma nova entrega pelo pedido.
+            </p>
+          )}
         </div>
       )}
 

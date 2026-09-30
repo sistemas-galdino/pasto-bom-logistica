@@ -12,6 +12,7 @@ import React from 'react';
 import type { Pedido, SaldoItem } from '@pastobom/shared';
 import { formatarData, formatarMoeda } from '../lib/format';
 import { rotuloStatusOrix } from './status';
+import { TagPedido } from './TagPedido';
 
 interface Props {
   pedido: Pedido;
@@ -21,6 +22,12 @@ interface Props {
   onAgendar?: (pedido: Pedido) => void;
   onDescartar?: (pedido: Pedido) => void;
   onRestaurar?: (pedido: Pedido) => void;
+  /**
+   * O pedido já teve entrega parcial de verdade (alguma viagem com
+   * `Entrega.pedidoParcial`). O Pedido não carrega esse dado — quem monta o
+   * card deriva das entregas. Default false: tela que não sabe não pinta.
+   */
+  parcial?: boolean;
 }
 
 function formatarQtd(qtd: number): string {
@@ -49,6 +56,7 @@ export function PedidoCard({
   onAgendar,
   onDescartar,
   onRestaurar,
+  parcial = false,
 }: Props): React.ReactElement {
   const local = [pedido.bairro, pedido.cidadeCliente]
     .filter((p) => p && p.trim() !== '')
@@ -77,9 +85,7 @@ export function PedidoCard({
         <h3 className="font-display text-[15px] font-semibold leading-tight text-tinta">
           {pedido.clienteNome || pedido.clienteCodigo || 'Cliente'}
         </h3>
-        <span className="shrink-0 rounded-md bg-creme-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-tinta-suave">
-          nº {pedido.orixNumero || '—'}
-        </span>
+        <TagPedido numero={pedido.orixNumero} parcial={parcial} />
       </div>
 
       <p className="mt-1 flex items-center gap-1 text-xs text-tinta-suave">
