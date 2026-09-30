@@ -70,3 +70,17 @@ export function tempoRelativo(iso: string | null | undefined): string {
   if (dias <= 7) return `há ${dias} d`;
   return formatarData(iso);
 }
+
+/**
+ * Quantidade de produto em pt-BR: "40", "6,5", "0,125".
+ *
+ * SEM separador de milhar, de propósito: o mesmo texto volta de um input, e
+ * "1.200" seria lido de volta como 1,2. Até 3 casas, como o saldo arredonda.
+ */
+export function formatarQuantidade(n: number): string {
+  if (!Number.isFinite(n)) return '—';
+  return n.toLocaleString('pt-BR', {
+    maximumFractionDigits: 3,
+    useGrouping: false,
+  });
+}

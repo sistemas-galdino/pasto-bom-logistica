@@ -227,8 +227,15 @@ export default function Agendamento(): React.ReactElement {
    *
    * `onAgendar` só existe para quem escreve. Sem ele a faixa vira texto, e é o
    * que o vendedor e o almoxarifado veem.
+   *
+   * Em "Todos os caminhões" a faixa NÃO aparece. Pedido da Natália, 24/09/2026:
+   * seis caminhões × sete dias davam 42 pílulas "sem teto" empilhadas acima do
+   * calendário — "a gente achou confuso… a gente só quer aqui [a agenda]". As
+   * vagas voltam ao escolher um caminhão, que é quando a pergunta "cabe mais
+   * uma?" tem sujeito.
    */
   function renderVagas(dataIso: string, variante: 'compacta' | 'completa') {
+    if (filtroAtivo === null) return null;
     return (
       <FaixaVagas
         data={dataIso}
@@ -462,6 +469,18 @@ export default function Agendamento(): React.ReactElement {
                 abaixo dizendo o que aquele dia tem. Não "conserte" isto
                 somando as rotas — passaria a dizer que há entrega onde não há.
             */}
+            {/* Sem a faixa, o "+" da vaga some — e ele é a porta de entrada do
+                agendamento nesta tela. A linha diz para onde ela foi. */}
+            {filtroAtivo === null && podeEscrever && (
+              <p className="flex items-start gap-2 text-xs text-tinta-suave">
+                <Truck
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0 text-pedra"
+                  aria-hidden="true"
+                />
+                Escolha um caminhão acima para ver as vagas e agendar.
+              </p>
+            )}
+
             {totalEntregas === 0 && totalReservas === 0 && (
               <p className="flex items-center justify-center gap-2 rounded-xl2 border border-dashed border-linha bg-papel/60 py-6 text-sm text-tinta-suave">
                 <CalendarDays
@@ -520,6 +539,9 @@ export default function Agendamento(): React.ReactElement {
         <EntregaDetalheModal
           entregaId={detalheId}
           onFechar={() => setDetalheId(null)}
+          // As ações do card (entregue, não realizado, voltar…) moram só aqui:
+          // é a tela de trabalho. A /agenda continua somente leitura.
+          comAcoes={podeEscrever}
         />
       )}
 

@@ -28,6 +28,8 @@ const PERIODO_ROTULO: Record<PeriodoEntrega, string> = {
 interface Props {
   entregaId: string;
   onFechar: () => void;
+  /** Mostra as ações da etapa (só a tela de Agendamento, só logística). */
+  comAcoes?: boolean;
 }
 
 /** Quantidade sem decimal inútil: 100, não 100,00 — mas 2,5 continua 2,5. */

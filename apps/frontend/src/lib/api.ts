@@ -419,6 +419,21 @@ export const api = {
     );
   },
 
+  /**
+   * A logística reordena as paradas do dia de um motorista, arrastando na
+   * agenda. `ordem` são só as paradas arrastadas; as demais ficam onde estão.
+   */
+  async reordenarParadas(body: {
+    motoristaId: string;
+    data: string;
+    ordem: string[];
+  }): Promise<{ ordem: { id: string; ordemRota: number }[] }> {
+    return request<{ ordem: { id: string; ordemRota: number }[] }>(
+      '/api/entregas/ordem',
+      { method: 'PATCH', body },
+    );
+  },
+
   /** Uma viagem só, com itens e quantidades — o detalhe do card da agenda. */
   async obterEntrega(id: string, signal?: AbortSignal): Promise<Entrega> {
     return request<Entrega>(`/api/entregas/${encodeURIComponent(id)}`, {
@@ -442,10 +457,24 @@ export const api = {
     return request<Entrega>('/api/entregas', { method: 'POST', body });
   },
 
-  /** Avança a viagem (em rota, entregue, não realizado, cancelada). */
+  /**
+   * Avança a viagem (em rota, entregue, não realizado, cancelada).
+   *
+   * Em `para: 'entregue'`, `entregues` declara quanto de cada produto o cliente
+   * recebeu (0025). Havendo diferença, `restanteRecusado: true` registra que o
+   * cliente não quer o resto — vira um card de não realizado que encerra o
+   * saldo; sem ele, o restante volta para o pedido.
+   */
   async transicionarEntrega(
     entregaId: string,
-    body: { para: StatusEntrega; observacao?: string; motivo?: string },
+    body: {
+      para: StatusEntrega;
+      observacao?: string;
+      motivo?: string;
+      entregues?: Record<string, number>;
+      restanteRecusado?: boolean;
+      motivoRecusa?: string;
+    },
   ): Promise<Entrega> {
     return request<Entrega>(
       `/api/entregas/${encodeURIComponent(entregaId)}/transicao`,
@@ -453,7 +482,10 @@ export const api = {
     );
   },
 
-  /** Volta a viagem uma etapa (hoje: só em rota -> agendada). */
+  /**
+   * Volta a viagem uma etapa: em rota -> agendada, e entregue / não realizado
+   * -> em rota. Só logística.
+   */
   async reverterEntrega(
     entregaId: string,
     para: StatusEntrega,
