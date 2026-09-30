@@ -16,6 +16,8 @@ import { avaliarCapacidade } from '@pastobom/shared';
 import { emToneladas } from '../../lib/format';
 import { CardEntrega } from './CardEntrega';
 import { CardReserva } from './CardReserva';
+import { ListaEntregasOrdenavel } from './ListaEntregasOrdenavel';
+import type { ReordenarGrupo } from './ListaEntregasOrdenavel';
 
 export interface GrupoCaminhaoProps {
   grupo: GrupoCaminhaoAgenda;
@@ -23,6 +25,13 @@ export interface GrupoCaminhaoProps {
   onAbrir: (entregaId: string) => void;
   /** Previsão por pedido. Opcional: o Mês não desenha cartão e não busca. */
   climaPorPedido?: Record<string, PrevisaoClima | null>;
+  /**
+   * Arrastar para reordenar as entregas do grupo. OPCIONAL, e é a ausência que
+   * vale: sem ela (a /agenda, a Semana, o Mês) a lista é a de sempre, sem alça
+   * nenhuma. Só a visão Dia da /agendamento, para a logística, passa — ver
+   * ListaEntregasOrdenavel.tsx.
+   */
+  onReordenar?: ReordenarGrupo;
 }
 
 // O caminhão e a sua carga do período, juntos: barra em cima, clientes embaixo.
@@ -33,6 +42,7 @@ export function GrupoCaminhao({
   compacto,
   onAbrir,
   climaPorPedido,
+  onReordenar,
 }: GrupoCaminhaoProps): React.ReactElement {
   const semCaminhao = grupo.caminhaoId === null;
 
@@ -79,15 +89,27 @@ export function GrupoCaminhao({
         {grupo.reservas.map((r) => (
           <CardReserva key={r.reservaId} reserva={r} compacto={compacto} />
         ))}
-        {grupo.entregas.map((e) => (
-          <CardEntrega
-            key={e.entregaId}
-            entrega={e}
+        {/* Reservas não arrastam: não são parada de rota, são o caminhão
+            ocupado. Ficam fora da lista ordenável, sempre em cima. */}
+        {onReordenar ? (
+          <ListaEntregasOrdenavel
+            entregas={grupo.entregas}
             compacto={compacto}
             onAbrir={onAbrir}
-            clima={climaPorPedido?.[e.pedidoId] ?? null}
+            climaPorPedido={climaPorPedido}
+            onReordenar={onReordenar}
           />
-        ))}
+        ) : (
+          grupo.entregas.map((e) => (
+            <CardEntrega
+              key={e.entregaId}
+              entrega={e}
+              compacto={compacto}
+              onAbrir={onAbrir}
+              clima={climaPorPedido?.[e.pedidoId] ?? null}
+            />
+          ))
+        )}
       </div>
     </div>
   );

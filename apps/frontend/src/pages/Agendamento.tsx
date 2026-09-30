@@ -27,12 +27,21 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, CalendarPlus, Info, Truck } from 'lucide-react';
+import {
+  AlertTriangle,
+  CalendarDays,
+  CalendarPlus,
+  Info,
+  Truck,
+  X,
+} from 'lucide-react';
 import {
   expandirRotasCidade,
   filtrarSlotsPorCaminhao,
+  reordenacoesPorMotorista,
 } from '@pastobom/shared';
 import type {
+  AgendaEntrega,
   AgendaSlot,
   AtualizarReservaRequest,
   CriarReservaRequest,
@@ -97,6 +106,9 @@ export default function Agendamento(): React.ReactElement {
     { data: string; caminhaoId?: string } | null
   >(null);
   const [erroReserva, setErroReserva] = useState<string | null>(null);
+  // Erro ao gravar a ordem arrastada. Não tem modal onde morar (o arrasto é
+  // direto no calendário), então vira um aviso no topo da visão Dia.
+  const [erroOrdem, setErroOrdem] = useState<string | null>(null);
 
   const ancoraIso = isoDeData(ancora);
   const intervalo = useMemo(
@@ -202,6 +214,69 @@ export default function Agendamento(): React.ReactElement {
     onError: (err) =>
       setErroReserva(mensagemDeErro(err, 'Falha ao reservar o caminhão.')),
   });
+
+  /**
+   * ARRASTAR PARA REORDENAR (Natália, 24/09/2026) — o lado da página.
+   *
+   * A lista já reordenou na tela antes de isto rodar (otimista, ver
+   * ListaEntregasOrdenavel.tsx); aqui só sai a gravação. Um PATCH por
+   * motorista cuja ordem relativa mudou — a ordem é do MOTORISTA no dia, e o
+   * servidor permuta as paradas enviadas no lugar, sem tocar nas outras dele.
+   *
+   * Rejeitar a promessa é o que faz a lista desfazer o override; por isso o
+   * `throw` depois de registrar o erro.
+   */
+  const reordenarMutacao = useMutation({
+    mutationFn: async ({
+      data,
+      antes,
+      depois,
+    }: {
+      data: string;
+      antes: AgendaEntrega[];
+      depois: AgendaEntrega[];
+    }) => {
+      const chamadas = reordenacoesPorMotorista(antes, depois);
+      if (chamadas.length === 0) {
+        // Só acontece quando o grupo tem dois motoristas e o card de um passou
+        // por cima do card do outro: a sequência de CADA motorista continua a
+        // mesma, então não há o que gravar. Deixar o card no lugar novo seria
+        // mentir — no próximo refetch ele voltaria sozinho.
+        throw new Error(
+          'Esses cards são de motoristas diferentes, e a ordem de cada motorista não mudou — nada foi gravado. A ordem é do motorista, não do caminhão.',
+        );
+      }
+      // Em paralelo: motoristas diferentes não disputam a mesma rota.
+      await Promise.all(
+        chamadas.map((c) =>
+          api.reordenarParadas({
+            motoristaId: c.motoristaId,
+            data,
+            ordem: c.ordem,
+          }),
+        ),
+      );
+    },
+    onSuccess: () => {
+      setErroOrdem(null);
+      invalidarAgendamento(queryClient);
+    },
+    onError: (err) => {
+      setErroOrdem(mensagemDeErro(err, 'Falha ao gravar a ordem das paradas.'));
+      // Com dois motoristas, um PATCH pode ter gravado e o outro não: o
+      // refetch mostra o que ficou de verdade, em vez de a tela adivinhar.
+      invalidarAgendamento(queryClient);
+    },
+  });
+
+  async function reordenar(args: {
+    data: string;
+    antes: AgendaEntrega[];
+    depois: AgendaEntrega[];
+  }): Promise<void> {
+    setErroOrdem(null);
+    await reordenarMutacao.mutateAsync(args);
+  }
 
   const nomeDoCaminhao = (id: string): string =>
     caminhoes.find((c) => c.id === id)?.nome || 'Caminhão';
@@ -522,12 +597,38 @@ export default function Agendamento(): React.ReactElement {
                     desenhá-la dentro de cada período diria que cabem N de manhã
                     E N à tarde. */}
                 {renderVagas(ancoraIso, 'completa')}
+                {erroOrdem !== null && (
+                  <div
+                    role="alert"
+                    className="flex items-start gap-2 rounded-lg border border-terra/30 bg-terra-claro px-3 py-2 text-sm text-terra-escuro"
+                  >
+                    <AlertTriangle
+                      className="mt-0.5 h-4 w-4 shrink-0"
+                      aria-hidden="true"
+                    />
+                    <p className="min-w-0 flex-1">
+                      Não foi possível mudar a ordem das paradas: {erroOrdem}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setErroOrdem(null)}
+                      aria-label="Fechar aviso"
+                      className="shrink-0 rounded p-0.5 hover:bg-terra/10"
+                    >
+                      <X className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </div>
+                )}
+                {/* O arrasto só aqui, e só para a logística: ver o porquê em
+                    VisaoDia e em ListaEntregasOrdenavel. Sem `podeEscrever` a
+                    prop nem desce, e o dia fica igual ao da /agenda. */}
                 <VisaoDia
                   rotasPorSlot={rotasPorSlot}
                   data={ancoraIso}
                   porSlot={porSlot}
                   onAbrir={setDetalheId}
                   climaPorPedido={climaPorPedido}
+                  onReordenar={podeEscrever ? reordenar : undefined}
                 />
               </>
             )}

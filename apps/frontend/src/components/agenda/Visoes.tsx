@@ -10,6 +10,7 @@
 
 import React from 'react';
 import type {
+  AgendaEntrega,
   AgendaSlot,
   PrevisaoClima,
   RotaCidadeNoSlot,
@@ -339,6 +340,22 @@ export interface VisaoDiaProps {
    */
   climaPorPedido?: Record<string, PrevisaoClima | null>;
   rotasPorSlot: RotasPorSlot;
+  /**
+   * Arrastar os cards para reordenar as paradas (pedido da Natália, 24/09/2026).
+   * OPCIONAL, ao contrário de `rotasPorSlot`: aqui a ausência é o estado certo
+   * da /agenda (somente leitura) e de quem não é logística — a Agenda não
+   * passa e não ganha alça nenhuma.
+   *
+   * Só a visão DIA tem isto, de propósito: na Semana cada coluna tem ~140 px e
+   * a alça comeria o nome do cliente; o Mês nem desenha card.
+   *
+   * `data` é a do dia mostrado — é o dia da rota que o PATCH renumera.
+   */
+  onReordenar?: (args: {
+    data: string;
+    antes: AgendaEntrega[];
+    depois: AgendaEntrega[];
+  }) => Promise<void>;
 }
 
 export function VisaoDia({
@@ -347,6 +364,7 @@ export function VisaoDia({
   onAbrir,
   climaPorPedido,
   rotasPorSlot,
+  onReordenar,
 }: VisaoDiaProps): React.ReactElement {
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -361,6 +379,11 @@ export function VisaoDia({
               mostrarTitulo
               onAbrir={onAbrir}
               climaPorPedido={climaPorPedido}
+              onReordenar={
+                onReordenar
+                  ? (antes, depois) => onReordenar({ data, antes, depois })
+                  : undefined
+              }
             />
           </div>
         );

@@ -12,6 +12,7 @@ import type {
 } from '@pastobom/shared';
 import { agruparSlotPorCaminhao } from '@pastobom/shared';
 import { GrupoCaminhao } from './GrupoCaminhao';
+import type { ReordenarGrupo } from './ListaEntregasOrdenavel';
 import { PERIODO_ROTULO } from './slots';
 
 export interface BlocoSlotProps {
@@ -24,6 +25,11 @@ export interface BlocoSlotProps {
   onAbrir: (entregaId: string) => void;
   /** Previsão por pedido. Opcional: o Mês não desenha cartão e não busca. */
   climaPorPedido?: Record<string, PrevisaoClima | null>;
+  /**
+   * Arrastar para reordenar dentro de cada caminhão. Só repassado: a data já
+   * vem amarrada por quem monta (VisaoDia). Sem ela, nada muda no bloco.
+   */
+  onReordenar?: ReordenarGrupo;
 }
 
 export function BlocoSlot({
@@ -33,6 +39,7 @@ export function BlocoSlot({
   mostrarTitulo = false,
   onAbrir,
   climaPorPedido,
+  onReordenar,
 }: BlocoSlotProps): React.ReactElement {
   const entregas = slot?.entregas ?? [];
   const reservas = slot?.reservas ?? [];
@@ -87,6 +94,7 @@ export function BlocoSlot({
               compacto={compacto}
               onAbrir={onAbrir}
               climaPorPedido={climaPorPedido}
+              onReordenar={onReordenar}
             />
           ))}
         </div>

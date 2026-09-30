@@ -55,17 +55,46 @@ export interface GrupoCaminhaoAgenda {
 }
 
 /**
- * Ordena as viagens de um caminhão: cliente, depois número da OV.
+ * Ordena as viagens de um caminhão: ORDEM DA ROTA primeiro, depois cliente e
+ * número da OV.
  *
- * O primeiro critério é o que atende ao pedido de "pedidos do mesmo cliente
- * próximos": mesmo nome ⇒ mesma chave ⇒ ficam adjacentes por construção, sem
- * precisar de agrupamento visual por cliente. O segundo dá ordem estável entre
- * as viagens desse cliente, e é numérico porque nº de OV cresce como número
- * ('9' antes de '10'), não como texto.
+ * ORDEM DA ROTA (24/09/2026). A Natália, sobre o Cargo 816: "ele queria ter a
+ * opção de arrastar os cards aqui e colocar na ordem que o motorista vai fazer
+ * aqueles clientes". Arrastar só faz sentido se a lista MOSTRA a ordem que foi
+ * gravada — senão o card solto volta para o lugar alfabético no próximo
+ * refetch e parece que nada aconteceu. Então as viagens já sequenciadas
+ * (`ordemRota` não nula) vêm primeiro, na ordem da rota; as ainda não
+ * sequenciadas vêm depois, pela regra antiga. É o mesmo "sequenciada antes da
+ * não sequenciada" de `compararParadas` (rota-ordem.ts), que é como o motorista
+ * lê a lista dele — a agenda e a tela do motorista contam a mesma sequência.
+ *
+ * Não reusamos `compararParadas` inteira de propósito: ela desempata por
+ * período, que aqui é constante (o grupo é um slot), e depois só por id — e a
+ * regra de "pedidos do mesmo cliente adjacentes, em ordem numérica de OV"
+ * (pedido 6) se perderia entre as não sequenciadas.
+ *
+ * Duas viagens com a MESMA ordemRota (o banco não tem unicidade, e dois
+ * motoristas no mesmo caminhão numeram cada um a sua rota) caem na regra antiga
+ * como desempate: a ordem fica estável e legível em vez de depender do banco.
+ *
+ * REGRA ANTIGA. O critério do cliente é o que atende ao pedido de "pedidos do
+ * mesmo cliente próximos": mesmo nome ⇒ mesma chave ⇒ ficam adjacentes por
+ * construção, sem precisar de agrupamento visual por cliente. O nº da OV dá
+ * ordem estável entre as viagens desse cliente, e é numérico porque nº de OV
+ * cresce como número ('9' antes de '10'), não como texto.
  *
  * Cliente sem nome cai no fim: é dado incompleto, não é o "cliente A".
  */
 function compararEntregas(a: AgendaEntrega, b: AgendaEntrega): number {
+  const temA = a.ordemRota !== null;
+  const temB = b.ordemRota !== null;
+  // Sequenciada antes da não sequenciada: null não é "a parada zero", é a que
+  // ainda não entrou na fila.
+  if (temA !== temB) return temA ? -1 : 1;
+  if (temA && temB && a.ordemRota !== b.ordemRota) {
+    return (a.ordemRota as number) - (b.ordemRota as number);
+  }
+
   const nomeA = a.clienteNome.trim();
   const nomeB = b.clienteNome.trim();
   if (nomeA !== nomeB) {
@@ -217,6 +246,65 @@ export function filtrarSlotsPorCaminhao(
       reservas,
       ocupacao: slot.ocupacao.filter((o) => o.caminhaoId === caminhaoId),
     });
+  }
+  return resultado;
+}
+
+// ---------------------------------------------------------------------------
+// Arrastar para reordenar — pedido da Natália, reunião de 24/09/2026
+// ---------------------------------------------------------------------------
+
+/** Um PATCH /api/entregas/ordem: as viagens de UM motorista, na ordem nova. */
+export interface ReordenacaoMotorista {
+  motoristaId: string;
+  /** Só as viagens deste motorista que estavam no grupo arrastado. */
+  ordem: string[];
+}
+
+/**
+ * Traduz um arrasto dentro de um grupo (um caminhão num período) em chamadas de
+ * reordenação — uma por motorista.
+ *
+ * POR QUE POR MOTORISTA. A ordem gravada (`ordemRota`) é a sequência do
+ * MOTORISTA no dia inteiro, não do caminhão: é assim que a tela dele lê. O
+ * grupo da agenda é um recorte caminhão×período, e nele podem estar viagens de
+ * dois motoristas (troca de turno no mesmo caminhão). Cada um tem a sua rota,
+ * então cada um recebe a sua chamada, com as viagens DELE na ordem relativa
+ * nova. O servidor (`reordenarSubconjunto`) permuta essas viagens NO LUGAR — só
+ * entre si — e as outras paradas do motorista no dia ficam onde estavam.
+ *
+ * Mandamos TODAS as viagens do motorista no grupo, não só a arrastada: a
+ * permutação no lugar precisa do conjunto inteiro para que a ordem relativa do
+ * grupo saia exatamente a que foi solta na tela.
+ *
+ * O motorista cuja ordem relativa NÃO mudou (o arrasto só passou o card de um
+ * por cima do card de outro) fica de fora: gravar a mesma ordem renumeraria o
+ * dia dele e congelaria uma sequência que ninguém pediu.
+ *
+ * Viagem sem motorista não entra: não há rota para ordenar (a tela nem deixa
+ * arrastá-la).
+ */
+export function reordenacoesPorMotorista(
+  antes: readonly AgendaEntrega[],
+  depois: readonly AgendaEntrega[],
+): ReordenacaoMotorista[] {
+  const ids = (lista: readonly AgendaEntrega[], motoristaId: string) =>
+    lista.filter((e) => e.motoristaId === motoristaId).map((e) => e.entregaId);
+
+  const motoristas: string[] = [];
+  for (const e of depois) {
+    if (e.motoristaId !== null && !motoristas.includes(e.motoristaId)) {
+      motoristas.push(e.motoristaId);
+    }
+  }
+
+  const resultado: ReordenacaoMotorista[] = [];
+  for (const motoristaId of motoristas) {
+    const nova = ids(depois, motoristaId);
+    const velha = ids(antes, motoristaId);
+    const igual =
+      nova.length === velha.length && nova.every((id, i) => id === velha[i]);
+    if (!igual) resultado.push({ motoristaId, ordem: nova });
   }
   return resultado;
 }

@@ -12,6 +12,7 @@ import type { AgendaEntrega, PrevisaoClima } from '@pastobom/shared';
 import { STATUS_ENTREGA_META } from '../status';
 import { emToneladas } from '../../lib/format';
 import { ClimaResumo } from '../ClimaResumo';
+import { TagPedido } from '../TagPedido';
 
 export interface CardEntregaProps {
   entrega: AgendaEntrega;
@@ -45,7 +46,9 @@ export function CardEntrega({
     <button
       type="button"
       onClick={() => onAbrir(entrega.entregaId)}
-      aria-label={`Ver produtos de ${entrega.clienteNome || 'cliente'}${
+      aria-label={`${
+        entrega.ordemRota !== null ? `Parada ${entrega.ordemRota}: ` : ''
+      }ver produtos de ${entrega.clienteNome || 'cliente'}${
         entrega.orixNumero ? `, pedido nº ${entrega.orixNumero}` : ''
       }`}
       className={`animate-sobe block w-full cursor-pointer rounded-xl border border-linha bg-papel text-left shadow-carta transition duration-200 hover:-translate-y-0.5 hover:shadow-flutua focus:outline-none focus-visible:ring-2 focus-visible:ring-folha ${
@@ -67,12 +70,31 @@ export function CardEntrega({
               aria-label={meta.rotulo}
             />
           )}
+          {/* A POSIÇÃO da parada no dia do motorista — o mesmo selo verde da
+              Rota do Dia (RotaDoDia.tsx), em miniatura. Sem ele, arrastar os
+              cards na visão Dia seria arrastar no escuro: não daria para
+              conferir que a ordem gravou. É o número do DIA do motorista, não
+              do grupo: se a manhã tem as paradas 1 e 2, a tarde começa no 3.
+              Sem ordem, nada aparece — não sequenciado é o estado normal antes
+              de alguém sequenciar, não pendência. */}
+          {entrega.ordemRota !== null && (
+            <span
+              className={`flex shrink-0 items-center justify-center rounded-full bg-mata font-display font-bold text-creme-50 ${
+                compacto ? 'h-4 min-w-4 px-1 text-[10px]' : 'h-5 min-w-5 px-1 text-[11px]'
+              }`}
+              aria-hidden="true"
+              title={`Parada ${entrega.ordemRota} do dia do motorista`}
+            >
+              {entrega.ordemRota}
+            </span>
+          )}
           <span className="truncate">{entrega.clienteNome || 'Cliente'}</span>
         </h4>
         {!compacto && (
-          <span className="shrink-0 rounded-md bg-creme-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-tinta-suave">
-            nº {entrega.orixNumero || '—'}
-          </span>
+          <TagPedido
+            numero={entrega.orixNumero}
+            parcial={entrega.pedidoParcial}
+          />
         )}
       </div>
 
