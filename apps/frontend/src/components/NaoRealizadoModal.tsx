@@ -44,7 +44,10 @@ export function NaoRealizadoModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-mata-escuro/30 p-4 backdrop-blur-sm"
+      // Folha de baixo no celular, como o ConcluirEntregaModal: o motorista
+      // marca isto de pé, com o telefone numa mão, e o polegar alcança o pé
+      // da tela. No desktop continua centralizado.
+      className="fixed inset-0 z-50 flex items-end justify-center bg-mata-escuro/30 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-label="Entrega não realizada"
@@ -52,7 +55,7 @@ export function NaoRealizadoModal({
         if (e.target === e.currentTarget && !enviando) onCancelar();
       }}
     >
-      <div className="w-full max-w-md animate-sobe rounded-xl2 bg-papel p-5 shadow-flutua">
+      <div className="w-full max-w-md animate-sobe rounded-t-xl2 bg-papel p-5 shadow-flutua sm:rounded-xl2">
         <h2 className="font-display text-lg font-semibold text-mata-escuro">
           Entrega não realizada
         </h2>
