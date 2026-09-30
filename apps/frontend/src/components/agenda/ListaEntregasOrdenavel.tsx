@@ -12,13 +12,15 @@
 //
 // ONDE EXISTE
 // ---------------------------------------------------------------------------
-// Só na visão Dia da /agendamento, e só para a logística. Quem decide é quem
-// monta a árvore: o GrupoCaminhao só desenha esta lista se recebeu
-// `onReordenar`, e só a página de Agendamento, na visão Dia, com `podeEscrever`,
-// passa. A /agenda (somente leitura), a Semana e o Mês renderizam exatamente
-// como antes — nem a alça aparece. Semana tem ~140 px por coluna: a alça
-// comeria o nome do cliente e um arrasto vertical numa coluna tão estreita
-// vira arrasto errado. O Mês nem desenha card.
+// Nas visões Dia e Semana da /agendamento, e só para a logística. Quem decide
+// é quem monta a árvore: o GrupoCaminhao só desenha esta lista se recebeu
+// `onReordenar`, e só a página de Agendamento, com `podeEscrever`, passa. A
+// /agenda (somente leitura) e o Mês renderizam exatamente como antes — nem a
+// alça aparece; o Mês nem desenha card.
+//
+// Nasceu só no Dia, com o receio de que a alça comesse o nome do cliente numa
+// coluna da Semana. Na primeira vez que a Natália tentou usar (30/09/2026), foi
+// direto à Semana — é nela que se trabalha — e a coluna comporta a alça.
 //
 // POR QUE UMA ALÇA SEPARADA
 // ---------------------------------------------------------------------------

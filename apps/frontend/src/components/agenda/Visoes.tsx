@@ -247,7 +247,19 @@ export interface VisaoSemanaProps {
    */
   renderVagas?: (dataIso: string) => React.ReactNode;
   rotasPorSlot: RotasPorSlot;
+  /**
+   * Arrastar os cards para reordenar as paradas — o mesmo da VisaoDia (ver lá).
+   * `data` é a da COLUNA em que o card foi solto.
+   */
+  onReordenar?: ReordenarAgenda;
 }
+
+/** Contrato do arrasto nas visões: o dia da rota e o grupo antes/depois. */
+export type ReordenarAgenda = (args: {
+  data: string;
+  antes: AgendaEntrega[];
+  depois: AgendaEntrega[];
+}) => Promise<void>;
 
 export function VisaoSemana({
   dias,
@@ -257,6 +269,7 @@ export function VisaoSemana({
   climaPorPedido,
   renderVagas,
   rotasPorSlot,
+  onReordenar,
 }: VisaoSemanaProps): React.ReactElement {
   return (
     <div className="overflow-x-auto">
@@ -318,6 +331,12 @@ export function VisaoSemana({
                       compacto
                       onAbrir={onAbrir}
                       climaPorPedido={climaPorPedido}
+                      onReordenar={
+                        onReordenar
+                          ? (antes, depois) =>
+                              onReordenar({ data: iso, antes, depois })
+                          : undefined
+                      }
                     />
                   </div>
                 );
@@ -346,16 +365,14 @@ export interface VisaoDiaProps {
    * da /agenda (somente leitura) e de quem não é logística — a Agenda não
    * passa e não ganha alça nenhuma.
    *
-   * Só a visão DIA tem isto, de propósito: na Semana cada coluna tem ~140 px e
-   * a alça comeria o nome do cliente; o Mês nem desenha card.
+   * Vale no Dia e na Semana. Nasceu só no Dia, com o receio de que a alça
+   * comesse o nome do cliente numa coluna estreita; a Natália foi direto à
+   * Semana tentar arrastar (30/09/2026) — é nela que se trabalha, e a coluna
+   * comporta a alça. O Mês não desenha card.
    *
    * `data` é a do dia mostrado — é o dia da rota que o PATCH renumera.
    */
-  onReordenar?: (args: {
-    data: string;
-    antes: AgendaEntrega[];
-    depois: AgendaEntrega[];
-  }) => Promise<void>;
+  onReordenar?: ReordenarAgenda;
 }
 
 export function VisaoDia({

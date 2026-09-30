@@ -27,8 +27,8 @@ export interface GrupoCaminhaoProps {
   climaPorPedido?: Record<string, PrevisaoClima | null>;
   /**
    * Arrastar para reordenar as entregas do grupo. OPCIONAL, e é a ausência que
-   * vale: sem ela (a /agenda, a Semana, o Mês) a lista é a de sempre, sem alça
-   * nenhuma. Só a visão Dia da /agendamento, para a logística, passa — ver
+   * vale: sem ela (a /agenda, o Mês) a lista é a de sempre, sem alça nenhuma.
+   * Só as visões Dia e Semana da /agendamento, para a logística, passam — ver
    * ListaEntregasOrdenavel.tsx.
    */
   onReordenar?: ReordenarGrupo;

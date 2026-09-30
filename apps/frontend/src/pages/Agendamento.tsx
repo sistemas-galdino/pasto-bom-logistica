@@ -568,6 +568,29 @@ export default function Agendamento(): React.ReactElement {
               </p>
             )}
 
+            {erroOrdem !== null && (
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-lg border border-terra/30 bg-terra-claro px-3 py-2 text-sm text-terra-escuro"
+              >
+                <AlertTriangle
+                  className="mt-0.5 h-4 w-4 shrink-0"
+                  aria-hidden="true"
+                />
+                <p className="min-w-0 flex-1">
+                  Não foi possível mudar a ordem das paradas: {erroOrdem}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setErroOrdem(null)}
+                  aria-label="Fechar aviso"
+                  className="shrink-0 rounded p-0.5 hover:bg-terra/10"
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+            )}
+
             {visao === 'mes' && (
               <VisaoMes
                 rotasPorSlot={rotasPorSlot}
@@ -587,6 +610,7 @@ export default function Agendamento(): React.ReactElement {
                 onAbrir={setDetalheId}
                 climaPorPedido={climaPorPedido}
                 renderVagas={(iso) => renderVagas(iso, 'compacta')}
+                onReordenar={podeEscrever ? reordenar : undefined}
               />
             )}
 
@@ -597,31 +621,8 @@ export default function Agendamento(): React.ReactElement {
                     desenhá-la dentro de cada período diria que cabem N de manhã
                     E N à tarde. */}
                 {renderVagas(ancoraIso, 'completa')}
-                {erroOrdem !== null && (
-                  <div
-                    role="alert"
-                    className="flex items-start gap-2 rounded-lg border border-terra/30 bg-terra-claro px-3 py-2 text-sm text-terra-escuro"
-                  >
-                    <AlertTriangle
-                      className="mt-0.5 h-4 w-4 shrink-0"
-                      aria-hidden="true"
-                    />
-                    <p className="min-w-0 flex-1">
-                      Não foi possível mudar a ordem das paradas: {erroOrdem}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setErroOrdem(null)}
-                      aria-label="Fechar aviso"
-                      className="shrink-0 rounded p-0.5 hover:bg-terra/10"
-                    >
-                      <X className="h-4 w-4" aria-hidden="true" />
-                    </button>
-                  </div>
-                )}
-                {/* O arrasto só aqui, e só para a logística: ver o porquê em
-                    VisaoDia e em ListaEntregasOrdenavel. Sem `podeEscrever` a
-                    prop nem desce, e o dia fica igual ao da /agenda. */}
+                {/* O arrasto só para a logística: sem `podeEscrever` a prop
+                    nem desce, e o dia fica igual ao da /agenda. */}
                 <VisaoDia
                   rotasPorSlot={rotasPorSlot}
                   data={ancoraIso}
