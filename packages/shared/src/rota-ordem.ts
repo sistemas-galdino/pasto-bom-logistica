@@ -82,3 +82,60 @@ export function ordenarParadas<T extends ParadaOrdenavel>(
 ): T[] {
   return [...paradas].sort(compararParadas);
 }
+
+// ---------------------------------------------------------------------------
+// Reordenar arrastando — pedido da Natália, reunião de 24/09/2026
+// ---------------------------------------------------------------------------
+
+export interface ReordenacaoParadas {
+  /** id -> nova ordem (1..N) de TODAS as paradas do dia, não só as arrastadas. */
+  ordem: Map<string, number>;
+  /** Não vazio = nada deve ser gravado. */
+  erros: string[];
+}
+
+/**
+ * Aplica uma nova ordem a UM SUBCONJUNTO das paradas do dia do motorista.
+ *
+ * A logística arrasta os cards de um caminhão, num período, na agenda. Mas
+ * `ordemRota` é a sequência do MOTORISTA no dia inteiro — é como a tela dele lê
+ * (`ordenarParadas`). Nos dias em que um motorista tem viagens em dois caminhões,
+ * ou de manhã e à tarde, reordenar um grupo não pode mexer no outro.
+ *
+ * Por isso é uma permutação NO LUGAR: as paradas arrastadas trocam de posição só
+ * entre si, ocupando as posições que já eram delas na ordem atual. Todas as
+ * outras ficam exatamente onde estavam. Depois, o dia inteiro é renumerado
+ * 1..N — o que também congela a ordem que a tela mostrava para as paradas que
+ * ninguém tinha sequenciado, e é essa a ordem que o motorista passa a ver.
+ */
+export function reordenarSubconjunto<T extends ParadaOrdenavel>(
+  paradas: readonly T[],
+  novaOrdem: readonly string[],
+): ReordenacaoParadas {
+  const erros: string[] = [];
+  const base = ordenarParadas(paradas);
+  const porId = new Map(base.map((p) => [p.id, p]));
+
+  const vistos = new Set<string>();
+  for (const id of novaOrdem) {
+    if (vistos.has(id)) erros.push(`A parada ${id} aparece duas vezes.`);
+    vistos.add(id);
+    if (!porId.has(id)) erros.push(`A parada ${id} não é deste motorista neste dia.`);
+  }
+  if (erros.length > 0) return { ordem: new Map(), erros };
+
+  const posicoes: number[] = [];
+  base.forEach((p, i) => {
+    if (vistos.has(p.id)) posicoes.push(i);
+  });
+
+  const resultado = [...base];
+  posicoes.forEach((pos, k) => {
+    resultado[pos] = porId.get(novaOrdem[k] as string) as T;
+  });
+
+  return {
+    ordem: new Map(resultado.map((p, i) => [p.id, i + 1])),
+    erros: [],
+  };
+}

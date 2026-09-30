@@ -23,6 +23,7 @@ import {
   pesoDaCarga,
   podeReverterEntrega,
   podeTransicionarEntrega,
+  reordenarSubconjunto,
   ROTULO_STATUS_ENTREGA,
   templateDaTransicaoEntrega,
   validarQuantidades,
@@ -1749,4 +1750,98 @@ export async function definirProximaEntrega(
   }
 
   return carregarEntrega(entregaId);
+}
+
+// ---------------------------------------------------------------------------
+// Reordenar as paradas pela agenda — reunião de 24/09/2026
+// ---------------------------------------------------------------------------
+
+export interface ReordenarParadasArgs {
+  motoristaId: string;
+  /** Dia da rota (YYYY-MM-DD). */
+  data: string;
+  /** As paradas arrastadas, na ordem nova. As demais do dia ficam onde estão. */
+  ordem: string[];
+}
+
+/**
+ * A logística reordena as paradas arrastando os cards na agenda: "arrastar os
+ * cards aqui e colocar na ordem que o motorista vai fazer aqueles clientes".
+ *
+ * Diferente de `definirProximaEntrega` (o motorista, incremental, na estrada),
+ * aqui a lista vem inteira e o dia é renumerado — a regra de onde cada parada
+ * cai mora em `reordenarSubconjunto`. Só grava as linhas que mudaram.
+ *
+ * Só viagens agendadas ou em rota podem ser arrastadas: as entregues já
+ * aconteceram, e as outras não estão na rota.
+ */
+export async function reordenarParadas(
+  args: ReordenarParadasArgs,
+): Promise<{ id: string; ordemRota: number }[]> {
+  const { motoristaId, data, ordem } = args;
+
+  const { data: linhas, error } = await supabase
+    .from('entregas')
+    .select('id, status, ordem_rota, periodo, pedidos(cliente_nome)')
+    .eq('motorista_id', motoristaId)
+    .eq('data_agendada', data)
+    .in('status', ['agendada', 'em_rota', 'entregue']);
+  if (error) {
+    throw new TransicaoError(
+      500,
+      'erro_banco',
+      `Falha ao ler as paradas do dia: ${error.message}`,
+    );
+  }
+
+  const paradas = ((linhas ?? []) as unknown as {
+    id: string;
+    status: StatusEntrega;
+    ordem_rota: number | string | null;
+    periodo: PeriodoEntrega | null;
+    pedidos: { cliente_nome: string | null } | null;
+  }[]).map((l) => ({
+    id: l.id,
+    status: l.status,
+    ordemRota: ordemOuNulo(l.ordem_rota),
+    periodo: l.periodo,
+    clienteNome: l.pedidos?.cliente_nome ?? '',
+  }));
+
+  const concluidas = new Set(
+    paradas.filter((p) => p.status === 'entregue').map((p) => p.id),
+  );
+  if (ordem.some((id) => concluidas.has(id))) {
+    throw new TransicaoError(
+      409,
+      'ordem_invalida',
+      'Uma parada já entregue não pode mudar de lugar na rota.',
+    );
+  }
+
+  const r = reordenarSubconjunto(paradas, ordem);
+  if (r.erros.length > 0) {
+    throw new TransicaoError(409, 'ordem_invalida', r.erros.join(' '));
+  }
+
+  const mudaram = paradas.filter((p) => r.ordem.get(p.id) !== p.ordemRota);
+  const agora = new Date().toISOString();
+  const resultados = await Promise.all(
+    mudaram.map((p) =>
+      supabase
+        .from('entregas')
+        .update({ ordem_rota: r.ordem.get(p.id), atualizado_em: agora })
+        .eq('id', p.id),
+    ),
+  );
+  const falha = resultados.find((x) => x.error);
+  if (falha?.error) {
+    throw new TransicaoError(
+      500,
+      'erro_banco',
+      `Falha ao gravar a ordem das paradas: ${falha.error.message}`,
+    );
+  }
+
+  return [...r.ordem.entries()].map(([id, ordemRota]) => ({ id, ordemRota }));
 }

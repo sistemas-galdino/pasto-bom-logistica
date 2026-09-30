@@ -31,6 +31,7 @@ import {
   definirSeparacaoEntrega,
   definirSeparacaoItemEntrega,
   listarEntregas,
+  reordenarParadas,
   definirProximaEntrega,
   reagendarEntrega,
   reverterEntrega,
@@ -117,6 +118,12 @@ const transicaoSchema = z.object({
 });
 
 const reverterSchema = z.object({ para: statusEnum });
+
+const reordenarSchema = z.object({
+  motoristaId: z.string().uuid(),
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  ordem: z.array(z.string().uuid()).min(1).max(200),
+});
 
 const separacaoSchema = z.object({ separado: z.boolean() });
 
@@ -268,6 +275,26 @@ export async function entregasRoutes(app: FastifyInstance): Promise<void> {
       return reply.send(entrega);
     } catch (err) {
       return responderErro(reply, err, `[POST /entregas/${id}/transicao]`);
+    }
+  });
+
+  // PATCH /entregas/ordem — a logística reordena as paradas arrastando na
+  // agenda (reunião de 24/09/2026). Rota estática: não colide com /:id/...
+  app.patch('/entregas/ordem', async (req, reply) => {
+    if (!exigirLogistica(req, reply)) return reply;
+    const parsed = reordenarSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'body_invalido',
+        message: 'Informe o motorista, o dia e as paradas na ordem nova.',
+        detalhes: parsed.error.issues,
+      });
+    }
+    try {
+      const ordem = await reordenarParadas(parsed.data);
+      return reply.send({ ordem });
+    } catch (err) {
+      return responderErro(reply, err, '[PATCH /entregas/ordem]');
     }
   });
 
