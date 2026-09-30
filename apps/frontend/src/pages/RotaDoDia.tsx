@@ -1,9 +1,21 @@
 // Página do MOTORISTA (Fase 3, RF-3.1/RF-3.2): a "rota do dia".
 //
 // Lista os pedidos em rota atribuídos ao motorista logado, com botão de
-// navegação (Abrir no Maps) e a confirmação de entrega (com observação
-// opcional). Mobile-first, no visual "Campo Claro". O backend é a fonte de
-// verdade: a confirmação só vale para os próprios pedidos do motorista.
+// navegação (Abrir no Maps), os produtos da viagem, a confirmação de entrega
+// (declarando quanto o cliente recebeu) e o "não realizado". Mobile-first, no
+// visual "Campo Claro". O backend é a fonte de verdade: as duas transições só
+// valem para as próprias viagens do motorista.
+//
+// PEDIDOS DA NATÁLIA DE 24/09/2026 QUE MORAM AQUI
+// ---------------------------------------------------------------------------
+//  - "quando ele clicar no pedido ele consiga ver os produtos e quantidade":
+//    o payload já trazia os itens; a tela só mostrava a contagem;
+//  - declarar quanto de cada produto o cliente recebeu e, divergindo, perguntar
+//    se ele quer o restante — "tem que dar essa opção também no aplicativo do
+//    motorista". É o MESMO ConcluirEntregaModal do Quadro, de propósito: duas
+//    telas com a mesma pergunta escrita de dois jeitos divergem na 1ª correção;
+//  - "não realizado" pela tela: o backend já aceitava do motorista, mas não
+//    havia botão, e ele ligava para a logística marcar.
 //
 // ORDEM DAS PARADAS (item 11 da Natália)
 // ---------------------------------------------------------------------------
@@ -20,8 +32,22 @@ import type { Entrega, PeriodoEntrega, Reserva } from '@pastobom/shared';
 import { api, ApiError } from '../lib/api';
 import { Header } from '../components/Header';
 import { ClimaResumo } from '../components/ClimaResumo';
-import { formatarData, formatarMoeda, rotuloItens } from '../lib/format';
+import { TagPedido } from '../components/TagPedido';
+import {
+  ConcluirEntregaModal,
+  type ConclusaoEntrega,
+} from '../components/ConcluirEntregaModal';
+import { NaoRealizadoModal } from '../components/NaoRealizadoModal';
+import { formatarData, formatarQuantidade } from '../lib/format';
 import { linkGoogleMaps } from '../lib/maps';
+
+/**
+ * Frase do WhatsApp que o antigo modal local dizia. Continua sendo dita pelo
+ * motorista porque é ele quem está na frente do cliente: se o cliente perguntar
+ * "vou receber alguma coisa?", a resposta está na tela.
+ */
+const AVISO_WHATSAPP =
+  'Ao confirmar, o pedido é marcado como entregue e o cliente recebe um WhatsApp de confirmação.';
 
 const ROTULO_PERIODO: Record<PeriodoEntrega, string> = {
   manha: 'manhã',
@@ -103,8 +129,18 @@ function IconeMapa(): React.ReactElement {
 export function RotaDoDia(): React.ReactElement {
   const queryClient = useQueryClient();
   const [confirmando, setConfirmando] = useState<Entrega | null>(null);
-  const [observacao, setObservacao] = useState('');
   const [erroModal, setErroModal] = useState<string | null>(null);
+  // "Não realizado" tem estado PRÓPRIO, separado da confirmação: são dois
+  // modais diferentes e o erro de um não pode aparecer aberto no outro.
+  const [naoRealizando, setNaoRealizando] = useState<Entrega | null>(null);
+  const [erroNaoRealizado, setErroNaoRealizado] = useState<string | null>(null);
+  // Cards com a lista de produtos aberta. Por entrega e local à tela: é
+  // consulta de relance ("quantos sacos são desse cliente?"), não preferência
+  // que valha guardar. Set por id porque o motorista pode querer duas abertas
+  // para comparar na hora de descarregar.
+  const [produtosAbertos, setProdutosAbertos] = useState<Set<string>>(
+    () => new Set(),
+  );
   // Id da entrega que ACABOU de ser confirmada. Guardar o id (e não a lista de
   // candidatas) é de propósito: a pergunta "qual é a próxima?" precisa ler a
   // lista viva depois do refetch, senão o motorista escolheria numa foto velha.
@@ -136,16 +172,24 @@ export function RotaDoDia(): React.ReactElement {
     refetchInterval: 60_000,
   });
 
+  // A conclusão vai inteira para o servidor (entregues, restante, motivo,
+  // observação): quem decide se é entrega parcial é `avaliarConclusao`, a mesma
+  // função no modal e no serviço — a tela não reinterpreta nada.
   const entregaMutacao = useMutation({
-    mutationFn: ({ id, obs }: { id: string; obs: string }) =>
+    mutationFn: ({
+      id,
+      conclusao,
+    }: {
+      id: string;
+      conclusao: ConclusaoEntrega;
+    }) =>
       api.transicionarEntrega(id, {
         para: 'entregue',
-        observacao: obs || undefined,
+        ...conclusao,
       }),
     onSuccess: (_entregue, variaveis) => {
       void queryClient.invalidateQueries({ queryKey: ['minhas-entregas'] });
       setConfirmando(null);
-      setObservacao('');
       setErroModal(null);
       // Momento exato do pedido da Natália: acabou de descarregar, sabe para
       // onde vai. A pergunta vem AQUI, e não num menu escondido.
@@ -153,6 +197,25 @@ export function RotaDoDia(): React.ReactElement {
     },
     onError: (err) => {
       setErroModal(mensagemDeErro(err, 'Falha ao confirmar a entrega.'));
+    },
+  });
+
+  // em_rota -> nao_realizado. Invalida a MESMA query da conclusão: a viagem
+  // encerrada sai da lista no refetch. NÃO dispara a pergunta da próxima
+  // parada: aquela pergunta nasceu do "acabou de descarregar", e aqui a carga
+  // continua no caminhão — o motorista pode estar voltando, não seguindo.
+  const naoRealizadoMutacao = useMutation({
+    mutationFn: ({ id, motivo }: { id: string; motivo: string }) =>
+      api.transicionarEntrega(id, { para: 'nao_realizado', motivo }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['minhas-entregas'] });
+      setNaoRealizando(null);
+      setErroNaoRealizado(null);
+    },
+    onError: (err) => {
+      setErroNaoRealizado(
+        mensagemDeErro(err, 'Falha ao marcar a entrega como não realizada.'),
+      );
     },
   });
 
@@ -209,9 +272,22 @@ export function RotaDoDia(): React.ReactElement {
   const climaPorPedido = climaQuery.data ?? {};
 
   function abrirConfirmacao(p: Entrega) {
-    setObservacao('');
     setErroModal(null);
     setConfirmando(p);
+  }
+
+  function abrirNaoRealizado(p: Entrega) {
+    setErroNaoRealizado(null);
+    setNaoRealizando(p);
+  }
+
+  function alternarProdutos(id: string) {
+    setProdutosAbertos((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(id)) novo.delete(id);
+      else novo.add(id);
+      return novo;
+    });
   }
 
   return (
@@ -328,9 +404,10 @@ export function RotaDoDia(): React.ReactElement {
                         {p.clienteNome || p.clienteCodigo || 'Cliente'}
                       </h3>
                     </div>
-                    <span className="shrink-0 rounded-md bg-creme-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-tinta-suave">
-                      nº {p.orixNumero || '—'}
-                    </span>
+                    <TagPedido
+                      numero={p.orixNumero}
+                      parcial={p.pedidoParcial}
+                    />
                   </div>
 
                   <p className="mt-2 flex items-start gap-1.5 text-sm text-tinta-suave">
@@ -347,8 +424,38 @@ export function RotaDoDia(): React.ReactElement {
                     </div>
                   )}
 
-                  <div className="mt-2 flex items-center justify-between text-xs text-tinta-suave">
-                    <span>{rotuloItens(p.itens.length)}</span>
+                  {/*
+                    Produtos atrás de um BOTÃO, não do cartão inteiro clicável —
+                    pelo mesmo motivo da "próxima parada" abaixo: o cartão tem
+                    Maps, Confirmar e Não realizado, e um toque para ver produto
+                    não pode cair num deles. O botão ocupa a linha inteira da
+                    contagem (alvo de toque de 44px de altura no celular) e o
+                    peso continua ao lado, como antes.
+                  */}
+                  <div className="mt-2 flex items-center justify-between gap-2 text-xs text-tinta-suave">
+                    {p.itens.length === 0 ? (
+                      <span>Sem itens</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => alternarProdutos(p.id)}
+                        aria-expanded={produtosAbertos.has(p.id)}
+                        aria-controls={`produtos-${p.id}`}
+                        className="-my-2 -ml-2 flex min-h-[44px] items-center gap-1 rounded-lg px-2 text-sm font-semibold text-mata transition hover:bg-folha-claro"
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={`inline-block transition-transform ${
+                            produtosAbertos.has(p.id) ? 'rotate-90' : ''
+                          }`}
+                        >
+                          ›
+                        </span>
+                        {produtosAbertos.has(p.id)
+                          ? 'Esconder produtos'
+                          : `Ver produtos (${p.itens.length})`}
+                      </button>
+                    )}
                     {p.pesoTotalKg !== null && (
                       <span className="font-display text-sm font-semibold text-mata-escuro">
                         {(p.pesoTotalKg / 1000).toLocaleString('pt-BR', {
@@ -359,6 +466,34 @@ export function RotaDoDia(): React.ReactElement {
                       </span>
                     )}
                   </div>
+
+                  {/*
+                    Lista no molde do detalhe do card da logística
+                    (EntregaDetalheModal): quantidade primeiro, em negrito, e o
+                    nome depois — é o que o motorista confere contra o que está
+                    descendo do caminhão. São os itens DESTA viagem: se o pedido
+                    saiu em dois caminhões, aqui está só a parte dele.
+                  */}
+                  {produtosAbertos.has(p.id) && p.itens.length > 0 && (
+                    <ul
+                      id={`produtos-${p.id}`}
+                      className="mt-2 divide-y divide-linha/70 rounded-xl border border-linha"
+                    >
+                      {p.itens.map((item) => (
+                        <li
+                          key={item.id}
+                          className="flex items-start gap-2 px-3 py-2 text-sm"
+                        >
+                          <span className="w-16 shrink-0 text-right font-bold tabular-nums text-mata-escuro">
+                            {formatarQuantidade(item.qtd)}
+                          </span>
+                          <span className="min-w-0 flex-1 text-tinta">
+                            {item.nomeProduto || item.produtoCodigo}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
 
                   {/*
                     Segunda porta para sequenciar, fora do pós-confirmação: o
@@ -392,13 +527,43 @@ export function RotaDoDia(): React.ReactElement {
                       <IconeMapa />
                       Abrir no Maps
                     </a>
-                    <button
-                      type="button"
-                      onClick={() => abrirConfirmacao(p)}
-                      className="rounded-lg bg-mata px-3 py-2.5 text-sm font-bold text-creme-50 transition hover:bg-mata-escuro sm:flex-1"
-                    >
-                      Confirmar entrega
-                    </button>
+                    {/*
+                      Também só em em_rota. A lista traz as viagens `agendada` do
+                      dia (o motorista vê o que vem pela frente), mas elas ainda
+                      não saíram do galpão: confirmar uma delas era um 409 do
+                      servidor — e, com o formulário das quantidades, um 409
+                      DEPOIS de o motorista digitar tudo.
+                    */}
+                    {p.status === 'em_rota' ? (
+                      <button
+                        type="button"
+                        onClick={() => abrirConfirmacao(p)}
+                        className="rounded-lg bg-mata px-3 py-2.5 text-sm font-bold text-creme-50 transition hover:bg-mata-escuro sm:flex-1"
+                      >
+                        Confirmar entrega
+                      </button>
+                    ) : (
+                      <p className="self-center text-center text-xs text-tinta-suave sm:flex-1">
+                        Ainda não saiu para entrega.
+                      </p>
+                    )}
+                    {/*
+                      Só em em_rota: é a única origem de nao_realizado na máquina
+                      de estados (entrega-state-machine). A lista também traz
+                      viagens `agendada` do dia, e nelas o botão só renderia um
+                      422. Secundário e em contorno vermelho, como no Quadro:
+                      é o desfecho excepcional, não pode competir com o
+                      Confirmar pelo polegar.
+                    */}
+                    {p.status === 'em_rota' && (
+                      <button
+                        type="button"
+                        onClick={() => abrirNaoRealizado(p)}
+                        className="rounded-lg border border-brasa/40 px-3 py-2.5 text-sm font-semibold text-brasa transition hover:bg-brasa-claro sm:flex-1"
+                      >
+                        Não realizado
+                      </button>
+                    )}
                   </div>
                 </li>
               ))}
@@ -407,21 +572,43 @@ export function RotaDoDia(): React.ReactElement {
         </div>
       </main>
 
+      {/*
+        key por id: o modal guarda as quantidades digitadas em estado interno,
+        inicializado uma vez. Sem a key, fechar um e abrir outro no mesmo
+        render herdaria os números da entrega anterior.
+      */}
       {confirmando && (
-        <ConfirmarEntregaModal
-          pedido={confirmando}
-          observacao={observacao}
+        <ConcluirEntregaModal
+          key={confirmando.id}
+          entrega={confirmando}
           enviando={entregaMutacao.isPending}
           erro={erroModal}
-          onObservacao={setObservacao}
-          onConfirmar={() =>
-            entregaMutacao.mutate({ id: confirmando.id, obs: observacao })
+          aviso={AVISO_WHATSAPP}
+          onConfirmar={(conclusao) =>
+            entregaMutacao.mutate({ id: confirmando.id, conclusao })
           }
           onCancelar={() => {
             if (!entregaMutacao.isPending) {
               setConfirmando(null);
-              setObservacao('');
               setErroModal(null);
+            }
+          }}
+        />
+      )}
+
+      {naoRealizando && (
+        <NaoRealizadoModal
+          key={naoRealizando.id}
+          entrega={naoRealizando}
+          enviando={naoRealizadoMutacao.isPending}
+          erro={erroNaoRealizado}
+          onConfirmar={(motivo) =>
+            naoRealizadoMutacao.mutate({ id: naoRealizando.id, motivo })
+          }
+          onCancelar={() => {
+            if (!naoRealizadoMutacao.isPending) {
+              setNaoRealizando(null);
+              setErroNaoRealizado(null);
             }
           }}
         />
@@ -599,94 +786,5 @@ function ReservasDoCaminhao({
         })}
       </ul>
     </section>
-  );
-}
-
-interface ModalProps {
-  pedido: Entrega;
-  observacao: string;
-  enviando: boolean;
-  erro: string | null;
-  onObservacao: (v: string) => void;
-  onConfirmar: () => void;
-  onCancelar: () => void;
-}
-
-function ConfirmarEntregaModal({
-  pedido,
-  observacao,
-  enviando,
-  erro,
-  onObservacao,
-  onConfirmar,
-  onCancelar,
-}: ModalProps): React.ReactElement {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-mata-escuro/30 p-4 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Confirmar entrega"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !enviando) onCancelar();
-      }}
-    >
-      <div className="w-full max-w-md animate-sobe rounded-xl2 bg-papel p-5 shadow-flutua">
-        <h2 className="font-display text-lg font-semibold text-mata-escuro">
-          Confirmar entrega
-        </h2>
-        <p className="mt-0.5 text-sm text-tinta-suave">
-          Pedido nº {pedido.orixNumero || '—'} —{' '}
-          {pedido.clienteNome || pedido.clienteCodigo}
-        </p>
-
-        <p className="mt-4 rounded-lg bg-mata-claro px-3 py-2.5 text-sm text-mata-escuro">
-          Ao confirmar, o pedido é marcado como <strong>entregue</strong> e o
-          cliente recebe um WhatsApp de confirmação.
-        </p>
-
-        <label className="mt-4 block">
-          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-tinta-suave">
-            Observação (opcional)
-          </span>
-          <textarea
-            value={observacao}
-            onChange={(e) => onObservacao(e.target.value)}
-            rows={3}
-            maxLength={1000}
-            placeholder="Ex.: recebido por João; deixado no galpão…"
-            className="w-full resize-none rounded-lg border border-linha bg-creme-50 px-3 py-2 text-sm text-tinta outline-none transition focus:border-folha focus:bg-papel focus:ring-2 focus:ring-folha/25"
-          />
-        </label>
-
-        {erro && (
-          <div
-            role="alert"
-            className="mt-4 rounded-lg border border-terra/30 bg-terra-claro px-3 py-2 text-sm text-terra-escuro"
-          >
-            {erro}
-          </div>
-        )}
-
-        <div className="mt-5 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancelar}
-            disabled={enviando}
-            className="rounded-lg border border-linha px-4 py-2 text-sm font-semibold text-tinta-suave transition hover:bg-creme-50 disabled:opacity-60"
-          >
-            Voltar
-          </button>
-          <button
-            type="button"
-            onClick={onConfirmar}
-            disabled={enviando}
-            className="rounded-lg bg-mata px-4 py-2 text-sm font-bold text-creme-50 transition hover:bg-mata-escuro disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {enviando ? 'Confirmando…' : 'Confirmar entrega'}
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
