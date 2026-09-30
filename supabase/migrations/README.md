@@ -31,6 +31,17 @@ abaixo) e contra o ledger `supabase_migrations.schema_migrations`.
 |---|---|
 | 0001 – 0022 | sim |
 | 0023 – 0024 | sim (14/09/2026) |
+| 0025 | sim (30/09/2026) |
+
+A **0025 rodou em 30/09/2026**, com autorização do David, pela conexão MCP
+`supabase-pastobom` (a `supabase` antiga voltou a recusar com `-32600`).
+Conferida depois de aplicar, objeto por objeto: `entrega_itens.qtd_entregue`
+(numeric, nulável, check `>= 0`), `entregas.encerra_saldo` (boolean, not null,
+default false), `entregas.origem_entrega_id` (uuid nulável, FK
+`entregas_origem_entrega_id_fkey` com on delete set null) e o motivo `Cliente
+recusou o restante`, ativo, ao lado do `Cliente recusou` que já existia. Zero
+linhas com valor novo — a migration não mudou dado nenhum. Aplicada ANTES do
+deploy: o backend que estava no ar não lê as colunas, e o que sobe lê.
 
 A **0023 e a 0024 rodaram em 14/09/2026**, com autorização do David, pelo MCP do
 Supabase (que voltou a responder — ver a pendência antiga abaixo). Conferidas
