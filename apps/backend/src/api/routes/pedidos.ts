@@ -21,6 +21,7 @@ import type {
   StatusLogistico,
 } from '@pastobom/shared';
 
+import { selecionarEmLotes } from '../../db/lotes.js';
 import { supabase } from '../../db/supabase.js';
 import { log } from '../../log.js';
 import { exigirLogistica } from '../guards.js';
@@ -268,10 +269,9 @@ async function resolverBairros(
 ): Promise<Map<string, string | null>> {
   const codigos = chavesDe(linhas, (l) => l.cliente_codigo);
   if (codigos.length === 0) return new Map();
-  const { data, error } = await supabase
-    .from('clientes')
-    .select('codigo, bairro')
-    .in('codigo', codigos);
+  const { data, error } = await selecionarEmLotes(codigos, (lote) =>
+    supabase.from('clientes').select('codigo, bairro').in('codigo', lote),
+  );
   if (error) {
     log.warn(`[pedidos] Falha ao resolver bairros dos clientes: ${error.message}`);
     return new Map();
@@ -351,19 +351,23 @@ async function anexarDestinos(
 
   const props = new Map<string, DestinoEntrega>();
   if (propCodigos.length > 0) {
-    const { data } = await supabase
-      .from('propriedades')
-      .select('codigo, endereco, cidade, uf, latitude, longitude')
-      .in('codigo', propCodigos);
+    const { data } = await selecionarEmLotes(propCodigos, (lote) =>
+      supabase
+        .from('propriedades')
+        .select('codigo, endereco, cidade, uf, latitude, longitude')
+        .in('codigo', lote),
+    );
     for (const r of data ?? []) props.set(r.codigo as string, toDestino(r));
   }
 
   const clis = new Map<string, DestinoEntrega>();
   if (cliCodigos.length > 0) {
-    const { data } = await supabase
-      .from('clientes')
-      .select('codigo, endereco, cidade, uf, latitude, longitude')
-      .in('codigo', cliCodigos);
+    const { data } = await selecionarEmLotes(cliCodigos, (lote) =>
+      supabase
+        .from('clientes')
+        .select('codigo, endereco, cidade, uf, latitude, longitude')
+        .in('codigo', lote),
+    );
     for (const r of data ?? []) clis.set(r.codigo as string, toDestino(r));
   }
 

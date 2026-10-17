@@ -40,4 +40,8 @@ ENV NODE_ENV=production
 ENV API_PORT=3333
 EXPOSE 3333
 
-CMD ["node", "--import", "tsx", "apps/backend/src/index.ts"]
+# --max-http-header-size: o PostgREST ecoa a consulta no cabeçalho
+# Content-Location, e o default do Node (16 KB) já derrubou o Quadro com
+# "fetch failed" (ver apps/backend/src/db/lotes.ts). As listas grandes vão em
+# lotes; isto é a folga para as consultas que ainda não vão.
+CMD ["node", "--max-http-header-size=65536", "--import", "tsx", "apps/backend/src/index.ts"]

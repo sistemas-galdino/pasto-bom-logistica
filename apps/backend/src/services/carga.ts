@@ -26,6 +26,7 @@ import {
   type PeriodoEntrega,
 } from '@pastobom/shared';
 
+import { selecionarEmLotes } from '../db/lotes.js';
 import { supabase } from '../db/supabase.js';
 import { log } from '../log.js';
 import { TransicaoError } from './erros.js';
@@ -54,10 +55,12 @@ export async function lerPesosDetalhados(
   const unicos = [...new Set(codigos.filter((c) => c.length > 0))];
   if (unicos.length === 0) return new Map();
 
-  const { data, error } = await supabase
-    .from('produtos_peso')
-    .select('produto_codigo, peso_kg, origem, atualizado_em')
-    .in('produto_codigo', unicos);
+  const { data, error } = await selecionarEmLotes(unicos, (lote) =>
+    supabase
+      .from('produtos_peso')
+      .select('produto_codigo, peso_kg, origem, atualizado_em')
+      .in('produto_codigo', lote),
+  );
 
   if (error) {
     log.warn(`[carga] Falha ao ler pesos de produtos: ${error.message}`);

@@ -37,6 +37,7 @@ import {
   type StatusEntrega,
 } from '@pastobom/shared';
 
+import { selecionarEmLotes } from '../db/lotes.js';
 import { supabase } from '../db/supabase.js';
 import { log } from '../log.js';
 import { TransicaoError } from './erros.js';
@@ -294,18 +295,18 @@ async function resolverDestinos(
   const c = [...new Set(cliCodigos.filter((x) => x))];
 
   const [rp, rc] = await Promise.all([
-    p.length > 0
-      ? supabase
-          .from('propriedades')
-          .select('codigo, endereco, cidade, uf, latitude, longitude')
-          .in('codigo', p)
-      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
-    c.length > 0
-      ? supabase
-          .from('clientes')
-          .select('codigo, endereco, cidade, uf, latitude, longitude')
-          .in('codigo', c)
-      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    selecionarEmLotes(p, (lote) =>
+      supabase
+        .from('propriedades')
+        .select('codigo, endereco, cidade, uf, latitude, longitude')
+        .in('codigo', lote),
+    ),
+    selecionarEmLotes(c, (lote) =>
+      supabase
+        .from('clientes')
+        .select('codigo, endereco, cidade, uf, latitude, longitude')
+        .in('codigo', lote),
+    ),
   ]);
 
   for (const r of (rp.data ?? []) as Record<string, unknown>[]) {
@@ -323,10 +324,9 @@ async function bairrosDeCliente(
 ): Promise<Map<string, string | null>> {
   const unicos = [...new Set(codigos.filter((c) => c))];
   if (unicos.length === 0) return new Map();
-  const { data, error } = await supabase
-    .from('clientes')
-    .select('codigo, bairro')
-    .in('codigo', unicos);
+  const { data, error } = await selecionarEmLotes(unicos, (lote) =>
+    supabase.from('clientes').select('codigo, bairro').in('codigo', lote),
+  );
   if (error) {
     log.warn(`[entregas] Falha ao resolver bairros: ${error.message}`);
     return new Map();
@@ -349,11 +349,13 @@ export async function pedidosComEntregaParcial(
 ): Promise<Set<string>> {
   const unicos = [...new Set(pedidoIds.filter((i) => i))];
   if (unicos.length === 0) return new Set();
-  const { data, error } = await supabase
-    .from('entregas')
-    .select('pedido_id, entrega_itens(qtd, qtd_entregue)')
-    .in('pedido_id', unicos)
-    .eq('status', 'entregue');
+  const { data, error } = await selecionarEmLotes(unicos, (lote) =>
+    supabase
+      .from('entregas')
+      .select('pedido_id, entrega_itens(qtd, qtd_entregue)')
+      .in('pedido_id', lote)
+      .eq('status', 'entregue'),
+  );
   if (error) {
     log.warn(`[entregas] Falha ao ler as entregas parciais: ${error.message}`);
     return new Set();
@@ -392,16 +394,20 @@ async function montarEntregas(
     { data: itensRows, error: errItens },
     { data: pedidosRows, error: errPedidos },
   ] = await Promise.all([
-    supabase
-      .from('entrega_itens')
-      .select(COLUNAS_ENTREGA_ITEM)
-      .in('entrega_id', idsEntrega),
-    supabase
-      .from('pedidos')
-      .select(
-        'id, orix_numero, cliente_codigo, cliente_nome, cidade_cliente, data_pedido',
-      )
-      .in('id', idsPedido),
+    selecionarEmLotes(idsEntrega, (lote) =>
+      supabase
+        .from('entrega_itens')
+        .select(COLUNAS_ENTREGA_ITEM)
+        .in('entrega_id', lote),
+    ),
+    selecionarEmLotes(idsPedido, (lote) =>
+      supabase
+        .from('pedidos')
+        .select(
+          'id, orix_numero, cliente_codigo, cliente_nome, cidade_cliente, data_pedido',
+        )
+        .in('id', lote),
+    ),
   ]);
 
   if (errItens) {

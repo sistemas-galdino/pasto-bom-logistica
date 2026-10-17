@@ -24,6 +24,7 @@ import type {
   StatusEntrega,
 } from '@pastobom/shared';
 
+import { selecionarEmLotes } from '../../db/lotes.js';
 import { supabase } from '../../db/supabase.js';
 import { log } from '../../log.js';
 import { lerPesosProdutos } from '../../services/carga.js';
@@ -516,10 +517,9 @@ async function resolverClientes(
   ];
   if (codigos.length === 0) return new Map();
 
-  const { data, error } = await supabase
-    .from('clientes')
-    .select('codigo, bairro, cidade')
-    .in('codigo', codigos);
+  const { data, error } = await selecionarEmLotes(codigos, (lote) =>
+    supabase.from('clientes').select('codigo, bairro, cidade').in('codigo', lote),
+  );
 
   if (error) {
     log.warn(`[agenda] Falha ao resolver clientes: ${error.message}`);
