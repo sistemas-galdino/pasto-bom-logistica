@@ -1,13 +1,13 @@
 // Menu lateral da casca de dashboard: marca, navegação por seções e bloco do
-// usuário. Verde-mata escuro com texto creme; item ativo destacado em trigo.
-// Colapsa no desktop (chevron) e fecha no mobile (X).
+// usuário. Verde escuro da paleta (#1C4416), no visual do Cadastro: item ativo
+// em pílula verde-clara, demais em branco translúcido. Colapsa no desktop (chevron) e fecha no mobile (X).
 
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, LogOut, X } from 'lucide-react';
 import { useAuth } from '../../auth/AuthProvider';
 import { Marca, MarcaOficial } from '../Marca';
-import { PAPEL_ROTULO, PAPEL_ACESSO } from '../../lib/papeis';
+import { PAPEL_ROTULO } from '../../lib/papeis';
 import { NAV_SECTIONS, type NavSection } from './navConfig';
 import type { Papel } from '../../auth/AuthProvider';
 
@@ -23,7 +23,7 @@ function visivelPara(papel: Papel | null, papeis?: Papel[]): boolean {
 }
 
 /** Aplica o filtro de papel a seções e itens, descartando seções sem itens. */
-function secoesVisiveis(papel: Papel | null): NavSection[] {
+export function secoesVisiveis(papel: Papel | null): NavSection[] {
   return NAV_SECTIONS.filter((s) => visivelPara(papel, s.papeis))
     .map((s) => ({ ...s, itens: s.itens.filter((i) => visivelPara(papel, i.papeis)) }))
     .filter((s) => s.itens.length > 0);
@@ -38,27 +38,22 @@ export function Sidebar({
   const secoes = secoesVisiveis(papel);
 
   return (
-    <aside className="flex h-full w-full flex-col bg-mata-escuro text-creme-100">
-      {/* Cabeçalho: marca + fechar (mobile). Aberta, mostra o logo oficial num
-          bloco claro — a tipografia dele é marrom e sumiria sobre o verde. */}
-      <div className="flex items-center justify-between gap-2 px-4 py-4">
+    <aside className="flex h-full w-full flex-col bg-mata text-creme-50">
+      {/* Cabeçalho: marca centralizada; o fechar (mobile) fica no canto, fora
+          do fluxo, para não empurrar a marca para o lado. */}
+      <div className="relative flex items-center justify-center px-4 pb-4 pt-[max(1.25rem,env(safe-area-inset-top))]">
         {collapsed ? (
-          <Marca className="h-9 w-9 shrink-0 drop-shadow-sm" />
+          <Marca className="h-9 w-9 shrink-0" />
         ) : (
-          <div className="min-w-0 flex-1">
-            <div className="rounded-xl2 bg-creme-50 px-3 py-2 shadow-sm">
-              <MarcaOficial className="mx-auto h-12 w-auto" />
-            </div>
-            <p className="mt-2 text-center text-[10px] uppercase tracking-[0.2em] text-creme-100/60">
-              Logística Inteligente
-            </p>
+          <div className="rounded-xl bg-papel px-3 py-2">
+            <MarcaOficial className="h-12 w-auto" />
           </div>
         )}
         <button
           type="button"
           onClick={onClose}
           aria-label="Fechar menu"
-          className="rounded-lg p-1.5 text-creme-100/70 transition hover:bg-mata/50 hover:text-creme-50 lg:hidden"
+          className="absolute right-2 top-[max(0.75rem,env(safe-area-inset-top))] rounded-lg p-1.5 text-white/70 transition hover:bg-white/10 hover:text-white lg:hidden"
         >
           <X className="h-5 w-5" />
         </button>
@@ -69,7 +64,7 @@ export function Sidebar({
         {secoes.map((secao) => (
           <div key={secao.titulo} className="mb-4">
             {!collapsed && (
-              <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-creme-100/50">
+              <p className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-white/45">
                 {secao.titulo}
               </p>
             )}
@@ -84,16 +79,16 @@ export function Sidebar({
                       onClick={onClose}
                       title={collapsed ? item.rotulo : undefined}
                       className={({ isActive }) =>
-                        `flex items-center gap-3 rounded-lg border-l-2 px-3 py-2 text-sm font-medium transition ${
+                        `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
                           collapsed ? 'justify-center px-2 ' : ''
                         }${
                           isActive
-                            ? 'border-trigo bg-mata text-trigo'
-                            : 'border-transparent text-creme-100/80 hover:bg-mata/40 hover:text-creme-50'
+                            ? 'bg-folha-claro text-mata'
+                            : 'text-white/80 hover:bg-white/10 hover:text-white'
                         }`
                       }
                     >
-                      <Icone className="h-5 w-5 shrink-0" />
+                      <Icone className="h-5 w-5 shrink-0" strokeWidth={1.75} />
                       {!collapsed && <span>{item.rotulo}</span>}
                     </NavLink>
                   </li>
@@ -109,7 +104,7 @@ export function Sidebar({
         type="button"
         onClick={onToggleCollapse}
         aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}
-        className="mx-3 mb-2 hidden items-center justify-center gap-2 rounded-lg border border-mata/60 px-3 py-2 text-xs font-semibold text-creme-100/70 transition hover:bg-mata/40 hover:text-creme-50 lg:flex"
+        className="mx-3 mb-2 hidden items-center justify-center gap-2 rounded-xl border border-white/20 px-3 py-2 text-xs font-semibold text-white/70 transition hover:bg-white/10 hover:text-white lg:flex"
       >
         {collapsed ? (
           <ChevronRight className="h-4 w-4" />
@@ -122,43 +117,40 @@ export function Sidebar({
       </button>
 
       {/* Rodapé: usuário + sair */}
-      <div className="border-t border-mata/60 px-3 py-3">
-        <div className={`flex items-center gap-3 ${collapsed ? 'justify-center' : ''}`}>
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-mata text-sm font-bold text-trigo">
-            {(user?.email ?? '?').charAt(0).toUpperCase()}
-          </div>
-          {!collapsed && (
-            <div className="min-w-0 flex-1 leading-tight">
-              <p className="truncate text-xs font-semibold text-creme-50">
-                {user?.email ?? '—'}
-              </p>
-              {papel && (
-                <p className="truncate text-[11px] text-creme-100/60">
-                  {PAPEL_ROTULO[papel]} · {PAPEL_ACESSO[papel]}
-                </p>
-              )}
+      <div className="mx-3 border-t border-white/15 px-1 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4">
+        {collapsed ? (
+          <div className="flex flex-col items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-folha-claro text-sm font-bold text-mata">
+              {(user?.email ?? '?').charAt(0).toUpperCase()}
             </div>
-          )}
-          {!collapsed && (
             <button
               type="button"
               onClick={() => void sair()}
               aria-label="Sair"
-              className="rounded-lg p-2 text-creme-100/70 transition hover:bg-mata/50 hover:text-terra-claro"
+              className="rounded-lg p-2 text-white/70 transition hover:bg-white/10 hover:text-white"
             >
               <LogOut className="h-5 w-5" />
             </button>
-          )}
-        </div>
-        {collapsed && (
-          <button
-            type="button"
-            onClick={() => void sair()}
-            aria-label="Sair"
-            className="mt-2 flex w-full items-center justify-center rounded-lg p-2 text-creme-100/70 transition hover:bg-mata/50 hover:text-terra-claro"
-          >
-            <LogOut className="h-5 w-5" />
-          </button>
+          </div>
+        ) : (
+          <>
+            <p className="truncate text-sm font-semibold text-white">
+              {user?.email ?? '—'}
+            </p>
+            {papel && (
+              <p className="mt-0.5 truncate text-[10px] font-bold uppercase tracking-[0.12em] text-white/55">
+                {PAPEL_ROTULO[papel]}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => void sair()}
+              className="mt-3 flex items-center gap-2 text-sm font-medium text-white/70 transition hover:text-white"
+            >
+              <LogOut className="h-4 w-4" />
+              Sair
+            </button>
+          </>
         )}
       </div>
     </aside>

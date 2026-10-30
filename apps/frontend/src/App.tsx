@@ -17,6 +17,7 @@ import { Login } from './auth/Login';
 import { DefinirSenha } from './auth/DefinirSenha';
 import { Acesso } from './auth/Acesso';
 import { AppShell } from './components/layout/AppShell';
+import { MarcaOficial } from './components/Marca';
 import { Board } from './pages/Board';
 import { Dashboard } from './pages/Dashboard';
 import Agenda from './pages/Agenda';
@@ -44,10 +45,12 @@ function homePath(papel: Papel | null): string {
   return papel === 'motorista' ? '/rota' : '/dashboard';
 }
 
+/** Abertura enquanto a sessão carrega: a mesma do index.html, para a troca
+ *  do HTML estático para o React não piscar. */
 function TelaCarregando(): React.ReactElement {
   return (
-    <div className="flex min-h-screen items-center justify-center text-sm text-tinta-suave">
-      Carregando…
+    <div className="fixed inset-0 flex items-center justify-center bg-papel">
+      <MarcaOficial className="h-auto w-[min(53vw,282px)]" />
     </div>
   );
 }

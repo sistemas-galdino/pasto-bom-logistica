@@ -38,6 +38,7 @@ import {
   type ConclusaoEntrega,
 } from '../components/ConcluirEntregaModal';
 import { NaoRealizadoModal } from '../components/NaoRealizadoModal';
+import { ConfirmacaoModal } from '../components/ConfirmacaoModal';
 import { formatarData, formatarQuantidade } from '../lib/format';
 import { linkGoogleMaps } from '../lib/maps';
 
@@ -126,6 +127,11 @@ function IconeMapa(): React.ReactElement {
   );
 }
 
+/** Carga conferida: todos os itens marcados. Viagem sem itens não trava. */
+function viagemSeparada(e: Entrega): boolean {
+  return e.itens.every((i) => i.separado);
+}
+
 export function RotaDoDia(): React.ReactElement {
   const queryClient = useQueryClient();
   const [confirmando, setConfirmando] = useState<Entrega | null>(null);
@@ -152,6 +158,12 @@ export function RotaDoDia(): React.ReactElement {
   // está persistida no servidor quando isto aparece, então é aviso, não falha
   // de tela — e por isso vive fora do modal, num banner que se dispensa.
   const [erroOrdem, setErroOrdem] = useState<string | null>(null);
+  // Viagem aguardando a confirmação de "Colocar em rota" (manda WhatsApp, por
+  // isso pergunta antes) e o erro dessa confirmação, que vive no modal.
+  const [pondoEmRota, setPondoEmRota] = useState<Entrega | null>(null);
+  const [erroEmRota, setErroEmRota] = useState<string | null>(null);
+  // Erro do OK de separação: banner dispensável, como o da ordem.
+  const [erroAcao, setErroAcao] = useState<string | null>(null);
 
   // A rota do motorista lista VIAGENS (Onda 2): se o mesmo pedido sair em dois
   // caminhões, cada motorista vê só a sua carga, com a quantidade dele.
@@ -216,6 +228,33 @@ export function RotaDoDia(): React.ReactElement {
       setErroNaoRealizado(
         mensagemDeErro(err, 'Falha ao marcar a entrega como não realizada.'),
       );
+    },
+  });
+
+  // Separação e saída (30/10/2026): o próprio motorista dá o OK na carga da
+  // viagem e a põe em rota. O servidor só aceita as viagens DELE e de HOJE — a
+  // lista também só traz as de hoje, então a trava é rede de segurança.
+  const separacaoMutacao = useMutation({
+    mutationFn: ({ id, separado }: { id: string; separado: boolean }) =>
+      api.definirSeparacaoEntrega(id, separado),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['minhas-entregas'] });
+      setErroAcao(null);
+    },
+    onError: (err) => {
+      setErroAcao(mensagemDeErro(err, 'Não foi possível gravar a separação.'));
+    },
+  });
+
+  const emRotaMutacao = useMutation({
+    mutationFn: (id: string) => api.transicionarEntrega(id, { para: 'em_rota' }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['minhas-entregas'] });
+      setPondoEmRota(null);
+      setErroEmRota(null);
+    },
+    onError: (err) => {
+      setErroEmRota(mensagemDeErro(err, 'Não foi possível pôr a viagem em rota.'));
     },
   });
 
@@ -338,6 +377,22 @@ export function RotaDoDia(): React.ReactElement {
               <button
                 type="button"
                 onClick={() => setErroOrdem(null)}
+                className="shrink-0 text-xs font-bold uppercase tracking-wide underline"
+              >
+                ok
+              </button>
+            </div>
+          )}
+
+          {erroAcao !== null && (
+            <div
+              role="alert"
+              className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-terra/30 bg-terra-claro px-3 py-2 text-sm text-terra-escuro"
+            >
+              <span>{erroAcao}</span>
+              <button
+                type="button"
+                onClick={() => setErroAcao(null)}
                 className="shrink-0 text-xs font-bold uppercase tracking-wide underline"
               >
                 ok
@@ -534,6 +589,10 @@ export function RotaDoDia(): React.ReactElement {
                       servidor — e, com o formulário das quantidades, um 409
                       DEPOIS de o motorista digitar tudo.
                     */}
+                    {/*
+                      Agendada: o caminho é separar e depois pôr em rota, um
+                      botão de cada vez, para o motorista não pular a conferência.
+                    */}
                     {p.status === 'em_rota' ? (
                       <button
                         type="button"
@@ -542,10 +601,46 @@ export function RotaDoDia(): React.ReactElement {
                       >
                         Confirmar entrega
                       </button>
+                    ) : !viagemSeparada(p) ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          separacaoMutacao.mutate({ id: p.id, separado: true })
+                        }
+                        disabled={separacaoMutacao.isPending}
+                        className="rounded-lg bg-mata px-3 py-2.5 text-sm font-bold text-creme-50 transition hover:bg-mata-escuro disabled:opacity-60 sm:flex-1"
+                      >
+                        {separacaoMutacao.isPending &&
+                        separacaoMutacao.variables?.id === p.id
+                          ? 'Gravando…'
+                          : 'Dar OK na separação'}
+                      </button>
                     ) : (
-                      <p className="self-center text-center text-xs text-tinta-suave sm:flex-1">
-                        Ainda não saiu para entrega.
-                      </p>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setErroEmRota(null);
+                            setPondoEmRota(p);
+                          }}
+                          className="rounded-lg bg-mata px-3 py-2.5 text-sm font-bold text-creme-50 transition hover:bg-mata-escuro sm:flex-1"
+                        >
+                          Colocar em rota
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            separacaoMutacao.mutate({ id: p.id, separado: false })
+                          }
+                          disabled={separacaoMutacao.isPending}
+                          className="rounded-lg border border-linha px-3 py-2.5 text-sm font-semibold text-tinta-suave transition hover:bg-creme-100 disabled:opacity-60 sm:flex-1"
+                        >
+                          {separacaoMutacao.isPending &&
+                          separacaoMutacao.variables?.id === p.id
+                            ? 'Gravando…'
+                            : 'Desfazer separação'}
+                        </button>
+                      </>
                     )}
                     {/*
                       Só em em_rota: é a única origem de nao_realizado na máquina
@@ -591,6 +686,24 @@ export function RotaDoDia(): React.ReactElement {
             if (!entregaMutacao.isPending) {
               setConfirmando(null);
               setErroModal(null);
+            }
+          }}
+        />
+      )}
+
+      {pondoEmRota && (
+        <ConfirmacaoModal
+          titulo="Colocar em rota?"
+          subtitulo={pondoEmRota.clienteNome || pondoEmRota.clienteCodigo}
+          descricao="A viagem sai para entrega e o cliente recebe um WhatsApp avisando que a carga está a caminho."
+          rotuloConfirmar="Colocar em rota"
+          enviando={emRotaMutacao.isPending}
+          erro={erroEmRota}
+          onConfirmar={() => emRotaMutacao.mutate(pondoEmRota.id)}
+          onCancelar={() => {
+            if (!emRotaMutacao.isPending) {
+              setPondoEmRota(null);
+              setErroEmRota(null);
             }
           }}
         />

@@ -167,7 +167,7 @@ export default function Caminhoes(): React.ReactElement {
 
   return (
     <div className="h-full overflow-y-auto scroll-suave">
-      <div className="mx-auto max-w-7xl space-y-5 p-4 animate-sobe sm:p-6">
+      <div className="w-full space-y-5 p-4 animate-sobe sm:p-6 lg:p-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-tinta-suave">
             {caminhoes.length === 1

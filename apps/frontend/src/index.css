@@ -4,7 +4,7 @@
 
 @layer base {
   html {
-    font-family: 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+    font-family: 'Manrope', system-ui, -apple-system, sans-serif;
     color-scheme: light;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
@@ -19,44 +19,36 @@
   body {
     margin: 0;
     @apply bg-creme text-tinta;
-    background-image:
-      radial-gradient(
-        1100px 520px at 100% -8%,
-        rgba(60, 125, 82, 0.1),
-        transparent 62%
-      ),
-      radial-gradient(
-        820px 480px at -8% 112%,
-        rgba(178, 90, 51, 0.07),
-        transparent 60%
-      );
-    background-attachment: fixed;
   }
 
+  /* Títulos e números: a mesma Manrope, mais pesada e mais justa. */
   h1,
   h2,
   h3 {
-    font-family: 'Fraunces', Georgia, serif;
+    font-family: 'Manrope', system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.01em;
   }
 }
 
 @layer utilities {
-  /* Texto serifado utilitário (números/títulos com caráter editorial). */
   .font-display {
-    font-family: 'Fraunces', Georgia, serif;
+    font-family: 'Manrope', system-ui, sans-serif;
+    font-weight: 800;
+    letter-spacing: -0.02em;
   }
 
   /* Scrollbar discreta no tom do creme. */
   .scroll-suave {
     scrollbar-width: thin;
-    scrollbar-color: #d8cdb4 transparent;
+    scrollbar-color: #c3d6bf transparent;
   }
   .scroll-suave::-webkit-scrollbar {
     width: 9px;
     height: 9px;
   }
   .scroll-suave::-webkit-scrollbar-thumb {
-    background: #ddd2ba;
+    background: #c3d6bf;
     border-radius: 999px;
     border: 2px solid transparent;
     background-clip: content-box;

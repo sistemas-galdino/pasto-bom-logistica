@@ -3,7 +3,7 @@
 import React from 'react';
 import { useAuth } from '../auth/AuthProvider';
 import { PAPEL_ROTULO, PAPEL_BADGE, PAPEL_ACESSO } from '../lib/papeis';
-import { Marca } from './Marca';
+import { MarcaOficial } from './Marca';
 import { StatusSincronizacao } from './StatusSincronizacao';
 
 export function Header(): React.ReactElement {
@@ -11,18 +11,10 @@ export function Header(): React.ReactElement {
 
   return (
     <header className="sticky top-0 z-20 border-b border-linha bg-creme-50/85 backdrop-blur">
-      <div className="flex items-center justify-between px-4 py-3 sm:px-6">
-        <div className="flex items-center gap-3">
-          <Marca className="h-9 w-9 shrink-0 drop-shadow-sm" />
-          <div className="leading-tight">
-            <h1 className="font-display text-lg font-semibold text-mata-escuro">
-              Pasto Bom
-            </h1>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-tinta-suave">
-              Logística Inteligente
-            </p>
-          </div>
-        </div>
+      <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6">
+        <h1 className="shrink-0">
+          <MarcaOficial className="h-10 w-auto sm:h-11" />
+        </h1>
 
         <div className="flex items-center gap-3">
           <StatusSincronizacao />

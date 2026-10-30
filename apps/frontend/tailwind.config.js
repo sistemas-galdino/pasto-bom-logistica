@@ -4,43 +4,45 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['"Hanken Grotesk"', 'system-ui', '-apple-system', 'sans-serif'],
-        display: ['"Fraunces"', 'Georgia', 'serif'],
+        // Manrope em tudo, como no Cadastro. `display` continua existindo para
+        // os números e títulos, que ganham peso extra em vez de outra fonte.
+        sans: ['Manrope', 'system-ui', '-apple-system', 'sans-serif'],
+        display: ['Manrope', 'system-ui', '-apple-system', 'sans-serif'],
       },
-      // Paleta da marca Rede do Campo / Pasto Bom, amostrada do logo oficial:
-      //   verde da faixa #1B6D2D · verde vivo #119A36 · limão #BDCB3B
-      //   sol #F2D216 · madeira #523B22
+      // Paleta do Cadastro (guia de cores de 30/10/2026), aplicada a web e app.
+      // Os nomes dos tokens não mudaram — só os valores —, então nenhum
+      // componente precisou ser tocado.
       // Os tokens carregam SEMÂNTICA de status (ver components/status.ts):
       //   folha=agendada · trigo=em rota · mata=entregue · terra=cancelada.
-      // Por isso cada um precisa continuar distinguível dos outros.
+      // Por isso cada um precisa continuar distinguível dos outros: mata é o
+      // verde ESCURO do guia (e não o principal) para se separar da folha.
       colors: {
-        // Papel / creme (fundo editorial)
-        creme: { DEFAULT: '#F6F1E7', 50: '#FBF8F1', 100: '#F1E8D6' },
+        // Fundos neutros levemente esverdeados
+        creme: { DEFAULT: '#F8F9FA', 50: '#FBFCFA', 100: '#F1F5EF' },
         papel: '#FFFFFF',
         // Tinta (texto)
-        tinta: { DEFAULT: '#23271F', suave: '#6F6C5E' },
-        linha: '#E7DECB',
-        pedra: '#A8A293',
-        // Verdes da marca (mata = verde da faixa "PASTO BOM"; folha = verde vivo)
-        mata: { DEFAULT: '#176D2E', escuro: '#0F5222', claro: '#DCEBDD' },
-        folha: { DEFAULT: '#199A3C', claro: '#E2F2E4' },
-        // Limão da folha clara do logo — acento (ocupação de carga, destaques)
+        tinta: { DEFAULT: '#191C1D', suave: '#6C757D' },
+        linha: '#E3E8DF',
+        pedra: '#A3ACA0',
+        // Verdes da marca (mata = verde escuro; folha = verde médio)
+        mata: { DEFAULT: '#1C4416', escuro: '#0F2E1E', claro: '#D6EDD3' },
+        folha: { DEFAULT: '#3A7D2E', claro: '#D8F3DC' },
+        // Limão do logo — acento (ocupação de carga, rotas por cidade). Fica
+        // fora do guia de propósito: é a única cor que não colide com nenhum
+        // status (ver ChipRotaCidade).
         limao: { DEFAULT: '#BDCB3B', claro: '#F0F3D8', escuro: '#7C8720' },
-        // Sol do logo, rebaixado ao ponto de contraste legível
-        trigo: { DEFAULT: '#D9AE07', claro: '#FBF1C9', escuro: '#7A5E00' },
-        // Madeira do "Rede do Campo"
-        terra: { DEFAULT: '#8C5A2B', claro: '#EFE4D7', escuro: '#523B22' },
-        // Alerta: entrega NÃO REALIZADA. Único vermelho da paleta — precisa se
-        // separar do trigo (amarelo, "em rota") e do terra (marrom, "cancelada"),
-        // que são os vizinhos quentes.
-        brasa: { DEFAULT: '#B3261E', claro: '#FBE4E2', escuro: '#7A1912' },
+        // Amarelo sol
+        trigo: { DEFAULT: '#E8B800', claro: '#FBF3D6', escuro: '#9A7A00' },
+        // Cancelada: o cinza de "bloqueado" do guia
+        terra: { DEFAULT: '#6C757D', claro: '#EDEDED', escuro: '#5A5A5A' },
+        // Alerta: entrega NÃO REALIZADA. Único vermelho da paleta.
+        brasa: { DEFAULT: '#BA1A1A', claro: '#F7E3E1', escuro: '#9A3B32' },
       },
       boxShadow: {
-        carta:
-          '0 1px 2px rgba(35,39,31,0.04), 0 8px 20px -14px rgba(35,39,31,0.30)',
-        flutua: '0 18px 50px -16px rgba(20,58,41,0.32)',
+        carta: '0 4px 20px rgba(45,106,39,0.08)',
+        flutua: '0 18px 50px -16px rgba(28,68,22,0.32)',
       },
-      borderRadius: { xl2: '1.1rem' },
+      borderRadius: { xl2: '1rem' },
       keyframes: {
         sobe: {
           '0%': { opacity: '0', transform: 'translateY(8px)' },

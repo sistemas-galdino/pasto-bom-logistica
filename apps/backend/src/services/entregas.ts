@@ -1086,22 +1086,20 @@ export async function transicionarEntrega(
   const entrega = await carregarEntrega(entregaId);
   const de = entrega.status;
 
-  // O motorista só encerra as PRÓPRIAS viagens, para bem ou para mal.
+  // O motorista só mexe nas PRÓPRIAS viagens, para bem ou para mal. Além de
+  // encerrar, ele põe em rota (30/10/2026) — mas só a viagem de HOJE: pôr em
+  // rota manda WhatsApp ao cliente, e a carga de amanhã não pode sair por um
+  // toque errado. A logística segue sem essa trava.
   if (atorPapel === 'motorista') {
-    if (para !== 'entregue' && para !== 'nao_realizado') {
+    if (para !== 'em_rota' && para !== 'entregue' && para !== 'nao_realizado') {
       throw new TransicaoError(
         403,
         'sem_permissao',
-        'Motorista só pode confirmar a entrega ou marcá-la como não realizada.',
+        'Motorista só pode pôr em rota, confirmar a entrega ou marcá-la como não realizada.',
       );
     }
-    if (!atorUserId || entrega.motoristaId !== atorUserId) {
-      throw new TransicaoError(
-        403,
-        'sem_permissao',
-        'Você não é o motorista desta entrega.',
-      );
-    }
+    exigirViagemDoMotorista(entrega, atorUserId);
+    if (para === 'em_rota') exigirViagemDeHoje(entrega);
   }
 
   if (!podeTransicionarEntrega(de, para)) {
@@ -1644,13 +1642,25 @@ export async function definirSeparacaoItemEntrega(args: {
   return carregarEntrega(entregaId);
 }
 
-/** "Dar OK na separação": marca todos os itens da entrega de uma vez. */
+/**
+ * "Dar OK na separação": marca todos os itens da entrega de uma vez.
+ *
+ * Também é do motorista (30/10/2026), com as mesmas travas de quando ele põe
+ * em rota: só a própria viagem, só a de hoje.
+ */
 export async function definirSeparacaoEntrega(args: {
   entregaId: string;
   separado: boolean;
+  atorUserId?: string;
+  atorPapel?: AtorPapel;
 }): Promise<Entrega> {
-  const { entregaId, separado } = args;
+  const { entregaId, separado, atorUserId, atorPapel } = args;
   const entrega = await carregarEntrega(entregaId);
+
+  if (atorPapel === 'motorista') {
+    exigirViagemDoMotorista(entrega, atorUserId);
+    exigirViagemDeHoje(entrega);
+  }
 
   if (entrega.status !== 'agendada') {
     throw new TransicaoError(
@@ -1681,6 +1691,39 @@ export async function definirSeparacaoEntrega(args: {
 // ---------------------------------------------------------------------------
 // Apoio
 // ---------------------------------------------------------------------------
+
+/** O motorista só age nas viagens atribuídas a ele. */
+function exigirViagemDoMotorista(
+  entrega: Entrega,
+  atorUserId: string | undefined,
+): void {
+  if (!atorUserId || entrega.motoristaId !== atorUserId) {
+    throw new TransicaoError(
+      403,
+      'sem_permissao',
+      'Você não é o motorista desta entrega.',
+    );
+  }
+}
+
+/**
+ * Trava do app do motorista: separar e pôr em rota só a viagem de HOJE. Data
+ * local, como em /minhas-entregas — `toISOString()` viraria UTC e adiantaria
+ * o dia à noite.
+ */
+function exigirViagemDeHoje(entrega: Entrega): void {
+  const d = new Date();
+  const hoje = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+    d.getDate(),
+  ).padStart(2, '0')}`;
+  if (entrega.dataAgendada !== hoje) {
+    throw new TransicaoError(
+      422,
+      'fora_do_dia',
+      'Pelo app do motorista só dá para separar e pôr em rota as viagens de hoje.',
+    );
+  }
+}
 
 /**
  * Ajusta o status do PEDIDO conforme suas entregas.

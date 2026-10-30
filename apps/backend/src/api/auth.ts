@@ -133,13 +133,20 @@ export const autenticar: preHandlerHookHandler = async (
   // qual é a próxima parada é o motorista que acabou de descarregar. A regra
   // fina — só as PRÓPRIAS viagens, só agendada/em_rota — está em
   // definirProximaEntrega, no serviço, junto da de transicionarEntrega.
+  //
+  // O "dar OK" na separação da VIAGEM inteira (PATCH /entregas/:id/separacao)
+  // também entra (30/10/2026): o motorista confere a carga e põe em rota pelo
+  // app. A regra fina — só as próprias viagens, só as de hoje — está em
+  // definirSeparacaoEntrega. O ajuste item a item segue fora: é do almoxarifado.
   const ehEscrita = !METODOS_LEITURA.has(req.method);
   const ehEntregaMotorista =
     papel === 'motorista' &&
-    req.method === 'POST' &&
-    /^\/api\/(?:pedidos|entregas)\/[^/]+\/(?:transicao|proxima)(?:\?.*)?$/.test(
-      req.url,
-    );
+    ((req.method === 'POST' &&
+      /^\/api\/(?:pedidos|entregas)\/[^/]+\/(?:transicao|proxima)(?:\?.*)?$/.test(
+        req.url,
+      )) ||
+      (req.method === 'PATCH' &&
+        /^\/api\/entregas\/[^/]+\/separacao(?:\?.*)?$/.test(req.url)));
   if (
     ehEscrita &&
     papel !== 'logistica' &&

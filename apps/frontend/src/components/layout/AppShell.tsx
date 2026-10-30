@@ -5,6 +5,7 @@ import React, { useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
+import { BarraInferior } from './BarraInferior';
 
 export function AppShell(): React.ReactElement {
   const { pathname } = useLocation();
@@ -20,7 +21,7 @@ export function AppShell(): React.ReactElement {
   const alternarColapso = () => setCollapsed((v) => !v);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-creme">
+    <div className="flex h-[100dvh] overflow-hidden bg-creme">
       {/* Sidebar desktop */}
       <div
         className={`hidden shrink-0 transition-[width] duration-300 lg:flex ${
@@ -62,6 +63,8 @@ export function AppShell(): React.ReactElement {
         <main className="min-h-0 flex-1 overflow-hidden">
           <Outlet />
         </main>
+        <BarraInferior onOpenMenu={() => setDrawerOpen(true)} />
+
       </div>
     </div>
   );

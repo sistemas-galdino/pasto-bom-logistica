@@ -46,6 +46,27 @@ export function emToneladas(kg: number): string {
   });
 }
 
+// Partículas que ficam minúsculas no meio do nome ("Maria da Silva").
+const PARTICULAS_NOME = new Set(['da', 'das', 'de', 'di', 'do', 'dos', 'e']);
+
+/**
+ * Nome de pessoa em maiúsculas/minúsculas: "LIOMAR MUNIZ VILELA FILHO" →
+ * "Liomar Muniz Vilela Filho". Só apresentação: o cadastro segue como está.
+ * Nome que já vem misto ("Marco Justino") passa pelo mesmo caminho e sai igual.
+ */
+export function nomeProprio(nome: string): string {
+  return nome
+    .trim()
+    .toLocaleLowerCase('pt-BR')
+    .split(/\s+/)
+    .map((p, i) =>
+      i > 0 && PARTICULAS_NOME.has(p)
+        ? p
+        : p.charAt(0).toLocaleUpperCase('pt-BR') + p.slice(1),
+    )
+    .join(' ');
+}
+
 /** Pluraliza "item"/"itens". */
 export function rotuloItens(n: number): string {
   return n === 1 ? '1 item' : `${n} itens`;

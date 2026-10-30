@@ -39,6 +39,9 @@ import {
   PieChart,
   Pie,
   Cell,
+  BarChart,
+  Bar,
+  LabelList,
 } from 'recharts';
 import {
   Package,
@@ -50,6 +53,7 @@ import {
   Users,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { nomeProprio } from '../lib/format';
 import { STATUS_META, STATUS_HEX } from '../components/status';
 import { StatCard } from '../components/StatCard';
 import {
@@ -61,13 +65,13 @@ import {
 // Estilo compartilhado do tooltip dos gráficos (paleta "Campo Claro").
 const TOOLTIP_CONTENT_STYLE: React.CSSProperties = {
   backgroundColor: '#FFFFFF',
-  border: '1px solid #E7DECB',
+  border: '1px solid #E3E8DF',
   borderRadius: 12,
-  color: '#23271F',
+  color: '#191C1D',
   boxShadow: '0 18px 50px -16px rgba(20,58,41,0.32)',
 };
-const TOOLTIP_LABEL_STYLE: React.CSSProperties = { color: '#6F6C5E' };
-const TOOLTIP_ITEM_STYLE: React.CSSProperties = { color: '#23271F' };
+const TOOLTIP_LABEL_STYLE: React.CSSProperties = { color: '#6C757D' };
+const TOOLTIP_ITEM_STYLE: React.CSSProperties = { color: '#191C1D' };
 
 // --- período ---------------------------------------------------------------
 
@@ -96,6 +100,23 @@ const ORDEM_STATUS: StatusEntrega[] = [
   'nao_realizado',
   'cancelada',
 ];
+
+/**
+ * Status que entram em "viagens por motorista", empilhados nesta ordem.
+ * Cancelada fica de fora: viagem desfeita antes de sair não é trabalho do
+ * motorista.
+ */
+const STATUS_POR_MOTORISTA = [
+  'entregue',
+  'nao_realizado',
+  'em_rota',
+  'agendada',
+] as const satisfies readonly StatusEntrega[];
+
+type LinhaMotorista = { nome: string; total: number } & Record<
+  (typeof STATUS_POR_MOTORISTA)[number],
+  number
+>;
 
 // --- datas -----------------------------------------------------------------
 
@@ -314,6 +335,54 @@ export function Dashboard(): React.ReactElement {
     })).filter((d) => d.valor > 0);
   }, [entregasNoPeriodo]);
 
+  /**
+   * Viagens do período por motorista, abertas por status, do que mais viajou
+   * para o que menos. Viagem sem motorista atribuído não entra nas barras —
+   * só no contador do rodapé do card, para não sumir em silêncio.
+   */
+  const { porMotorista, semMotorista } = useMemo(() => {
+    const linhas = new Map<string, LinhaMotorista>();
+    let semMotorista = 0;
+    for (const e of entregasNoPeriodo) {
+      if (e.encerraSaldo || e.status === 'cancelada') continue;
+      if (!e.motoristaId) {
+        semMotorista += 1;
+        continue;
+      }
+      let linha = linhas.get(e.motoristaId);
+      if (!linha) {
+        linha = {
+          nome: e.motoristaNome ? nomeProprio(e.motoristaNome) : 'Sem nome',
+          total: 0,
+          entregue: 0,
+          nao_realizado: 0,
+          em_rota: 0,
+          agendada: 0,
+        };
+        linhas.set(e.motoristaId, linha);
+      }
+      linha[e.status] += 1;
+      linha.total += 1;
+    }
+    return {
+      porMotorista: [...linhas.values()].sort(
+        (a, b) => b.total - a.total || a.nome.localeCompare(b.nome),
+      ),
+      semMotorista,
+    };
+  }, [entregasNoPeriodo]);
+
+  /**
+   * Largura da coluna de nomes pelo nome mais longo (~6,8px por caractere a
+   * 12px). Com largura fixa, o nome comprido era cortado na borda esquerda do
+   * card. O teto evita que um nome enorme esprema as barras; acima dele o
+   * Recharts quebra o nome em duas linhas.
+   */
+  const larguraNomes = useMemo(() => {
+    const maior = porMotorista.reduce((m, l) => Math.max(m, l.nome.length), 0);
+    return Math.min(200, Math.max(90, Math.ceil(maior * 6.8) + 12));
+  }, [porMotorista]);
+
   // --- estados de carga ----------------------------------------------------
 
   // Motoristas é acessório (o papel do usuário pode não ter leitura do
@@ -365,7 +434,7 @@ export function Dashboard(): React.ReactElement {
 
   return (
     <div className="scroll-suave h-full overflow-y-auto">
-      <div className="animate-sobe mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
+      <div className="animate-sobe w-full space-y-6 p-4 sm:p-6 lg:p-8">
         {/* --- AGORA --------------------------------------------------- */}
         <section className="space-y-3">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-pedra">
@@ -476,11 +545,11 @@ export function Dashboard(): React.ReactElement {
                 Entregas concluídas por {porMes ? 'mês' : 'dia'}
               </h3>
               <p className="mt-0.5 text-xs text-pedra">{rotuloPeriodo}</p>
-              <div className="mt-4 h-72">
+              <div className="mt-4 h-80 lg:h-96">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart
                     data={serie}
-                    margin={{ top: 8, right: 8, left: -16, bottom: 0 }}
+                    margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
                   >
                     <defs>
                       <linearGradient
@@ -492,49 +561,49 @@ export function Dashboard(): React.ReactElement {
                       >
                         <stop
                           offset="0%"
-                          stopColor="#199A3C"
+                          stopColor="#3A7D2E"
                           stopOpacity={0.35}
                         />
                         <stop
                           offset="100%"
-                          stopColor="#199A3C"
+                          stopColor="#3A7D2E"
                           stopOpacity={0}
                         />
                       </linearGradient>
                     </defs>
                     <CartesianGrid
-                      stroke="#E7DECB"
+                      stroke="#E3E8DF"
                       strokeDasharray="3 3"
                       vertical={false}
                     />
                     <XAxis
                       dataKey="label"
-                      stroke="#A8A293"
-                      tick={{ fill: '#6F6C5E', fontSize: 12 }}
+                      stroke="#A3ACA0"
+                      tick={{ fill: '#6C757D', fontSize: 12 }}
                       tickLine={false}
-                      axisLine={{ stroke: '#E7DECB' }}
+                      axisLine={{ stroke: '#E3E8DF' }}
                       interval="preserveStartEnd"
                       minTickGap={16}
                     />
                     <YAxis
                       allowDecimals={false}
-                      stroke="#A8A293"
-                      tick={{ fill: '#6F6C5E', fontSize: 12 }}
+                      stroke="#A3ACA0"
+                      tick={{ fill: '#6C757D', fontSize: 12 }}
                       tickLine={false}
                       axisLine={false}
-                      width={28}
+                      width={36}
                     />
                     <Tooltip
                       contentStyle={TOOLTIP_CONTENT_STYLE}
                       labelStyle={TOOLTIP_LABEL_STYLE}
                       itemStyle={TOOLTIP_ITEM_STYLE}
-                      cursor={{ stroke: '#A8A293', strokeWidth: 1 }}
+                      cursor={{ stroke: '#A3ACA0', strokeWidth: 1 }}
                     />
                     <Area
                       type="monotone"
                       dataKey="entregas"
                       name="Entregas"
-                      stroke="#176D2E"
+                      stroke="#1C4416"
                       strokeWidth={2}
                       fill="url(#gradEntregas)"
                     />
@@ -548,7 +617,7 @@ export function Dashboard(): React.ReactElement {
                 Status das viagens
               </h3>
               <p className="mt-0.5 text-xs text-pedra">{rotuloPeriodo}</p>
-              <div className="mt-4 h-72">
+              <div className="mt-4 h-80 lg:h-96">
                 {distribuicao.length === 0 ? (
                   <div className="flex h-full items-center justify-center text-sm text-pedra">
                     Nenhuma viagem no período.
@@ -560,8 +629,8 @@ export function Dashboard(): React.ReactElement {
                         data={distribuicao}
                         dataKey="valor"
                         nameKey="nome"
-                        innerRadius={60}
-                        outerRadius={90}
+                        innerRadius="58%"
+                        outerRadius="85%"
                         paddingAngle={2}
                         stroke="#FFFFFF"
                         strokeWidth={2}
@@ -581,6 +650,109 @@ export function Dashboard(): React.ReactElement {
               </div>
             </section>
           </div>
+
+          <section className="font-sans rounded-xl2 border border-linha bg-papel p-4 shadow-carta sm:p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="font-display text-base font-semibold text-mata-escuro">
+                  Viagens por motorista
+                </h3>
+                <p className="mt-0.5 text-xs text-pedra">
+                  {rotuloPeriodo} · sem as canceladas
+                </p>
+              </div>
+              <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-tinta-suave">
+                {STATUS_POR_MOTORISTA.map((s) => (
+                  <li key={s} className="flex items-center gap-1.5">
+                    <span
+                      className="h-2.5 w-2.5 rounded-sm"
+                      style={{ backgroundColor: STATUS_HEX[s] }}
+                    />
+                    {STATUS_META[s].rotulo}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            {porMotorista.length === 0 ? (
+              <div className="flex h-40 items-center justify-center text-sm text-pedra">
+                Nenhuma viagem com motorista no período.
+              </div>
+            ) : (
+              <div
+                className="mt-4"
+                style={{ height: Math.max(160, porMotorista.length * 44 + 32) }}
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={porMotorista}
+                    layout="vertical"
+                    margin={{ top: 0, right: 40, left: 0, bottom: 0 }}
+                    barCategoryGap={10}
+                  >
+                    <CartesianGrid
+                      stroke="#E3E8DF"
+                      strokeDasharray="3 3"
+                      horizontal={false}
+                    />
+                    <XAxis
+                      type="number"
+                      allowDecimals={false}
+                      tick={{ fill: '#6C757D', fontSize: 12 }}
+                      tickLine={false}
+                      axisLine={{ stroke: '#E3E8DF' }}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="nome"
+                      width={larguraNomes}
+                      tick={{ fill: '#191C1D', fontSize: 12, fontWeight: 600 }}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <Tooltip
+                      contentStyle={TOOLTIP_CONTENT_STYLE}
+                      labelStyle={TOOLTIP_LABEL_STYLE}
+                      itemStyle={TOOLTIP_ITEM_STYLE}
+                      cursor={{ fill: '#F1F5EF' }}
+                    />
+                    {STATUS_POR_MOTORISTA.map((s, i) => (
+                      <Bar
+                        key={s}
+                        dataKey={s}
+                        name={STATUS_META[s].rotulo}
+                        stackId="viagens"
+                        fill={STATUS_HEX[s]}
+                        radius={
+                          i === STATUS_POR_MOTORISTA.length - 1
+                            ? [0, 6, 6, 0]
+                            : 0
+                        }
+                      >
+                        {/* Total no fim da pilha: vai no último segmento, que
+                            termina onde a barra termina mesmo quando vale 0. */}
+                        {i === STATUS_POR_MOTORISTA.length - 1 && (
+                          <LabelList
+                            dataKey="total"
+                            position="right"
+                            fill="#191C1D"
+                            fontSize={12}
+                            fontWeight={700}
+                          />
+                        )}
+                      </Bar>
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+            {semMotorista > 0 && (
+              <p className="mt-2 text-xs text-pedra">
+                {semMotorista === 1
+                  ? '1 viagem ainda sem motorista atribuído.'
+                  : `${semMotorista} viagens ainda sem motorista atribuído.`}
+              </p>
+            )}
+          </section>
         </section>
       </div>
     </div>

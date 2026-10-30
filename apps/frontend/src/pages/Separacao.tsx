@@ -424,7 +424,7 @@ export default function Separacao(): React.ReactElement {
             </button>
           </div>
         ) : (
-          <div className="mx-auto max-w-[1200px] animate-sobe space-y-5 p-4 sm:p-6">
+          <div className="w-full animate-sobe space-y-5 p-4 sm:p-6 lg:p-8">
             {erro && (
               <div
                 role="alert"

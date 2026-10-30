@@ -325,7 +325,8 @@ export async function entregasRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // PATCH /entregas/:id/separacao — "dar OK" na viagem inteira.
-  // Escrita já restrita a logística + almoxarifado pelo write-gate global.
+  // Escrita: logística + almoxarifado pelo write-gate global, e o motorista por
+  // exceção explícita em auth.ts (a regra fina dele está no serviço).
   app.patch('/entregas/:id/separacao', async (req, reply) => {
     const { id } = req.params as { id: string };
     const parsed = separacaoSchema.safeParse(req.body);
@@ -341,6 +342,8 @@ export async function entregasRoutes(app: FastifyInstance): Promise<void> {
       const entrega = await definirSeparacaoEntrega({
         entregaId: id,
         separado: parsed.data.separado,
+        atorUserId: req.usuario?.id ?? undefined,
+        atorPapel: req.usuario?.papel,
       });
       return reply.send(entrega);
     } catch (err) {

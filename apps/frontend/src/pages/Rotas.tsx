@@ -132,7 +132,7 @@ function PainelEmRota(): React.ReactElement {
 
   return (
     <div className="h-full overflow-y-auto scroll-suave">
-      <div className="mx-auto max-w-7xl space-y-6 p-4 animate-sobe sm:p-6">
+      <div className="w-full space-y-6 p-4 animate-sobe sm:p-6 lg:p-8">
         {grupos.length === 0 ? (
           <p className="py-16 text-center text-sm text-tinta-suave">
             Nenhum pedido em rota no momento.

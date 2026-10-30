@@ -457,7 +457,7 @@ export default function Agendamento(): React.ReactElement {
             </button>
           </div>
         ) : (
-          <div className="mx-auto min-w-0 max-w-[1600px] space-y-4 p-4 animate-sobe sm:p-6">
+          <div className="w-full min-w-0 space-y-4 p-4 animate-sobe sm:p-6 lg:p-8">
             {/*
               Sem caminhão escolhido mostramos TUDO, não um convite a escolher.
               A Natália quer um caminhão por vez, mas quem abre a aba nem sempre

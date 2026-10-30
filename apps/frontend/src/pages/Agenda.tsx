@@ -186,7 +186,7 @@ export default function Agenda(): React.ReactElement {
             </button>
           </div>
         ) : (
-          <div className="mx-auto max-w-[1600px] space-y-4 p-4 animate-sobe sm:p-6">
+          <div className="w-full space-y-4 p-4 animate-sobe sm:p-6 lg:p-8">
             {/* Cadastrar rota de cidade é ação de logística; para os demais
                 papéis o componente inteiro devolve null (o invólucro junto) e
                 esta tela segue só leitura, como o cabeçalho do arquivo diz. */}
