@@ -244,7 +244,7 @@ export function EntregaDetalheModal({
           if (e.target === e.currentTarget) tentarFechar();
         }}
       >
-        <div className="max-h-[85vh] w-full max-w-md overflow-y-auto animate-sobe rounded-xl2 bg-papel p-5 shadow-flutua">
+        <div className="escala-cheia max-h-[85vh] w-full max-w-lg overflow-y-auto animate-sobe rounded-xl2 bg-papel p-5 shadow-flutua">
           <div className="mb-3 flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h2 className="font-display text-lg font-semibold leading-tight text-mata-escuro">

@@ -25,7 +25,7 @@
 // data — uma viagem antiga fora da conta faria o pedido reaparecer na fila com
 // saldo que ele não tem.
 
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Entrega, StatusEntrega } from '@pastobom/shared';
 import {
@@ -54,6 +54,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { nomeProprio } from '../lib/format';
+import { useEhCelular } from '../lib/tela';
 import { STATUS_META, STATUS_HEX } from '../components/status';
 import { StatCard } from '../components/StatCard';
 import {
@@ -378,10 +379,21 @@ export function Dashboard(): React.ReactElement {
    * card. O teto evita que um nome enorme esprema as barras; acima dele o
    * Recharts quebra o nome em duas linhas.
    */
+  // No celular a coluna de nomes espremia as barras: lá vai só o primeiro
+  // nome. O tooltip continua com o nome inteiro.
+  const celular = useEhCelular();
+  const rotuloMotorista = useCallback(
+    (nome: string) => (celular ? (nome.split(' ')[0] ?? nome) : nome),
+    [celular],
+  );
+
   const larguraNomes = useMemo(() => {
-    const maior = porMotorista.reduce((m, l) => Math.max(m, l.nome.length), 0);
+    const maior = porMotorista.reduce(
+      (m, l) => Math.max(m, rotuloMotorista(l.nome).length),
+      0,
+    );
     return Math.min(200, Math.max(90, Math.ceil(maior * 6.8) + 12));
-  }, [porMotorista]);
+  }, [porMotorista, rotuloMotorista]);
 
   // --- estados de carga ----------------------------------------------------
 
@@ -705,6 +717,7 @@ export function Dashboard(): React.ReactElement {
                       type="category"
                       dataKey="nome"
                       width={larguraNomes}
+                      tickFormatter={rotuloMotorista}
                       tick={{ fill: '#191C1D', fontSize: 12, fontWeight: 600 }}
                       tickLine={false}
                       axisLine={false}

@@ -16,9 +16,9 @@ import type { NavItem } from './navConfig';
 // próximo da lista ocupa a vaga.
 const ATALHOS_PREFERIDOS = [
   '/dashboard',
+  '/agenda',
   '/agendamento',
   '/entregas',
-  '/agenda',
   '/separacao',
   '/rotas',
 ];

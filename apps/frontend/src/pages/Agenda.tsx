@@ -37,10 +37,13 @@ import {
   VisaoSemana,
 } from '../components/agenda';
 import type { Visao } from '../components/agenda';
+import { ehCelular } from '../lib/tela';
 import { addDias, addMeses, hojeLocal, isoDeData } from '../lib/datas';
 
 export default function Agenda(): React.ReactElement {
-  const [visao, setVisao] = useState<Visao>('semana');
+  // No app do celular a agenda abre sempre no Dia: a semana em sete colunas
+  // não cabe na tela. No computador segue a Semana.
+  const [visao, setVisao] = useState<Visao>(() => (ehCelular() ? 'dia' : 'semana'));
   const [ancora, setAncora] = useState<Date>(() => hojeLocal());
 
   const ancoraIso = isoDeData(ancora);
