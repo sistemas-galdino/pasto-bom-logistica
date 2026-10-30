@@ -1,9 +1,9 @@
 // Barra de navegação inferior, no formato de aplicativo — SÓ no celular
 // (abaixo de md). No desktop o menu lateral segue sendo a única navegação.
 //
-// Mostra até quatro atalhos e um "Menu" que abre a gaveta com o menu completo:
-// o que não cabe aqui continua a um toque de distância, com o mesmo filtro de
-// papel da Sidebar.
+// Ordem fixa pedida pela Natália (30/10/2026): Menu primeiro, depois
+// Dashboard, Agenda e Quadro de pedidos. Todo o resto mora no Menu, que abre a
+// gaveta com o menu completo e o mesmo filtro de papel da Sidebar.
 
 import React from 'react';
 import { NavLink } from 'react-router-dom';
@@ -12,17 +12,9 @@ import { useAuth } from '../../auth/AuthProvider';
 import { secoesVisiveis } from './Sidebar';
 import type { NavItem } from './navConfig';
 
-// Ordem de preferência dos atalhos. Os que o papel não vê são pulados e o
-// próximo da lista ocupa a vaga.
-const ATALHOS_PREFERIDOS = [
-  '/dashboard',
-  '/agenda',
-  '/agendamento',
-  '/entregas',
-  '/separacao',
-  '/rotas',
-];
-const MAX_ATALHOS = 4;
+// Só estes viram atalho. Um que o papel não vê simplesmente não aparece — a
+// vaga não é preenchida por outro, para a barra ser sempre a mesma.
+const ATALHOS = ['/dashboard', '/agenda', '/entregas'];
 
 interface BarraInferiorProps {
   onOpenMenu: () => void;
@@ -31,9 +23,9 @@ interface BarraInferiorProps {
 export function BarraInferior({ onOpenMenu }: BarraInferiorProps): React.ReactElement {
   const { papel } = useAuth();
   const itens = secoesVisiveis(papel).flatMap((s) => s.itens);
-  const atalhos = ATALHOS_PREFERIDOS.map((to) => itens.find((i) => i.to === to))
-    .filter((i): i is NavItem => i != null)
-    .slice(0, MAX_ATALHOS);
+  const atalhos = ATALHOS.map((to) => itens.find((i) => i.to === to)).filter(
+    (i): i is NavItem => i != null,
+  );
 
   return (
     <nav
@@ -41,6 +33,18 @@ export function BarraInferior({ onOpenMenu }: BarraInferiorProps): React.ReactEl
       className="shrink-0 border-t border-linha bg-papel pb-[env(safe-area-inset-bottom)] shadow-carta md:hidden"
     >
       <ul className="flex items-stretch justify-around">
+        <li className="flex-1">
+          <button
+            type="button"
+            onClick={onOpenMenu}
+            className="flex w-full flex-col items-center gap-1 px-1 pb-2 pt-2.5 text-[11px] font-semibold text-tinta-suave"
+          >
+            <span className="flex h-8 w-14 items-center justify-center rounded-full">
+              <Menu className="h-5 w-5" />
+            </span>
+            <span>Menu</span>
+          </button>
+        </li>
         {atalhos.map((item) => {
           const Icone = item.icone;
           return (
@@ -63,25 +67,17 @@ export function BarraInferior({ onOpenMenu }: BarraInferiorProps): React.ReactEl
                     >
                       <Icone className="h-5 w-5" />
                     </span>
-                    <span className="max-w-full truncate">{item.rotulo}</span>
+                    {/* Quebra em duas linhas em vez de cortar: "Quadro de
+                        pedidos" não cabe numa linha em tela de 360px. */}
+                    <span className="max-w-full text-center leading-tight">
+                      {item.rotulo}
+                    </span>
                   </>
                 )}
               </NavLink>
             </li>
           );
         })}
-        <li className="flex-1">
-          <button
-            type="button"
-            onClick={onOpenMenu}
-            className="flex w-full flex-col items-center gap-1 px-1 pb-2 pt-2.5 text-[11px] font-semibold text-tinta-suave"
-          >
-            <span className="flex h-8 w-14 items-center justify-center rounded-full">
-              <Menu className="h-5 w-5" />
-            </span>
-            <span>Menu</span>
-          </button>
-        </li>
       </ul>
     </nav>
   );
