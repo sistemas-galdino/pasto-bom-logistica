@@ -227,16 +227,16 @@ function Folha({
   return (
     <section className="folha mb-8 border border-tinta/30 p-5 text-tinta print:mb-0 print:border-0 print:p-0">
       <header className="flex items-baseline justify-between gap-3 border-b-2 border-tinta pb-1.5">
-        <h1 className="text-[15px] font-bold uppercase tracking-wide">
+        <h1 className="text-[0.9375rem] font-bold uppercase tracking-wide">
           Pasto Bom — Lista de separação
         </h1>
-        <span className="text-[13px] font-bold">
+        <span className="text-[0.8125rem] font-bold">
           {titulo}
           {entrega.periodo ? ` · ${PERIODO_ROTULO[entrega.periodo]}` : ''}
         </span>
       </header>
 
-      <dl className="mt-2 grid grid-cols-[auto_1fr_auto_1fr] gap-x-3 gap-y-1 text-[13px]">
+      <dl className="mt-2 grid grid-cols-[auto_1fr_auto_1fr] gap-x-3 gap-y-1 text-[0.8125rem]">
         <dt className="font-bold uppercase">Caminhão</dt>
         {/* Sem a placa: `Entrega` não a carrega, e buscá-la exigiria mexer no
             backend por um detalhe que o galpão não usa — lá o caminhão é
@@ -254,7 +254,7 @@ function Folha({
         <dd className="col-span-3">{local || '—'}</dd>
       </dl>
 
-      <table className="mt-3 w-full border-collapse text-[13px]">
+      <table className="mt-3 w-full border-collapse text-[0.8125rem]">
         <thead>
           <tr className="border-y-2 border-tinta text-left">
             <th className="w-[70px] py-1 text-right font-bold uppercase">
@@ -276,7 +276,7 @@ function Folha({
           ) : (
             entrega.itens.map((item) => (
               <tr key={item.id} className="border-b border-tinta/30">
-                <td className="py-1.5 text-right align-top text-[16px] font-bold">
+                <td className="py-1.5 text-right align-top text-[1rem] font-bold">
                   {formatarQtd(item.qtd)}
                 </td>
                 <td className="break-words py-1.5 pl-3 align-top">
@@ -293,7 +293,7 @@ function Folha({
         </tbody>
       </table>
 
-      <p className="mt-2 text-[13px]">
+      <p className="mt-2 text-[0.8125rem]">
         <strong>Total:</strong>{' '}
         {entrega.pesoTotalKg === null
           ? 'peso pendente'
@@ -304,7 +304,7 @@ function Folha({
           : `${entrega.itens.length} itens`}
       </p>
 
-      <footer className="mt-5 flex items-end justify-between gap-4 text-[12px]">
+      <footer className="mt-5 flex items-end justify-between gap-4 text-[0.75rem]">
         <span className="flex-1">
           Separado por: <span className="inline-block w-40 border-b border-tinta" />
         </span>

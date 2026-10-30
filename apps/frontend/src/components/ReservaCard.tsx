@@ -62,7 +62,7 @@ export function ReservaCard({
   return (
     <article className="animate-sobe w-full rounded-xl border border-dashed border-pedra bg-creme-50 p-3.5 transition duration-200 hover:-translate-y-0.5 hover:shadow-carta">
       <div className="flex items-start justify-between gap-2">
-        <h3 className="flex min-w-0 items-center gap-1.5 font-display text-[15px] font-semibold leading-tight text-tinta">
+        <h3 className="flex min-w-0 items-center gap-1.5 font-display text-[0.9375rem] font-semibold leading-tight text-tinta">
           {reserva.bloqueiaCaminhao && (
             <Lock
               className="h-3.5 w-3.5 shrink-0 text-terra-escuro"

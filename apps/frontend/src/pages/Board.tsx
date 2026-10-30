@@ -1302,7 +1302,7 @@ function Coluna({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className={`h-2.5 w-2.5 rounded-full ${faixa}`} />
-            <h2 className="font-display text-[15px] font-semibold text-mata-escuro">
+            <h2 className="font-display text-[0.9375rem] font-semibold text-mata-escuro">
               {rotulo}
             </h2>
           </div>

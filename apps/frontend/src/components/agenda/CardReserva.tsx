@@ -36,7 +36,7 @@ export function CardReserva({
       <div className="flex items-start justify-between gap-2">
         <h4
           className={`flex min-w-0 items-center gap-1.5 font-display font-semibold leading-tight text-tinta ${
-            compacto ? 'text-xs' : 'text-[15px]'
+            compacto ? 'text-xs' : 'text-[0.9375rem]'
           }`}
         >
           {reserva.bloqueiaCaminhao && (

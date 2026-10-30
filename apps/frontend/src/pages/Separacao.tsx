@@ -629,7 +629,7 @@ function CartaoSeparacao({
       {/* Cabeçalho */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="truncate font-display text-[15px] font-semibold leading-tight text-tinta">
+          <h3 className="truncate font-display text-[0.9375rem] font-semibold leading-tight text-tinta">
             {pedido.clienteNome || pedido.clienteCodigo || 'Cliente'}
           </h3>
           <p className="mt-0.5 flex items-center gap-1 text-xs text-tinta-suave">

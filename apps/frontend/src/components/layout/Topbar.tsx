@@ -33,7 +33,7 @@ export function Topbar({ onOpenMenu }: TopbarProps): React.ReactElement {
           <Menu className="h-5 w-5" />
         </button>
         <div className="leading-tight">
-          <h1 className="text-xl font-extrabold tracking-tight text-tinta sm:text-[28px]">
+          <h1 className="text-xl font-extrabold tracking-tight text-tinta sm:text-[1.75rem]">
             {meta.titulo}
           </h1>
           <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-tinta-suave">

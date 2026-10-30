@@ -92,7 +92,7 @@ export function EntregaCard({
   return (
     <article className="animate-sobe rounded-xl border border-linha bg-papel p-3.5 shadow-carta transition duration-200 hover:-translate-y-0.5 hover:shadow-flutua">
       <div className="flex items-start justify-between gap-2">
-        <h3 className="font-display text-[15px] font-semibold leading-tight text-tinta">
+        <h3 className="font-display text-[0.9375rem] font-semibold leading-tight text-tinta">
           {entrega.clienteNome || entrega.clienteCodigo || 'Cliente'}
         </h3>
         <TagPedido numero={entrega.orixNumero} parcial={entrega.pedidoParcial} />

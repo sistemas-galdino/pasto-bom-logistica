@@ -10,6 +10,16 @@
     text-rendering: optimizeLegibility;
   }
 
+  /* Escala do computador: em 100% de zoom o texto ficava grande demais (a
+     Natália usava o navegador em 80%). Tudo que é em rem — fontes, espaços,
+     larguras do Tailwind — encolhe junto, como o zoom do navegador faria.
+     Só a partir do `lg`: no celular o texto segue no tamanho de leitura. */
+  @media screen and (min-width: 1024px) {
+    html {
+      font-size: 80%;
+    }
+  }
+
   html,
   body,
   #root {
