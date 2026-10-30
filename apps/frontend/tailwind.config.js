@@ -16,14 +16,20 @@ export default {
       //   folha=agendada · trigo=em rota · mata=entregue · terra=cancelada.
       // Por isso cada um precisa continuar distinguível dos outros: mata é o
       // verde ESCURO do guia (e não o principal) para se separar da folha.
+      // CONTRASTE (30/10/2026): em monitor de mesa os cinzas do guia sumiam —
+      // texto de apoio, bordas e o fundo quase igual ao branco dos cartões.
+      // Os neutros desceram um tom (tinta-suave e pedra viraram o "texto
+      // secundário" e o "cinza do texto" do guia), e o fundo ganhou verde
+      // suficiente para separar os cartões. Cancelada (terra) clareou para não
+      // virar a mesma cor de pendente (pedra).
       colors: {
         // Fundos neutros levemente esverdeados
-        creme: { DEFAULT: '#F8F9FA', 50: '#FBFCFA', 100: '#F1F5EF' },
+        creme: { DEFAULT: '#EEF2EB', 50: '#F7F9F5', 100: '#E6ECE2' },
         papel: '#FFFFFF',
         // Tinta (texto)
-        tinta: { DEFAULT: '#191C1D', suave: '#6C757D' },
-        linha: '#E3E8DF',
-        pedra: '#A3ACA0',
+        tinta: { DEFAULT: '#191C1D', suave: '#4A554A' },
+        linha: '#CDD6C8',
+        pedra: '#6B7568',
         // Verdes da marca (mata = verde escuro; folha = verde médio)
         mata: { DEFAULT: '#1C4416', escuro: '#0F2E1E', claro: '#D6EDD3' },
         folha: { DEFAULT: '#3A7D2E', claro: '#D8F3DC' },
@@ -34,7 +40,7 @@ export default {
         // Amarelo sol
         trigo: { DEFAULT: '#E8B800', claro: '#FBF3D6', escuro: '#9A7A00' },
         // Cancelada: o cinza de "bloqueado" do guia
-        terra: { DEFAULT: '#6C757D', claro: '#EDEDED', escuro: '#5A5A5A' },
+        terra: { DEFAULT: '#9AA1A6', claro: '#EDEDED', escuro: '#5A5A5A' },
         // Alerta: entrega NÃO REALIZADA. Único vermelho da paleta.
         brasa: { DEFAULT: '#BA1A1A', claro: '#F7E3E1', escuro: '#9A3B32' },
       },

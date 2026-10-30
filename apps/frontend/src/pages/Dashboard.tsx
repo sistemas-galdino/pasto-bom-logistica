@@ -66,12 +66,12 @@ import {
 // Estilo compartilhado do tooltip dos gráficos (paleta "Campo Claro").
 const TOOLTIP_CONTENT_STYLE: React.CSSProperties = {
   backgroundColor: '#FFFFFF',
-  border: '1px solid #E3E8DF',
+  border: '1px solid #CDD6C8',
   borderRadius: 12,
   color: '#191C1D',
   boxShadow: '0 18px 50px -16px rgba(20,58,41,0.32)',
 };
-const TOOLTIP_LABEL_STYLE: React.CSSProperties = { color: '#6C757D' };
+const TOOLTIP_LABEL_STYLE: React.CSSProperties = { color: '#4A554A' };
 const TOOLTIP_ITEM_STYLE: React.CSSProperties = { color: '#191C1D' };
 
 // --- período ---------------------------------------------------------------
@@ -584,23 +584,23 @@ export function Dashboard(): React.ReactElement {
                       </linearGradient>
                     </defs>
                     <CartesianGrid
-                      stroke="#E3E8DF"
+                      stroke="#CDD6C8"
                       strokeDasharray="3 3"
                       vertical={false}
                     />
                     <XAxis
                       dataKey="label"
-                      stroke="#A3ACA0"
-                      tick={{ fill: '#6C757D', fontSize: 12 }}
+                      stroke="#6B7568"
+                      tick={{ fill: '#4A554A', fontSize: 12 }}
                       tickLine={false}
-                      axisLine={{ stroke: '#E3E8DF' }}
+                      axisLine={{ stroke: '#CDD6C8' }}
                       interval="preserveStartEnd"
                       minTickGap={16}
                     />
                     <YAxis
                       allowDecimals={false}
-                      stroke="#A3ACA0"
-                      tick={{ fill: '#6C757D', fontSize: 12 }}
+                      stroke="#6B7568"
+                      tick={{ fill: '#4A554A', fontSize: 12 }}
                       tickLine={false}
                       axisLine={false}
                       width={36}
@@ -609,7 +609,7 @@ export function Dashboard(): React.ReactElement {
                       contentStyle={TOOLTIP_CONTENT_STYLE}
                       labelStyle={TOOLTIP_LABEL_STYLE}
                       itemStyle={TOOLTIP_ITEM_STYLE}
-                      cursor={{ stroke: '#A3ACA0', strokeWidth: 1 }}
+                      cursor={{ stroke: '#6B7568', strokeWidth: 1 }}
                     />
                     <Area
                       type="monotone"
@@ -702,16 +702,16 @@ export function Dashboard(): React.ReactElement {
                     barCategoryGap={10}
                   >
                     <CartesianGrid
-                      stroke="#E3E8DF"
+                      stroke="#CDD6C8"
                       strokeDasharray="3 3"
                       horizontal={false}
                     />
                     <XAxis
                       type="number"
                       allowDecimals={false}
-                      tick={{ fill: '#6C757D', fontSize: 12 }}
+                      tick={{ fill: '#4A554A', fontSize: 12 }}
                       tickLine={false}
-                      axisLine={{ stroke: '#E3E8DF' }}
+                      axisLine={{ stroke: '#CDD6C8' }}
                     />
                     <YAxis
                       type="category"
