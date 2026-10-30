@@ -18,6 +18,13 @@
     html {
       font-size: 80%;
     }
+
+    /* O menu lateral fica FORA da escala (pedido da Natália, 30/10): volta ao
+       tamanho de 16px desfazendo os 80% (1 / 0,8 = 1,25). `zoom` e não
+       transform, porque ele também devolve a largura ao layout. */
+    .escala-cheia {
+      zoom: 1.25;
+    }
   }
 
   html,

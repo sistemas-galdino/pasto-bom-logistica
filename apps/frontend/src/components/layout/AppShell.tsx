@@ -24,8 +24,8 @@ export function AppShell(): React.ReactElement {
     <div className="flex h-[100dvh] overflow-hidden bg-creme">
       {/* Sidebar desktop */}
       <div
-        className={`hidden shrink-0 transition-[width] duration-300 lg:flex ${
-          collapsed ? 'w-[76px]' : 'w-64'
+        className={`escala-cheia hidden shrink-0 transition-[width] duration-300 lg:flex ${
+          collapsed ? 'w-[4.75rem]' : 'w-64'
         }`}
       >
         <Sidebar
