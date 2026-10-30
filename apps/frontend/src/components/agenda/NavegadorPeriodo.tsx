@@ -36,7 +36,7 @@ export function NavegadorPeriodo({
   onVisao,
 }: NavegadorPeriodoProps): React.ReactElement {
   const abaCls = (ativo: boolean) =>
-    `rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+    `rounded-lg px-3 py-1.5 text-xs lg:text-[11px] font-semibold transition ${
       ativo
         ? 'bg-mata text-creme-50 shadow-sm'
         : 'border border-linha bg-papel text-tinta-suave hover:border-mata/30 hover:text-mata'
@@ -60,7 +60,7 @@ export function NavegadorPeriodo({
           <button
             type="button"
             onClick={onHoje}
-            className="rounded-lg border border-linha bg-papel px-3 py-1.5 text-xs font-semibold text-tinta-suave transition hover:border-mata/30 hover:text-mata"
+            className="rounded-lg border border-linha bg-papel px-3 py-1.5 text-xs lg:text-[11px] font-semibold text-tinta-suave transition hover:border-mata/30 hover:text-mata"
           >
             Hoje
           </button>
@@ -87,7 +87,7 @@ export function NavegadorPeriodo({
               }`}
           </span>
           {atualizando && (
-            <span className="text-xs text-pedra">atualizando…</span>
+            <span className="text-xs lg:text-[11px] text-pedra">atualizando…</span>
           )}
         </div>
       </div>

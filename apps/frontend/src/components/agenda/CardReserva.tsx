@@ -36,7 +36,7 @@ export function CardReserva({
       <div className="flex items-start justify-between gap-2">
         <h4
           className={`flex min-w-0 items-center gap-1.5 font-display font-semibold leading-tight text-tinta ${
-            compacto ? 'text-xs' : 'text-[0.9375rem]'
+            compacto ? 'text-xs lg:text-[11px]' : 'text-[0.9375rem] lg:text-[13px]'
           }`}
         >
           {reserva.bloqueiaCaminhao && (
@@ -55,7 +55,7 @@ export function CardReserva({
       {reserva.motoristaNome && (
         <p
           className={`mt-1 flex items-center gap-1 font-medium text-tinta-suave ${
-            compacto ? 'text-[11px]' : 'text-xs'
+            compacto ? 'text-[11px]' : 'text-xs lg:text-[11px]'
           }`}
         >
           <User
@@ -69,7 +69,7 @@ export function CardReserva({
       {destino && (
         <p
           className={`mt-0.5 flex items-center gap-1 text-tinta-suave ${
-            compacto ? 'text-[11px]' : 'text-xs'
+            compacto ? 'text-[11px]' : 'text-xs lg:text-[11px]'
           }`}
         >
           <MapPin
@@ -81,14 +81,14 @@ export function CardReserva({
       )}
 
       {!compacto && reserva.produtos && reserva.produtos.trim() !== '' && (
-        <p className="mt-1 line-clamp-2 text-xs text-tinta-suave">
+        <p className="mt-1 line-clamp-2 text-xs lg:text-[11px] text-tinta-suave">
           {reserva.produtos}
         </p>
       )}
 
       <div
         className={`mt-2 flex items-center justify-between gap-2 border-t border-linha/70 pt-2 ${
-          compacto ? 'text-[11px]' : 'text-xs'
+          compacto ? 'text-[11px]' : 'text-xs lg:text-[11px]'
         }`}
       >
         <span className="flex min-w-0 items-center gap-1 text-tinta-suave">

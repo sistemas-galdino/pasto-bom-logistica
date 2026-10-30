@@ -116,7 +116,7 @@ export function VisaoMes({
               >
                 <div className="flex items-center justify-between">
                   <span
-                    className={`text-xs font-semibold ${
+                    className={`text-xs lg:text-[11px] font-semibold ${
                       foraDoMes
                         ? 'text-pedra'
                         : ehHoje
@@ -305,7 +305,7 @@ export function VisaoSemana({
           <div key={periodo}>
             <div className="mb-2 flex items-center gap-2">
               <span
-                className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                className={`inline-flex rounded-full px-2.5 py-0.5 text-xs lg:text-[11px] font-bold ${
                   periodo === 'manha'
                     ? 'bg-folha-claro text-mata'
                     : 'bg-trigo-claro text-trigo-escuro'

@@ -180,7 +180,7 @@ export default function Agenda(): React.ReactElement {
             <button
               type="button"
               onClick={() => void agendaQuery.refetch()}
-              className="rounded-lg border border-linha bg-papel px-3 py-1.5 text-xs font-semibold text-tinta-suave hover:border-mata/30 hover:text-mata"
+              className="rounded-lg border border-linha bg-papel px-3 py-1.5 text-xs lg:text-[11px] font-semibold text-tinta-suave hover:border-mata/30 hover:text-mata"
             >
               Tentar novamente
             </button>

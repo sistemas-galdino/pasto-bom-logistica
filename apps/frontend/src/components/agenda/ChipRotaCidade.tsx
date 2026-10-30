@@ -38,7 +38,7 @@ export function ChipRotaCidade({
     <span
       title={title ?? `Rota de cidade: ${cidade}`}
       className={`inline-flex max-w-full items-center gap-1 rounded-full border border-limao/50 bg-limao-claro font-semibold text-limao-escuro ${
-        compacto ? 'px-1.5 py-0.5 text-[10px]' : 'px-2.5 py-1 text-xs'
+        compacto ? 'px-1.5 py-0.5 text-[10px]' : 'px-2.5 py-1 text-xs lg:text-[11px]'
       }`}
     >
       <MapPin
@@ -80,7 +80,7 @@ export function FaixaRotasCidade({
         <span
           title={restantes.map((r) => r.cidade).join(', ')}
           className={`rounded-full border border-limao/40 bg-limao-claro font-semibold text-limao-escuro ${
-            compacto ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-1 text-xs'
+            compacto ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-1 text-xs lg:text-[11px]'
           }`}
         >
           +{restantes.length}

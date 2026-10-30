@@ -58,7 +58,7 @@ export function CardEntrega({
       <div className="flex items-start justify-between gap-2">
         <h4
           className={`flex min-w-0 items-center gap-1.5 font-display font-semibold leading-tight text-tinta ${
-            compacto ? 'text-xs' : 'text-[0.9375rem]'
+            compacto ? 'text-xs lg:text-[11px]' : 'text-[0.9375rem] lg:text-[13px]'
           }`}
         >
           {/* No cartão compacto (mês/semana) não cabe a pílula do status, então
@@ -100,7 +100,7 @@ export function CardEntrega({
 
       <p
         className={`mt-1 flex items-center gap-1 font-medium text-tinta-suave ${
-          compacto ? 'text-[11px]' : 'text-xs'
+          compacto ? 'text-[11px]' : 'text-xs lg:text-[11px]'
         }`}
       >
         <User className="h-3.5 w-3.5 shrink-0 text-pedra" aria-hidden="true" />
@@ -111,7 +111,7 @@ export function CardEntrega({
 
       <p
         className={`mt-0.5 flex items-center gap-1 text-tinta-suave ${
-          compacto ? 'text-[11px]' : 'text-xs'
+          compacto ? 'text-[11px]' : 'text-xs lg:text-[11px]'
         }`}
       >
         <MapPin
@@ -123,7 +123,7 @@ export function CardEntrega({
 
       <div
         className={`mt-2 flex items-center justify-between gap-2 border-t border-linha/70 pt-2 ${
-          compacto ? 'text-[11px]' : 'text-xs'
+          compacto ? 'text-[11px]' : 'text-xs lg:text-[11px]'
         }`}
       >
         <span className="flex min-w-0 items-center gap-1 text-tinta-suave">

@@ -27,7 +27,7 @@ export function Legenda(): React.ReactElement {
       {itens.map(({ status }) => (
         <span
           key={status}
-          className="flex items-center gap-1.5 text-xs text-tinta-suave"
+          className="flex items-center gap-1.5 text-xs lg:text-[11px] text-tinta-suave"
         >
           <span
             className={`h-2.5 w-2.5 rounded-full ${STATUS_META[status].faixa}`}
@@ -38,7 +38,7 @@ export function Legenda(): React.ReactElement {
       ))}
       {/* A reserva não é um status de entrega — é o caminhão ocupado por outra
           coisa. Entra na legenda porque o tracejado do card precisa de nome. */}
-      <span className="flex items-center gap-1.5 text-xs text-tinta-suave">
+      <span className="flex items-center gap-1.5 text-xs lg:text-[11px] text-tinta-suave">
         <span
           className="h-2.5 w-2.5 rounded-full border border-dashed border-pedra"
           aria-hidden="true"

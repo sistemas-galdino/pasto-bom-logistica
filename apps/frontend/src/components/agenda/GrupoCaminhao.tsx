@@ -65,7 +65,7 @@ export function GrupoCaminhao({
             />
             <span
               className={`font-semibold text-trigo-escuro ${
-                compacto ? 'text-[11px]' : 'text-xs'
+                compacto ? 'text-[11px]' : 'text-xs lg:text-[11px]'
               }`}
             >
               {semCaminhao ? 'Sem caminhão' : grupo.caminhaoNome}
@@ -148,14 +148,14 @@ export function BarraOcupacao({
       <div className="flex items-baseline justify-between gap-2">
         <span
           className={`truncate font-semibold text-tinta ${
-            compacto ? 'text-[11px]' : 'text-xs'
+            compacto ? 'text-[11px]' : 'text-xs lg:text-[11px]'
           }`}
         >
           {ocupacao.caminhaoNome}
         </span>
         <span
           className={`shrink-0 font-semibold ${
-            compacto ? 'text-[11px]' : 'text-xs'
+            compacto ? 'text-[11px]' : 'text-xs lg:text-[11px]'
           } ${
             capacidade.nivel === 'excedido'
               ? 'text-terra-escuro'

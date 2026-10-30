@@ -46,7 +46,7 @@ export function AcaoRotasCidade({
       <button
         type="button"
         onClick={() => setAberto(true)}
-        className="flex items-center gap-1.5 rounded-full border border-linha bg-papel px-3 py-1.5 text-xs font-semibold text-tinta-suave transition hover:border-limao hover:text-limao-escuro"
+        className="flex items-center gap-1.5 rounded-full border border-linha bg-papel px-3 py-1.5 text-xs lg:text-[11px] font-semibold text-tinta-suave transition hover:border-limao hover:text-limao-escuro"
       >
         <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
         Rotas de cidade

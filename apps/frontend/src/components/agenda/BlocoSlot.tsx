@@ -64,7 +64,7 @@ export function BlocoSlot({
           <h3 className="font-display text-base font-semibold text-mata-escuro">
             {PERIODO_ROTULO[periodo]}
           </h3>
-          <span className="text-xs text-tinta-suave">
+          <span className="text-xs lg:text-[11px] text-tinta-suave">
             {entregas.length === 1
               ? '1 entrega'
               : `${entregas.length} entregas`}

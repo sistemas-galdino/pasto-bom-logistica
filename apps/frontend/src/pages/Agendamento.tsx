@@ -451,7 +451,7 @@ export default function Agendamento(): React.ReactElement {
             <button
               type="button"
               onClick={() => void agendaQuery.refetch()}
-              className="rounded-lg border border-linha bg-papel px-3 py-1.5 text-xs font-semibold text-tinta-suave hover:border-mata/30 hover:text-mata"
+              className="rounded-lg border border-linha bg-papel px-3 py-1.5 text-xs lg:text-[11px] font-semibold text-tinta-suave hover:border-mata/30 hover:text-mata"
             >
               Tentar novamente
             </button>
@@ -513,7 +513,7 @@ export default function Agendamento(): React.ReactElement {
                       setErroReserva(null);
                       setReservando({ data: ancoraIso });
                     }}
-                    className="flex items-center gap-1.5 rounded-full border border-linha bg-papel px-3 py-1.5 text-xs font-semibold text-tinta-suave transition hover:border-mata/30 hover:text-mata"
+                    className="flex items-center gap-1.5 rounded-full border border-linha bg-papel px-3 py-1.5 text-xs lg:text-[11px] font-semibold text-tinta-suave transition hover:border-mata/30 hover:text-mata"
                   >
                     <CalendarPlus className="h-3.5 w-3.5" aria-hidden="true" />
                     Reservar caminhão
@@ -528,7 +528,7 @@ export default function Agendamento(): React.ReactElement {
               alguém olha a semana passada, não vê o que já foi entregue e
               conclui que "faltou entrega no caminhão".
             */}
-            <p className="flex items-start gap-2 text-xs text-pedra">
+            <p className="flex items-start gap-2 text-xs lg:text-[11px] text-pedra">
               <Info
                 className="mt-0.5 h-3.5 w-3.5 shrink-0"
                 aria-hidden="true"
@@ -547,7 +547,7 @@ export default function Agendamento(): React.ReactElement {
             {/* Sem a faixa, o "+" da vaga some — e ele é a porta de entrada do
                 agendamento nesta tela. A linha diz para onde ela foi. */}
             {filtroAtivo === null && podeEscrever && (
-              <p className="flex items-start gap-2 text-xs text-tinta-suave">
+              <p className="flex items-start gap-2 text-xs lg:text-[11px] text-tinta-suave">
                 <Truck
                   className="mt-0.5 h-3.5 w-3.5 shrink-0 text-pedra"
                   aria-hidden="true"
