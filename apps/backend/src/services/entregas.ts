@@ -547,36 +547,55 @@ export interface FiltrosEntrega {
   naoRealizadoDesde?: string;
 }
 
+/** Tamanho da página da listagem: o teto do PostgREST por requisição. */
+const PAGINA_LISTA_ENTREGAS = 1000;
+
 /** Lista entregas aplicando os filtros; ordena pela data agendada. */
 export async function listarEntregas(
   filtros: FiltrosEntrega = {},
   comDestino = false,
 ): Promise<Entrega[]> {
-  let consulta = supabase.from('entregas').select(COLUNAS_ENTREGA);
+  // O builder do supabase-js é de uso único: cada página monta de novo.
+  const montarConsulta = () => {
+    let consulta = supabase.from('entregas').select(COLUNAS_ENTREGA);
 
-  if (filtros.status && filtros.status.length > 0) {
-    consulta = consulta.in('status', filtros.status);
+    if (filtros.status && filtros.status.length > 0) {
+      consulta = consulta.in('status', filtros.status);
+    }
+    if (filtros.de) consulta = consulta.gte('data_agendada', filtros.de);
+    if (filtros.ate) consulta = consulta.lte('data_agendada', filtros.ate);
+    if (filtros.motoristaId) {
+      consulta = consulta.eq('motorista_id', filtros.motoristaId);
+    }
+    if (filtros.pedidoId) consulta = consulta.eq('pedido_id', filtros.pedidoId);
+    return consulta;
+  };
+
+  // PAGINADO (03/11/2026), pelo mesmo motivo de GET /pedidos: o PostgREST
+  // devolve no máximo 1000 linhas e não avisa. Aqui o corte seria pior que
+  // sumir card — o Quadro e o Dashboard calculam o SALDO dos pedidos com TODAS
+  // as viagens, e viagem cortada faria pedido já entregue reaparecer na fila.
+  // Eram 535 em 03/11; o `id` desempata para a paginação ser estável.
+  let linhas: EntregaRow[] = [];
+  for (let pagina = 0; ; pagina += 1) {
+    const inicio = pagina * PAGINA_LISTA_ENTREGAS;
+    const { data, error } = await montarConsulta()
+      .order('data_agendada', { ascending: true })
+      .order('id', { ascending: true })
+      .range(inicio, inicio + PAGINA_LISTA_ENTREGAS - 1);
+
+    if (error) {
+      throw new TransicaoError(
+        500,
+        'erro_banco',
+        `Falha ao listar entregas: ${error.message}`,
+      );
+    }
+
+    const lote = (data ?? []) as unknown as EntregaRow[];
+    linhas.push(...lote);
+    if (lote.length < PAGINA_LISTA_ENTREGAS) break;
   }
-  if (filtros.de) consulta = consulta.gte('data_agendada', filtros.de);
-  if (filtros.ate) consulta = consulta.lte('data_agendada', filtros.ate);
-  if (filtros.motoristaId) {
-    consulta = consulta.eq('motorista_id', filtros.motoristaId);
-  }
-  if (filtros.pedidoId) consulta = consulta.eq('pedido_id', filtros.pedidoId);
-
-  const { data, error } = await consulta.order('data_agendada', {
-    ascending: true,
-  });
-
-  if (error) {
-    throw new TransicaoError(
-      500,
-      'erro_banco',
-      `Falha ao listar entregas: ${error.message}`,
-    );
-  }
-
-  let linhas = (data ?? []) as unknown as EntregaRow[];
 
   // O corte das não realizadas antigas é feito aqui (e não no SQL) porque só
   // vale para ESSE status: as demais colunas não têm janela.

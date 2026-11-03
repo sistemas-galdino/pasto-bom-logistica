@@ -171,6 +171,9 @@ function parseStatusOrix(raw: unknown): string[] | null {
  */
 const DIAS_HISTORICO_PADRAO = 180;
 
+/** Tamanho da página da listagem: o teto do PostgREST por requisição. */
+const PAGINA_LISTA = 1000;
+
 function dataMenosDias(dias: number): string {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() - dias);
@@ -386,16 +389,21 @@ export async function pedidosRoutes(app: FastifyInstance): Promise<void> {
     const query = req.query as Record<string, unknown>;
     const meus = query.meus === '1' || query.meus === 'true';
 
-    let consulta = supabase.from('pedidos').select(SELECT_LISTA);
+    const motoristaId = req.usuario?.id;
+    if (meus && !motoristaId) return reply.send([]); // sem usuário (ex.: ALLOW_NO_AUTH)
 
-    if (meus) {
-      // Rota do dia do motorista: só os PRÓPRIOS pedidos em rota.
-      const motoristaId = req.usuario?.id;
-      if (!motoristaId) return reply.send([]); // sem usuário (ex.: ALLOW_NO_AUTH)
-      consulta = consulta
-        .eq('motorista_id', motoristaId)
-        .eq('status_logistico', 'em_rota');
-    } else {
+    // O builder do supabase-js é de uso único: cada página monta a consulta de
+    // novo, com os mesmos filtros.
+    const montarConsulta = () => {
+      let consulta = supabase.from('pedidos').select(SELECT_LISTA);
+
+      if (meus) {
+        // Rota do dia do motorista: só os PRÓPRIOS pedidos em rota.
+        return consulta
+          .eq('motorista_id', motoristaId as string)
+          .eq('status_logistico', 'em_rota');
+      }
+
       const filtro = parseStatusQuery(query.status);
       consulta = consulta.in('status_logistico', filtro ?? NAO_FINALIZADOS);
 
@@ -409,7 +417,8 @@ export async function pedidosRoutes(app: FastifyInstance): Promise<void> {
       if (statusOrix) consulta = consulta.in('status_orix', statusOrix);
 
       // Sem período explícito: mantém TODOS os abertos e corta o histórico dos
-      // finalizados, para não bater no teto silencioso de 1000 linhas.
+      // finalizados — só para a lista não crescer sem fim; o teto de 1000
+      // linhas quem resolve é a paginação abaixo.
       if (!de && !ate) {
         const abertos = NAO_FINALIZADOS.join(',');
         consulta = consulta.or(
@@ -417,23 +426,38 @@ export async function pedidosRoutes(app: FastifyInstance): Promise<void> {
             `data_pedido.gte.${dataMenosDias(DIAS_HISTORICO_PADRAO)}`,
         );
       }
-    }
+      return consulta;
+    };
 
+    // PAGINADO (03/11/2026). O PostgREST devolve no máximo 1000 linhas e NÃO
+    // avisa: com 1015 pedidos no recorte, e a ordem sendo do mais antigo para o
+    // mais novo, os pedidos DO DIA eram exatamente os que ficavam de fora — o
+    // 76262 estava no banco e não aparecia no Quadro. O corte de 180 dias acima
+    // não bastava como proteção: ele só adia o teto.
+    //
     // Mais ANTIGAS primeiro: a fila de entrega é FIFO — quem espera há mais tempo
-    // aparece no topo (pedido do Johnny/Natália).
-    const { data, error } = await consulta.order('data_pedido', {
-      ascending: true,
-      nullsFirst: false,
-    });
+    // aparece no topo (pedido do Johnny/Natália). O `id` desempata para a
+    // paginação ser estável entre as páginas.
+    const linhas: PedidoRowLista[] = [];
+    for (let pagina = 0; ; pagina += 1) {
+      const inicio = pagina * PAGINA_LISTA;
+      const { data, error } = await montarConsulta()
+        .order('data_pedido', { ascending: true, nullsFirst: false })
+        .order('id', { ascending: true })
+        .range(inicio, inicio + PAGINA_LISTA - 1);
 
-    if (error) {
-      log.error(`[GET /pedidos] erro: ${error.message}`);
-      return reply
-        .code(500)
-        .send({ error: 'erro_banco', message: error.message });
+      if (error) {
+        log.error(`[GET /pedidos] erro: ${error.message}`);
+        return reply
+          .code(500)
+          .send({ error: 'erro_banco', message: error.message });
+      }
+
+      const lote = (data ?? []) as unknown as PedidoRowLista[];
+      linhas.push(...lote);
+      if (lote.length < PAGINA_LISTA) break;
     }
 
-    const linhas = (data ?? []) as unknown as PedidoRowLista[];
     const extrasDe = await resolverExtrasDaLista(linhas);
     let pedidos: Pedido[] = linhas.map((row) =>
       mapearPedido(row, row.itens_pedido ?? [], extrasDe(row)),
