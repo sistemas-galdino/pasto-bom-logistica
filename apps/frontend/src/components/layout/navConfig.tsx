@@ -12,7 +12,6 @@ import {
   Route,
   Truck,
   UserCog,
-  Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Papel } from '../../auth/AuthProvider';
@@ -73,7 +72,6 @@ export const NAV_SECTIONS: NavSection[] = [
       // Sem `papeis` DE PROPÓSITO: o quadro é a tela que todos os papéis de
       // equipe abrem, vendedor incluído. Não restrinja aqui.
       { rotulo: 'Quadro de pedidos', to: '/entregas', icone: Package },
-      { rotulo: 'Motoristas', to: '/motoristas', icone: Users, papeis: ['logistica'] },
       { rotulo: 'Caminhões', to: '/caminhoes', icone: Truck, papeis: ['logistica'] },
     ],
   },
@@ -108,8 +106,10 @@ export const ROTAS_META: Record<string, RotaMeta> = {
     titulo: 'Separação',
     subtitulo: 'O que separar no dia, por período',
   },
-  '/rotas': { titulo: 'Rota', subtitulo: 'Quem está na estrada agora' },
-  '/motoristas': { titulo: 'Motoristas', subtitulo: 'Equipe e cargas em rota' },
+  '/rotas': {
+    titulo: 'Rota',
+    subtitulo: 'O dia de cada motorista e quem está na estrada',
+  },
   '/caminhoes': { titulo: 'Caminhões', subtitulo: 'Frota e capacidade de carga' },
   '/usuarios': { titulo: 'Usuários', subtitulo: 'Acessos e papéis da equipe' },
   '/motivos': {

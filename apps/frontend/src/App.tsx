@@ -26,7 +26,6 @@ import Caminhoes from './pages/Caminhoes';
 import { Rotas } from './pages/Rotas';
 import Separacao from './pages/Separacao';
 import SeparacaoImprimir from './pages/SeparacaoImprimir';
-import { Motoristas } from './pages/Motoristas';
 import { Usuarios } from './pages/Usuarios';
 import Motivos from './pages/Motivos';
 import { RotaDoDia } from './pages/RotaDoDia';
@@ -147,7 +146,9 @@ export function App(): React.ReactElement {
                   almoxarifado passam); a Sidebar já esconde o item dos demais. */}
               <Route path="/separacao" element={<Separacao />} />
               <Route path="/rotas" element={<Rotas />} />
-              <Route path="/motoristas" element={<Motoristas />} />
+              {/* A tela de Motoristas virou o resumo do topo da Rota (06/11/2026);
+                  o caminho antigo continua valendo para quem tinha salvo. */}
+              <Route path="/motoristas" element={<Navigate to="/rotas" replace />} />
               <Route
                 path="/caminhoes"
                 element={
