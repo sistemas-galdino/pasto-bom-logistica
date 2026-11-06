@@ -38,7 +38,7 @@ import { TransicaoError } from './erros.js';
 // String literal única de propósito: concatenar degrada o tipo de retorno do
 // supabase-js para GenericStringError[] e a linha vira `never`.
 const COLUNAS_RESERVA =
-  'id, status, servico, fornecedor_codigo, cidade, produtos, data_agendada, periodo, caminhao_id, motorista_id, peso_previsto_kg, bloqueia_caminhao, observacoes, criado_em';
+  'id, status, servico, fornecedor_codigo, cidade, produtos, data_agendada, periodo, caminhao_id, motorista_id, peso_previsto_kg, bloqueia_caminhao, observacoes, criado_em, concluida_em';
 
 interface ReservaRow {
   id: string;
@@ -55,6 +55,7 @@ interface ReservaRow {
   bloqueia_caminhao: boolean;
   observacoes: string | null;
   criado_em: string;
+  concluida_em: string | null;
 }
 
 /** Nomes resolvidos em lote (nenhuma das três é FK que o select traga junto). */
@@ -99,6 +100,7 @@ function mapearReserva(row: ReservaRow, nomes: NomesResolvidos): Reserva {
     bloqueiaCaminhao: row.bloqueia_caminhao === true,
     observacoes: row.observacoes,
     criadoEm: row.criado_em,
+    concluidaEm: row.concluida_em,
   };
 }
 
@@ -423,6 +425,85 @@ export async function cancelarReserva(id: string): Promise<Reserva> {
 
   if (error || !data) {
     const mensagem = error?.message ?? 'Falha ao cancelar a reserva.';
+    throw new TransicaoError(500, 'erro_banco', mensagem);
+  }
+
+  const row = data as unknown as ReservaRow;
+  const nomes = await resolverNomes([row]);
+  return mapearReserva(row, nomes);
+}
+
+/**
+ * Dá a reserva como feita, ou desfaz (06/11/2026, 0026).
+ *
+ * A reserva continua 'ativa': concluir não libera o caminhão — ele ESTEVE
+ * ocupado naquele slot. O que muda é que ela passa a contar como viagem do
+ * motorista na Rota e no Dashboard.
+ *
+ * O motorista também conclui, pelo app, com as mesmas travas de quando ele põe
+ * uma entrega em rota: só a PRÓPRIA reserva e só a de HOJE. A logística não tem
+ * trava de data — ela corrige o histórico.
+ */
+export async function concluirReserva(args: {
+  id: string;
+  concluida: boolean;
+  usuarioId: string | null;
+  papel: string | null;
+}): Promise<Reserva> {
+  const { id, concluida, usuarioId, papel } = args;
+  const atual = await lerLinha(id);
+
+  if (atual.status !== 'ativa') {
+    throw new TransicaoError(
+      409,
+      'reserva_cancelada',
+      'Esta reserva foi cancelada; não dá para marcá-la como concluída.',
+    );
+  }
+
+  if (papel === 'motorista') {
+    if (!usuarioId || atual.motorista_id !== usuarioId) {
+      throw new TransicaoError(
+        403,
+        'sem_permissao',
+        'Você não é o motorista desta reserva.',
+      );
+    }
+    // Data local, como em /minhas-reservas: toISOString() viraria UTC e
+    // adiantaria o dia à noite.
+    const d = new Date();
+    const hoje = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+      d.getDate(),
+    ).padStart(2, '0')}`;
+    if (atual.data_agendada !== hoje) {
+      throw new TransicaoError(
+        422,
+        'fora_do_dia',
+        'Pelo app do motorista só dá para concluir as reservas de hoje.',
+      );
+    }
+  }
+
+  // Idempotente: concluir o que já está concluído (dois toques) não regrava a
+  // hora nem vira erro.
+  if (concluida === (atual.concluida_em !== null)) {
+    const nomes = await resolverNomes([atual]);
+    return mapearReserva(atual, nomes);
+  }
+
+  const { data, error } = await supabase
+    .from('reservas')
+    .update({
+      concluida_em: concluida ? new Date().toISOString() : null,
+      concluida_por: concluida ? usuarioId : null,
+      atualizado_em: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select(COLUNAS_RESERVA)
+    .single();
+
+  if (error || !data) {
+    const mensagem = error?.message ?? 'Falha ao gravar a conclusão da reserva.';
     throw new TransicaoError(500, 'erro_banco', mensagem);
   }
 

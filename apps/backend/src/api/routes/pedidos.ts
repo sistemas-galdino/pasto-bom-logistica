@@ -13,6 +13,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import type {
+  ContatoTelefone,
   DestinoEntrega,
   MotoristaResumo,
   Pedido,
@@ -266,29 +267,59 @@ async function resolverNomesCaminhao(
   return mapa;
 }
 
-/** Bairro de cada cliente da lista (entregas rurais se orientam por bairro). */
-async function resolverBairros(
+interface DadosCliente {
+  bairro: string | null;
+  telefones: ContatoTelefone[];
+}
+
+/**
+ * Bairro e contatos de cada cliente da lista: entregas rurais se orientam por
+ * bairro, e a logística liga para o cliente ao agendar (pedido da Natália,
+ * 06/11/2026). Vão os DOIS campos do Órix, celular primeiro, cada um com o seu
+ * rótulo. O mesmo número nos dois campos aparece uma vez só — e "o mesmo" é
+ * comparado pelos dígitos, porque o Órix grava "35 99999-8888" num campo e
+ * "35999998888" no outro.
+ */
+async function resolverDadosCliente(
   linhas: PedidoRowLista[],
-): Promise<Map<string, string | null>> {
+): Promise<Map<string, DadosCliente>> {
   const codigos = chavesDe(linhas, (l) => l.cliente_codigo);
   if (codigos.length === 0) return new Map();
   const { data, error } = await selecionarEmLotes(codigos, (lote) =>
-    supabase.from('clientes').select('codigo, bairro').in('codigo', lote),
+    supabase
+      .from('clientes')
+      .select('codigo, bairro, celular, telefone')
+      .in('codigo', lote),
   );
   if (error) {
-    log.warn(`[pedidos] Falha ao resolver bairros dos clientes: ${error.message}`);
+    log.warn(`[pedidos] Falha ao resolver os dados dos clientes: ${error.message}`);
     return new Map();
   }
-  const mapa = new Map<string, string | null>();
+  const mapa = new Map<string, DadosCliente>();
   for (const r of data ?? []) {
-    mapa.set(r.codigo as string, (r.bairro as string | null) ?? null);
+    const telefones: ContatoTelefone[] = [];
+    const vistos = new Set<string>();
+    for (const [tipo, bruto] of [
+      ['celular', r.celular],
+      ['telefone', r.telefone],
+    ] as const) {
+      const numero = typeof bruto === 'string' ? bruto.trim() : '';
+      const digitos = numero.replace(/\D/g, '');
+      if (numero === '' || vistos.has(digitos || numero)) continue;
+      vistos.add(digitos || numero);
+      telefones.push({ tipo, numero });
+    }
+    mapa.set(r.codigo as string, {
+      bairro: (r.bairro as string | null) ?? null,
+      telefones,
+    });
   }
   return mapa;
 }
 
 /**
  * Resolve, em LOTE (4 queries para a lista inteira, sem N+1), tudo o que não
- * está na linha de pedidos: nome do motorista, nome do caminhão, bairro do
+ * está na linha de pedidos: nome do motorista, nome do caminhão, bairro e telefones do
  * cliente e o peso unitário de cada produto.
  */
 async function resolverExtrasDaLista(
@@ -298,25 +329,27 @@ async function resolverExtrasDaLista(
     (l.itens_pedido ?? []).map((i) => i.produto_codigo ?? ''),
   );
 
-  const [motoristas, caminhoes, bairros, pesosPorProduto] = await Promise.all([
+  const [motoristas, caminhoes, clientes, pesosPorProduto] = await Promise.all([
     resolverNomesMotorista(linhas),
     resolverNomesCaminhao(linhas),
-    resolverBairros(linhas),
+    resolverDadosCliente(linhas),
     lerPesosProdutos(codigosProduto),
   ]);
 
-  return (row) => ({
-    motoristaNome: row.motorista_id
-      ? (motoristas.get(row.motorista_id) ?? '')
-      : null,
-    caminhaoNome: row.caminhao_id
-      ? (caminhoes.get(row.caminhao_id) ?? null)
-      : null,
-    bairro: row.cliente_codigo
-      ? (bairros.get(row.cliente_codigo) ?? null)
-      : null,
-    pesosPorProduto,
-  });
+  return (row) => {
+    const cliente = row.cliente_codigo ? clientes.get(row.cliente_codigo) : undefined;
+    return {
+      motoristaNome: row.motorista_id
+        ? (motoristas.get(row.motorista_id) ?? '')
+        : null,
+      caminhaoNome: row.caminhao_id
+        ? (caminhoes.get(row.caminhao_id) ?? null)
+        : null,
+      bairro: cliente?.bairro ?? null,
+      clienteTelefones: cliente?.telefones ?? [],
+      pesosPorProduto,
+    };
+  };
 }
 
 function toDestino(r: Record<string, unknown>): DestinoEntrega {

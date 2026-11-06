@@ -67,6 +67,31 @@ export function nomeProprio(nome: string): string {
     .join(' ');
 }
 
+/**
+ * Telefone como o Órix guardou, arrumado para leitura quando dá:
+ * "35999998888" -> "(35) 99999-8888"; "3533331111" -> "(35) 3333-1111".
+ * Com DDI 55 na frente, ele sai. O nome que a equipe anota junto ("35 99999-8888
+ * (ALICE)") é mantido depois do número — é ele que diz com quem se fala.
+ * Qualquer outro formato volta como veio: melhor mostrar o número cru do que
+ * esconder um contato por não reconhecer o formato.
+ */
+export function formatarTelefone(bruto: string): string {
+  const texto = bruto.trim();
+  const inicioNota = texto.search(/[A-Za-zÀ-ÿ]/);
+  const parteNumero = inicioNota === -1 ? texto : texto.slice(0, inicioNota);
+  const nota = inicioNota === -1 ? '' : texto.slice(inicioNota).replace(/\)\s*$/, '').trim();
+
+  // DDI de fora do Brasil: não há como saber o formato, vai como veio.
+  if (/^\s*\+/.test(parteNumero) && !/^\s*\+\s*55/.test(parteNumero)) return texto;
+  let d = parteNumero.replace(/\D/g, '');
+  if ((d.length === 12 || d.length === 13) && d.startsWith('55')) d = d.slice(2);
+  let numero: string;
+  if (d.length === 11) numero = `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  else if (d.length === 10) numero = `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  else return texto;
+  return nota ? `${numero} (${nota})` : numero;
+}
+
 /** Pluraliza "item"/"itens". */
 export function rotuloItens(n: number): string {
   return n === 1 ? '1 item' : `${n} itens`;

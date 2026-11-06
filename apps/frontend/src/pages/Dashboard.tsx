@@ -114,10 +114,28 @@ const STATUS_POR_MOTORISTA = [
   'agendada',
 ] as const satisfies readonly StatusEntrega[];
 
-type LinhaMotorista = { nome: string; total: number } & Record<
-  (typeof STATUS_POR_MOTORISTA)[number],
-  number
->;
+/**
+ * As séries das barras: os status de viagem e, desde 06/11/2026, a RESERVA
+ * concluída (0026) — o caminhão foi buscar adubo, foi à oficina: é trabalho do
+ * motorista, mas não é entrega a cliente, então tem cor própria e não entra na
+ * taxa de sucesso nem na rosca. Fica logo depois de "entregue" (trabalho feito);
+ * "agendada" segue por último porque é onde vai o total da pilha.
+ */
+type ChaveSerie = (typeof STATUS_POR_MOTORISTA)[number] | 'reserva';
+
+const SERIES_MOTORISTA: { chave: ChaveSerie; rotulo: string; cor: string }[] = [
+  { chave: 'entregue', rotulo: STATUS_META.entregue.rotulo, cor: STATUS_HEX.entregue },
+  { chave: 'reserva', rotulo: 'Reserva', cor: '#BDCB3B' },
+  {
+    chave: 'nao_realizado',
+    rotulo: STATUS_META.nao_realizado.rotulo,
+    cor: STATUS_HEX.nao_realizado,
+  },
+  { chave: 'em_rota', rotulo: STATUS_META.em_rota.rotulo, cor: STATUS_HEX.em_rota },
+  { chave: 'agendada', rotulo: STATUS_META.agendada.rotulo, cor: STATUS_HEX.agendada },
+];
+
+type LinhaMotorista = { nome: string; total: number } & Record<ChaveSerie, number>;
 
 // --- datas -----------------------------------------------------------------
 
@@ -294,6 +312,20 @@ export function Dashboard(): React.ReactElement {
     [entregasNoPeriodo],
   );
 
+  // Reservas do período, para o gráfico por motorista. Acessório: se falhar,
+  // o gráfico segue só com as entregas.
+  const corteReservas =
+    periodo.dias === null ? undefined : isoMenosDias(periodo.dias);
+  const reservasQuery = useQuery({
+    queryKey: ['reservas', 'dashboard', corteReservas ?? 'tudo'],
+    queryFn: ({ signal }) => api.listarReservas({ de: corteReservas }, signal),
+    refetchInterval: 60_000,
+  });
+  const reservasNoPeriodo = useMemo(
+    () => reservasQuery.data ?? [],
+    [reservasQuery.data],
+  );
+
   // O card do RESTANTE RECUSADO (encerraSaldo, 0025) não é viagem que falhou: é
   // a metade que o cliente não quis de uma entrega que aconteceu. Contá-lo aqui
   // faria cada entrega parcial com recusa aparecer como "1 entregue + 1 falha"
@@ -343,6 +375,23 @@ export function Dashboard(): React.ReactElement {
    */
   const { porMotorista, semMotorista } = useMemo(() => {
     const linhas = new Map<string, LinhaMotorista>();
+    const linhaDe = (motoristaId: string, nome: string | null) => {
+      let linha = linhas.get(motoristaId);
+      if (!linha) {
+        linha = {
+          nome: nome ? nomeProprio(nome) : 'Sem nome',
+          total: 0,
+          entregue: 0,
+          reserva: 0,
+          nao_realizado: 0,
+          em_rota: 0,
+          agendada: 0,
+        };
+        linhas.set(motoristaId, linha);
+      }
+      return linha;
+    };
+
     let semMotorista = 0;
     for (const e of entregasNoPeriodo) {
       if (e.encerraSaldo || e.status === 'cancelada') continue;
@@ -350,19 +399,15 @@ export function Dashboard(): React.ReactElement {
         semMotorista += 1;
         continue;
       }
-      let linha = linhas.get(e.motoristaId);
-      if (!linha) {
-        linha = {
-          nome: e.motoristaNome ? nomeProprio(e.motoristaNome) : 'Sem nome',
-          total: 0,
-          entregue: 0,
-          nao_realizado: 0,
-          em_rota: 0,
-          agendada: 0,
-        };
-        linhas.set(e.motoristaId, linha);
-      }
+      const linha = linhaDe(e.motoristaId, e.motoristaNome);
       linha[e.status] += 1;
+      linha.total += 1;
+    }
+    // Só a reserva CONCLUÍDA conta: a agendada ainda não é trabalho feito.
+    for (const r of reservasNoPeriodo) {
+      if (!r.concluidaEm || !r.motoristaId) continue;
+      const linha = linhaDe(r.motoristaId, r.motoristaNome);
+      linha.reserva += 1;
       linha.total += 1;
     }
     return {
@@ -371,7 +416,7 @@ export function Dashboard(): React.ReactElement {
       ),
       semMotorista,
     };
-  }, [entregasNoPeriodo]);
+  }, [entregasNoPeriodo, reservasNoPeriodo]);
 
   /**
    * Largura da coluna de nomes pelo nome mais longo (~6,8px por caractere a
@@ -674,13 +719,13 @@ export function Dashboard(): React.ReactElement {
                 </p>
               </div>
               <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-tinta-suave">
-                {STATUS_POR_MOTORISTA.map((s) => (
-                  <li key={s} className="flex items-center gap-1.5">
+                {SERIES_MOTORISTA.map((s) => (
+                  <li key={s.chave} className="flex items-center gap-1.5">
                     <span
                       className="h-2.5 w-2.5 rounded-sm"
-                      style={{ backgroundColor: STATUS_HEX[s] }}
+                      style={{ backgroundColor: s.cor }}
                     />
-                    {STATUS_META[s].rotulo}
+                    {s.rotulo}
                   </li>
                 ))}
               </ul>
@@ -728,22 +773,22 @@ export function Dashboard(): React.ReactElement {
                       itemStyle={TOOLTIP_ITEM_STYLE}
                       cursor={{ fill: '#F1F5EF' }}
                     />
-                    {STATUS_POR_MOTORISTA.map((s, i) => (
+                    {SERIES_MOTORISTA.map((s, i) => (
                       <Bar
-                        key={s}
-                        dataKey={s}
-                        name={STATUS_META[s].rotulo}
+                        key={s.chave}
+                        dataKey={s.chave}
+                        name={s.rotulo}
                         stackId="viagens"
-                        fill={STATUS_HEX[s]}
+                        fill={s.cor}
                         radius={
-                          i === STATUS_POR_MOTORISTA.length - 1
+                          i === SERIES_MOTORISTA.length - 1
                             ? [0, 6, 6, 0]
                             : 0
                         }
                       >
                         {/* Total no fim da pilha: vai no último segmento, que
                             termina onde a barra termina mesmo quando vale 0. */}
-                        {i === STATUS_POR_MOTORISTA.length - 1 && (
+                        {i === SERIES_MOTORISTA.length - 1 && (
                           <LabelList
                             dataKey="total"
                             position="right"

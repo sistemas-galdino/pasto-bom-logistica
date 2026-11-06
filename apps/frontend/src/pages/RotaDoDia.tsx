@@ -33,12 +33,17 @@ import { api, ApiError } from '../lib/api';
 import { Header } from '../components/Header';
 import { ClimaResumo } from '../components/ClimaResumo';
 import { TagPedido } from '../components/TagPedido';
+import { ObservacaoAgendamento } from '../components/ObservacaoAgendamento';
 import {
   ConcluirEntregaModal,
   type ConclusaoEntrega,
 } from '../components/ConcluirEntregaModal';
 import { NaoRealizadoModal } from '../components/NaoRealizadoModal';
 import { ConfirmacaoModal } from '../components/ConfirmacaoModal';
+import {
+  BotaoConcluirReserva,
+  SeloReservaConcluida,
+} from '../components/ConcluirReserva';
 import { formatarData, formatarQuantidade } from '../lib/format';
 import { linkGoogleMaps } from '../lib/maps';
 
@@ -470,6 +475,14 @@ export function RotaDoDia(): React.ReactElement {
                     <span>{enderecoDaEntrega(p)}</span>
                   </p>
 
+                  {/* Recado de quem agendou: inteiro, sem cortar — é para o
+                      motorista ler antes de sair. */}
+                  <ObservacaoAgendamento
+                    texto={p.observacaoAgendamento}
+                    status={p.status}
+                    className="mt-2"
+                  />
+
                   {climaPorPedido[p.pedidoId]?.disponivel && (
                     <div className="mt-1.5 pl-5">
                       <ClimaResumo
@@ -894,6 +907,23 @@ function ReservasDoCaminhao({
                   {r.caminhaoNome || '—'}
                 </span>
               </p>
+
+              {/* Concluir só a de hoje — mesma trava do servidor e do "Colocar
+                  em rota": a reserva de amanhã não pode ser dada como feita. */}
+              {r.concluidaEm && (
+                <div className="mt-3">
+                  <SeloReservaConcluida />
+                </div>
+              )}
+              {eHoje && (
+                <div className="mt-3">
+                  <BotaoConcluirReserva
+                    reservaId={r.id}
+                    concluida={r.concluidaEm !== null}
+                    grande
+                  />
+                </div>
+              )}
             </li>
           );
         })}

@@ -13,6 +13,8 @@ import type { Pedido, SaldoItem } from '@pastobom/shared';
 import { formatarData, formatarMoeda } from '../lib/format';
 import { rotuloStatusOrix } from './status';
 import { TagPedido } from './TagPedido';
+import { ContatoCliente } from './ContatoCliente';
+import { VendedorPedido } from './VendedorPedido';
 
 interface Props {
   pedido: Pedido;
@@ -87,6 +89,9 @@ export function PedidoCard({
         </h3>
         <TagPedido numero={pedido.orixNumero} parcial={parcial} />
       </div>
+
+      <ContatoCliente telefones={pedido.clienteTelefones ?? []} className="mt-1" />
+      <VendedorPedido nome={pedido.vendedorNome} className="mt-0.5" />
 
       <p className="mt-1 flex items-center gap-1 text-xs text-tinta-suave">
         <IconePin />

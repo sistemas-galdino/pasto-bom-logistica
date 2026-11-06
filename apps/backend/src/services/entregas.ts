@@ -71,6 +71,8 @@ interface EntregaRow {
   data_entregue: string | null;
   motivo_nao_entrega: string | null;
   observacoes: string | null;
+  /** 0027: recado de quem agendou. */
+  observacao_agendamento: string | null;
   /** 0025: o restante recusado de uma entrega parcial. */
   encerra_saldo: boolean | null;
   origem_entrega_id: string | null;
@@ -100,12 +102,13 @@ interface PedidoDaEntregaRow {
   cliente_nome: string | null;
   cidade_cliente: string | null;
   data_pedido: string | null;
+  vendedor_nome: string | null;
 }
 
 const COLUNAS_ENTREGA =
   'id, pedido_id, status, data_agendada, periodo, motorista_id, caminhao_id, ' +
   'propriedade_codigo, ordem_rota, data_entregue, motivo_nao_entrega, ' +
-  'observacoes, encerra_saldo, origem_entrega_id, criado_em, atualizado_em';
+  'observacoes, observacao_agendamento, encerra_saldo, origem_entrega_id, criado_em, atualizado_em';
 
 const COLUNAS_ENTREGA_ITEM =
   'id, entrega_id, produto_codigo, nome_produto, qtd, qtd_entregue, separado, ' +
@@ -404,7 +407,7 @@ async function montarEntregas(
       supabase
         .from('pedidos')
         .select(
-          'id, orix_numero, cliente_codigo, cliente_nome, cidade_cliente, data_pedido',
+          'id, orix_numero, cliente_codigo, cliente_nome, cidade_cliente, data_pedido, vendedor_nome',
         )
         .in('id', lote),
     ),
@@ -486,6 +489,7 @@ async function montarEntregas(
       dataEntregue: l.data_entregue,
       motivoNaoEntrega: l.motivo_nao_entrega,
       observacoes: l.observacoes,
+      observacaoAgendamento: l.observacao_agendamento?.trim() || null,
       encerraSaldo: l.encerra_saldo === true,
       origemEntregaId: l.origem_entrega_id,
       pedidoParcial: parciais.has(l.pedido_id),
@@ -495,6 +499,7 @@ async function montarEntregas(
       cidadeCliente: pedido?.cidade_cliente ?? '',
       bairro: bairros.get(pedido?.cliente_codigo ?? '') ?? null,
       dataPedido: pedido?.data_pedido ?? null,
+      vendedorNome: pedido?.vendedor_nome?.trim() || null,
       pesoTotalKg: pesoDaCarga(itensDaEntrega),
       destino: destinos
         ? ((l.propriedade_codigo
@@ -628,6 +633,8 @@ export interface CriarEntregaArgs {
    * aquele lote.
    */
   pesos?: Record<string, number>;
+  /** Recado de quem agendou (0027). Vazio = sem observação. */
+  observacaoAgendamento?: string;
   atorUserId?: string;
 }
 
@@ -653,6 +660,7 @@ export async function criarEntrega(args: CriarEntregaArgs): Promise<Entrega> {
     propriedadeCodigo,
     quantidades,
     pesos: pesosInformados,
+    observacaoAgendamento,
     atorUserId,
   } = args;
 
@@ -813,6 +821,7 @@ export async function criarEntrega(args: CriarEntregaArgs): Promise<Entrega> {
       motorista_id: motoristaId,
       caminhao_id: caminhaoId,
       propriedade_codigo: propriedadeCodigo ?? null,
+      observacao_agendamento: observacaoAgendamento?.trim() || null,
     })
     .select('id')
     .single<{ id: string }>();
@@ -1465,6 +1474,8 @@ async function criarRestanteRecusado(args: {
       motivo_nao_entrega: motivo,
       encerra_saldo: true,
       origem_entrega_id: origem.id,
+      // O recado de quem agendou vale para a mesma visita: segue no card.
+      observacao_agendamento: origem.observacaoAgendamento,
     })
     .select('id')
     .single<{ id: string }>();

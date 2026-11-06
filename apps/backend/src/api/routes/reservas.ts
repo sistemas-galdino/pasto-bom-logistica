@@ -4,6 +4,7 @@
 //   POST  /api/reservas                               -> 201        (logística)
 //   PATCH /api/reservas/:id                           -> Reserva    (logística)
 //   POST  /api/reservas/:id/cancelar                  -> Reserva    (logística)
+//   POST  /api/reservas/:id/concluir                  -> Reserva    (logística + motorista)
 //   GET   /api/minhas-reservas                        -> Reserva[]  (motorista)
 //
 // Não há DELETE: cancelar guarda o histórico, como em entregas e caminhões.
@@ -25,6 +26,7 @@ import {
   atualizarReserva,
   cancelarReserva,
   carregarReserva,
+  concluirReserva,
   criarReserva,
   listarReservas,
 } from '../../services/reservas.js';
@@ -60,6 +62,8 @@ const atualizarSchema = criarSchema
   .refine((o) => Object.keys(o).length > 0, {
     message: 'Informe ao menos um campo para atualizar.',
   });
+
+const concluirSchema = z.object({ concluida: z.boolean() });
 
 const listarSchema = z.object({
   de: z.string().regex(DATA_ISO).optional(),
@@ -186,7 +190,39 @@ export async function reservasRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  // GET /minhas-reservas — o motorista vê, não mexe.
+  // POST /reservas/:id/concluir — dá a reserva como feita (ou desfaz).
+  //
+  // Logística conclui qualquer uma; o motorista entra por exceção explícita em
+  // auth.ts e o serviço o limita às PRÓPRIAS reservas de HOJE. Os demais papéis
+  // (vendedor, almoxarifado) não.
+  app.post('/reservas/:id/concluir', async (req, reply) => {
+    const papel = req.usuario?.papel ?? null;
+    if (papel !== 'motorista' && !exigirLogistica(req, reply)) return reply;
+    const { id } = req.params as { id: string };
+    const parsed = concluirSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'body_invalido',
+        message: 'Informe concluida: true|false.',
+        detalhes: parsed.error.issues,
+      });
+    }
+
+    try {
+      return reply.send(
+        await concluirReserva({
+          id,
+          concluida: parsed.data.concluida,
+          usuarioId: req.usuario?.id ?? null,
+          papel,
+        }),
+      );
+    } catch (err) {
+      return responderErro(reply, err, `[POST /reservas/${id}/concluir]`);
+    }
+  });
+
+  // GET /minhas-reservas — o motorista vê, e conclui a de hoje.
   //
   // Filtro pelo uid do token, nunca por parâmetro: o motorista não escolhe de
   // quem é a reserva. Só da data de hoje em diante — reserva de semana passada

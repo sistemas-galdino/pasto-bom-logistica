@@ -41,6 +41,8 @@ interface BlocoMotorista {
   emRota: number;
   entregues: number;
   naoRealizadas: number;
+  /** Reservas do dia dadas como feitas (0026): contam como viagem. */
+  reservas: number;
   /** Peso do dia (todas as viagens que não foram canceladas). */
   pesoKg: number;
   /** Entregas na estrada agora, na ordem das paradas. */
@@ -48,7 +50,7 @@ interface BlocoMotorista {
 }
 
 function totalDoDia(b: BlocoMotorista): number {
-  return b.agendadas + b.emRota + b.entregues + b.naoRealizadas;
+  return b.agendadas + b.emRota + b.entregues + b.naoRealizadas + b.reservas;
 }
 
 function PainelRota(): React.ReactElement {
@@ -77,6 +79,14 @@ function PainelRota(): React.ReactElement {
     refetchInterval: 60_000,
   });
 
+  // Reservas do dia: só as CONCLUÍDAS entram na conta do motorista (06/11).
+  // Acessório — se falhar, os blocos seguem só com as entregas.
+  const reservasQuery = useQuery({
+    queryKey: ['reservas-dia', hoje],
+    queryFn: ({ signal }) => api.listarReservas({ de: hoje, ate: hoje }, signal),
+    refetchInterval: 60_000,
+  });
+
   const blocos = useMemo<BlocoMotorista[]>(() => {
     const porId = new Map<string, Entrega>();
     for (const e of doDiaQuery.data ?? []) porId.set(e.id, e);
@@ -89,26 +99,39 @@ function PainelRota(): React.ReactElement {
     );
 
     const mapa = new Map<string, BlocoMotorista>();
-    for (const e of porId.values()) {
-      // Cancelada não é trabalho do dia; o card do restante recusado não é viagem.
-      if (e.status === 'cancelada' || e.encerraSaldo) continue;
-      const chave = e.motoristaId ?? SEM_MOTORISTA;
+    const blocoDe = (motoristaId: string | null, nomeNaViagem: string | null) => {
+      const chave = motoristaId ?? SEM_MOTORISTA;
       let b = mapa.get(chave);
       if (!b) {
         b = {
           chave,
-          nome: e.motoristaId
-            ? (nomes.get(e.motoristaId) ?? e.motoristaNome ?? 'Sem nome')
+          nome: motoristaId
+            ? (nomes.get(motoristaId) ?? nomeNaViagem ?? 'Sem nome')
             : SEM_MOTORISTA,
           agendadas: 0,
           emRota: 0,
           entregues: 0,
           naoRealizadas: 0,
+          reservas: 0,
           pesoKg: 0,
           naEstrada: [],
         };
         mapa.set(chave, b);
       }
+      return b;
+    };
+
+    for (const r of reservasQuery.data ?? []) {
+      if (!r.concluidaEm || !r.motoristaId) continue;
+      const b = blocoDe(r.motoristaId, r.motoristaNome);
+      b.reservas += 1;
+      b.pesoKg += r.pesoPrevistoKg ?? 0;
+    }
+
+    for (const e of porId.values()) {
+      // Cancelada não é trabalho do dia; o card do restante recusado não é viagem.
+      if (e.status === 'cancelada' || e.encerraSaldo) continue;
+      const b = blocoDe(e.motoristaId, e.motoristaNome);
       if (e.status === 'agendada') b.agendadas += 1;
       else if (e.status === 'em_rota') {
         b.emRota += 1;
@@ -135,7 +158,7 @@ function PainelRota(): React.ReactElement {
           a.nome.localeCompare(b.nome, 'pt-BR')
         );
       });
-  }, [motoristasQuery.data, doDiaQuery.data, emRotaQuery.data]);
+  }, [motoristasQuery.data, doDiaQuery.data, emRotaQuery.data, reservasQuery.data]);
 
   // Filtro EFETIVO: se o motorista escolhido sumiu (o dia virou, por exemplo),
   // cai de volta para "Todos" em vez de mostrar uma tela vazia. Derivado na
@@ -285,6 +308,13 @@ function BlocoDoMotorista({ bloco: b }: { bloco: BlocoMotorista }): React.ReactE
           {b.naoRealizadas > 0 && (
             <span className="rounded-full bg-brasa-claro px-2.5 py-0.5 text-brasa-escuro">
               {b.naoRealizadas} não realizada{b.naoRealizadas === 1 ? '' : 's'}
+            </span>
+          )}
+          {/* Tracejado como o card de reserva: é viagem do motorista, mas não
+              é entrega a cliente. */}
+          {b.reservas > 0 && (
+            <span className="rounded-full border border-dashed border-pedra bg-limao-claro px-2.5 py-0.5 text-limao-escuro">
+              {b.reservas} reserva{b.reservas === 1 ? '' : 's'}
             </span>
           )}
           {/* Peso, não dinheiro: a viagem carrega parte do pedido, e o que

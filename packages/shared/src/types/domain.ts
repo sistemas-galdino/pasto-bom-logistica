@@ -76,6 +76,12 @@ export interface Pedido {
    */
   bairro: string | null;
   /**
+   * Contatos do cliente, do cadastro do Órix — o celular e o telefone, cada um
+   * com o seu rótulo, sem repetir o mesmo número —, para a logística ligar ao
+   * agendar. Vazio = sem número.
+   */
+  clienteTelefones: ContatoTelefone[];
+  /**
    * Peso total da carga em kg = Σ(pesoUnitKg × qtd).
    * `null` quando ALGUM item ainda está sem peso — nesse caso o pedido não pode
    * ser agendado até a equipe completar os pesos que faltam.
@@ -157,6 +163,11 @@ export interface Entrega {
   motivoNaoEntrega: string | null;
   observacoes: string | null;
   /**
+   * Recado de quem AGENDOU a viagem (0027) — "ligar antes", "porteira de baixo".
+   * Separado de `observacoes`, que é histórico. Null = sem observação.
+   */
+  observacaoAgendamento: string | null;
+  /**
    * Só em nao_realizado: é o RESTANTE RECUSADO pelo cliente numa entrega parcial
    * (0025). Encerra o saldo em vez de devolvê-lo — ver `qtdConsumida`.
    */
@@ -186,6 +197,8 @@ export interface Entrega {
   bairro: string | null;
   /** Data de ENTRADA da ordem de venda (o cartão mostra; a fila ordena por ela). */
   dataPedido: string | null;
+  /** Vendedor da ordem de venda, como está no Órix; null quando vazio. */
+  vendedorNome: string | null;
 
   /** Σ(pesoUnitKg × qtd) desta viagem; null se algum item está sem peso. */
   pesoTotalKg: number | null;
@@ -329,6 +342,8 @@ export interface AgendaEntrega {
   ordemRota: number | null;
   /** O PEDIDO já teve uma entrega parcial de verdade (ver `Entrega.pedidoParcial`). */
   pedidoParcial: boolean;
+  /** Recado de quem agendou (ver `Entrega.observacaoAgendamento`). */
+  observacaoAgendamento: string | null;
 }
 
 /** Ocupação de um caminhão dentro de um slot (data + período). */
@@ -373,6 +388,8 @@ export interface AgendaReserva {
   pesoPrevistoKg: number | null;
   /** true = o caminhão não sai para entrega nenhuma neste período. */
   bloqueiaCaminhao: boolean;
+  /** Quando o serviço foi dado como feito (0026); null = não concluída. */
+  concluidaEm: string | null;
 }
 
 /** Um slot da agenda: um período (manhã ou tarde) de um dia. */
@@ -550,6 +567,19 @@ export interface Reserva {
   bloqueiaCaminhao: boolean;
   observacoes: string | null;
   criadoEm: string;
+  /**
+   * Quando o serviço foi dado como feito (0026); null = não concluída. A
+   * reserva concluída continua `ativa` — segue ocupando o caminhão no slot — e
+   * passa a contar como viagem do motorista na Rota e no Dashboard.
+   */
+  concluidaEm: string | null;
+}
+
+/** Um número de contato do cliente e o campo do Órix de onde ele veio. */
+export interface ContatoTelefone {
+  tipo: 'celular' | 'telefone';
+  /** Como está no Órix (pode trazer um nome anotado, como "(ALICE)"). */
+  numero: string;
 }
 
 /** Corpo de POST /api/reservas. */

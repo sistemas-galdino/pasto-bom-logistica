@@ -7,12 +7,19 @@
 // que as duas telas divergissem na primeira correção.
 
 import React from 'react';
-import { AlertTriangle, MapPin, Truck, User } from 'lucide-react';
+import {
+  AlertTriangle,
+  MapPin,
+  MessageSquareText,
+  Truck,
+  User,
+} from 'lucide-react';
 import type { AgendaEntrega, PrevisaoClima } from '@pastobom/shared';
 import { STATUS_ENTREGA_META } from '../status';
 import { emToneladas } from '../../lib/format';
 import { ClimaResumo } from '../ClimaResumo';
 import { TagPedido } from '../TagPedido';
+import { ObservacaoAgendamento } from '../ObservacaoAgendamento';
 
 export interface CardEntregaProps {
   entrega: AgendaEntrega;
@@ -120,6 +127,26 @@ export function CardEntrega({
         />
         <span className="truncate">{local || '—'}</span>
       </p>
+
+      {/* Recado de quem agendou (0027): no compacto só o ícone com o texto no
+          title — o slot da semana não comporta a frase. */}
+      {entrega.observacaoAgendamento &&
+        (compacto ? (
+          <p
+            className="mt-0.5 flex items-center gap-1 text-[11px] text-trigo-escuro"
+            title={entrega.observacaoAgendamento}
+          >
+            <MessageSquareText className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span className="truncate">{entrega.observacaoAgendamento}</span>
+          </p>
+        ) : (
+          <ObservacaoAgendamento
+            texto={entrega.observacaoAgendamento}
+            status={entrega.status}
+            compacto
+            className="mt-1.5"
+          />
+        ))}
 
       <div
         className={`mt-2 flex items-center justify-between gap-2 border-t border-linha/70 pt-2 ${

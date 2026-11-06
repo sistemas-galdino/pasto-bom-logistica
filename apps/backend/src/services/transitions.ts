@@ -26,6 +26,7 @@ import {
   templateDaTransicao,
   escolherNumeroWhatsApp,
   normalizarWhatsApp,
+  type ContatoTelefone,
   type Pedido,
   type ItemPedido,
   type PeriodoEntrega,
@@ -103,6 +104,8 @@ export interface ExtrasPedido {
   motoristaNome?: string | null;
   caminhaoNome?: string | null;
   bairro?: string | null;
+  /** Celular e telefone do cliente (clientes), sem repetir o número. */
+  clienteTelefones?: ContatoTelefone[];
   /** produto_codigo -> peso UNITÁRIO em kg. Ausente = peso desconhecido. */
   pesosPorProduto?: Map<string, number>;
 }
@@ -167,6 +170,7 @@ export function mapearPedido(
     caminhaoId: row.caminhao_id,
     caminhaoNome: extras.caminhaoNome ?? null,
     bairro: extras.bairro ?? null,
+    clienteTelefones: extras.clienteTelefones ?? [],
     pesoTotalKg: pesoTotalDoPedido(itensMapeados),
     observacoes: row.observacoes ?? null,
     motivoNaoEntrega: row.motivo_nao_entrega ?? null,

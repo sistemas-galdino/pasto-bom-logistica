@@ -38,6 +38,8 @@ import {
   textoConfirmacaoEntrega,
 } from './status';
 import { TagPedido } from './TagPedido';
+import { VendedorPedido } from './VendedorPedido';
+import { ObservacaoAgendamento } from './ObservacaoAgendamento';
 import { ConfirmacaoModal } from './ConfirmacaoModal';
 import { NaoRealizadoModal } from './NaoRealizadoModal';
 import { ReagendarEntregaModal } from './ReagendarEntregaModal';
@@ -244,7 +246,7 @@ export function EntregaDetalheModal({
           if (e.target === e.currentTarget) tentarFechar();
         }}
       >
-        <div className="escala-cheia max-h-[85vh] w-full max-w-lg overflow-y-auto animate-sobe rounded-xl2 bg-papel p-5 shadow-flutua">
+        <div className="escala-cheia max-h-[85vh] w-full max-w-lg overflow-y-auto animate-sobe rounded-xl2 bg-papel p-5 shadow-flutua lg:max-h-[68vh]">
           <div className="mb-3 flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h2 className="font-display text-lg font-semibold leading-tight text-mata-escuro">
@@ -267,6 +269,9 @@ export function EntregaDetalheModal({
                   </span>
                 </p>
               )}
+              {entrega && (
+                <VendedorPedido nome={entrega.vendedorNome} className="mt-1" />
+              )}
             </div>
             <button
               type="button"
@@ -279,6 +284,12 @@ export function EntregaDetalheModal({
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
+
+          {/* Só leitura: quem edita o recado é o quadro de pedidos. */}
+          <ObservacaoAgendamento
+            texto={entrega?.observacaoAgendamento}
+            className="mb-3"
+          />
 
           {isLoading && (
             <div className="space-y-2" aria-label="Carregando">

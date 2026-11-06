@@ -76,7 +76,10 @@ const criarSchema = z.object({
    * antes (o caso da soja, que muda a cada compra).
    */
   pesos: z.record(z.string(), z.number().finite().positive()).optional(),
+  /** Recado de quem agendou (0027). */
+  observacaoAgendamento: z.string().max(1000).optional(),
 });
+
 
 /**
  * Reagendamento: tudo opcional, mas ao menos um campo.

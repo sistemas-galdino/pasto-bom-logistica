@@ -157,6 +157,8 @@ export interface CriarEntregaBody {
    * congela esse peso NA VIAGEM e guarda o valor como sugestão do produto.
    */
   pesos?: Record<string, number>;
+  /** Recado de quem agendou (0027). */
+  observacaoAgendamento?: string;
 }
 
 /**
@@ -331,6 +333,14 @@ export const api = {
   },
 
   /** Cancela (não apaga): a reserva sai da ocupação e fica no histórico. */
+  /** Dá a reserva como feita (true) ou desfaz (false). Ver concluirReserva. */
+  async concluirReserva(id: string, concluida: boolean): Promise<Reserva> {
+    return request<Reserva>(
+      `/api/reservas/${encodeURIComponent(id)}/concluir`,
+      { method: 'POST', body: { concluida } },
+    );
+  },
+
   async cancelarReserva(id: string): Promise<Reserva> {
     return request<Reserva>(
       `/api/reservas/${encodeURIComponent(id)}/cancelar`,
@@ -456,7 +466,6 @@ export const api = {
   async criarEntrega(body: CriarEntregaBody): Promise<Entrega> {
     return request<Entrega>('/api/entregas', { method: 'POST', body });
   },
-
   /**
    * Avança a viagem (em rota, entregue, não realizado, cancelada).
    *

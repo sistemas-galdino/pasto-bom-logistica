@@ -26,6 +26,7 @@ import React from 'react';
 import type { Reserva } from '@pastobom/shared';
 import { Lock, MapPin, Truck, User } from 'lucide-react';
 import { formatarData } from '../lib/format';
+import { BotaoConcluirReserva, SeloReservaConcluida } from './ConcluirReserva';
 
 interface Props {
   reserva: Reserva;
@@ -136,8 +137,18 @@ export function ReservaCard({
         </p>
       )}
 
+      {reserva.concluidaEm && (
+        <div className="mt-2">
+          <SeloReservaConcluida />
+        </div>
+      )}
+
       {podeEscrever && (
         <div className="mt-3 flex flex-wrap gap-1.5 border-t border-linha/70 pt-3">
+          <BotaoConcluirReserva
+            reservaId={reserva.id}
+            concluida={reserva.concluidaEm !== null}
+          />
           <button
             type="button"
             onClick={() => onEditar(reserva)}

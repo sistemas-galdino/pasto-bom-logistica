@@ -92,6 +92,8 @@ interface EntregaAgendaRow {
   pedido_id: string;
   /** Ordem da parada no dia do motorista (0022). */
   ordem_rota: number | string | null;
+  /** 0027: recado de quem agendou. */
+  observacao_agendamento: string | null;
   entrega_itens?:
     | {
         produto_codigo: string | null;
@@ -130,6 +132,7 @@ interface ReservaAgendaRow {
   caminhao_id: string;
   peso_previsto_kg: number | string | null;
   bloqueia_caminhao: boolean;
+  concluida_em: string | null;
 }
 
 /** Reservas da janela + os nomes que elas precisam, já resolvidos em lote. */
@@ -143,10 +146,10 @@ interface ReservasCarregadas {
 
 const SELECT_RESERVA =
   'id, servico, cidade, produtos, fornecedor_codigo, data_agendada, periodo, ' +
-  'motorista_id, caminhao_id, peso_previsto_kg, bloqueia_caminhao';
+  'motorista_id, caminhao_id, peso_previsto_kg, bloqueia_caminhao, concluida_em';
 
 const SELECT_AGENDA =
-  'id, pedido_id, data_agendada, periodo, motorista_id, caminhao_id, status, ordem_rota, ' +
+  'id, pedido_id, data_agendada, periodo, motorista_id, caminhao_id, status, ordem_rota, observacao_agendamento, ' +
   'entrega_itens(produto_codigo, qtd, peso_unit_kg), ' +
   'pedidos(orix_numero, cliente_codigo, cliente_nome, cidade_cliente)';
 
@@ -652,6 +655,7 @@ function montarSlots(
       pesoTotalKg: peso.totalKg,
       ordemRota: ordemDaParada(linha.ordem_rota),
       pedidoParcial: parciais.has(linha.pedido_id),
+      observacaoAgendamento: linha.observacao_agendamento?.trim() || null,
       status: linha.status,
     });
 
@@ -705,6 +709,7 @@ function montarSlots(
       caminhaoNome: caminhao?.nome ?? null,
       pesoPrevistoKg,
       bloqueiaCaminhao: r.bloqueia_caminhao === true,
+      concluidaEm: r.concluida_em,
     });
 
     // A reserva também ocupa o caminhão na barra de ocupação: sem peso ela

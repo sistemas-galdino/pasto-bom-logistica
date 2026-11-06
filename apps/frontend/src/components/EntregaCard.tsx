@@ -15,6 +15,8 @@ import { formatarData } from '../lib/format';
 import { STATUS_ENTREGA_META, rotuloAcaoEntrega } from './status';
 import { ClimaResumo } from './ClimaResumo';
 import { TagPedido } from './TagPedido';
+import { VendedorPedido } from './VendedorPedido';
+import { ObservacaoAgendamento } from './ObservacaoAgendamento';
 import type { PrevisaoClima } from '@pastobom/shared';
 
 interface Props {
@@ -102,6 +104,13 @@ export function EntregaCard({
         <IconePin />
         {local || '—'}
       </p>
+      <VendedorPedido nome={entrega.vendedorNome} className="mt-0.5" />
+      <ObservacaoAgendamento
+        texto={entrega.observacaoAgendamento}
+        status={entrega.status}
+        compacto
+        className="mt-1.5"
+      />
 
       {entrega.dataPedido && (
         <p className="mt-1.5 text-[10px] text-pedra">

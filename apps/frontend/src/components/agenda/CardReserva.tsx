@@ -1,8 +1,9 @@
 // Cartão de uma RESERVA DE CAMINHÃO na AGENDA (somente leitura).
 //
 // O par deste arquivo é components/ReservaCard.tsx, o da faixa do QUADRO, que
-// leva as ações de Editar e Cancelar. Aqui não há ação nenhuma: o card só diz
-// que o caminhão está tomado naquele período. O tracejado é o MESMO desenho nas
+// leva as ações de Editar e Cancelar. Aqui a única ação é "Marcar como
+// concluída" (0026), só para a logística: o card diz que o caminhão está tomado
+// naquele período e, depois, que o serviço foi feito. O tracejado é o MESMO desenho nas
 // duas telas, de propósito — o mesmo objeto tem de se reconhecer nos dois
 // lugares.
 
@@ -10,6 +11,8 @@ import React from 'react';
 import { Lock, MapPin, Truck, User } from 'lucide-react';
 import type { AgendaReserva } from '@pastobom/shared';
 import { emToneladas } from '../../lib/format';
+import { useAuth } from '../../auth/AuthProvider';
+import { BotaoConcluirReserva, SeloReservaConcluida } from '../ConcluirReserva';
 
 export interface CardReservaProps {
   reserva: AgendaReserva;
@@ -26,6 +29,8 @@ export function CardReserva({
 }: CardReservaProps): React.ReactElement {
   const destino =
     reserva.fornecedorNome?.trim() || reserva.cidade?.trim() || '';
+  const { papel } = useAuth();
+  const podeConcluir = papel === 'logistica';
 
   return (
     <div
@@ -114,6 +119,20 @@ export function CardReserva({
           </span>
         )}
       </div>
+
+      {/* Concluída (0026): o selo aparece para todos; o botão, só para a
+          logística e fora do modo compacto, que não tem espaço para ação. */}
+      {(reserva.concluidaEm || (podeConcluir && !compacto)) && (
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-linha/70 pt-2">
+          {reserva.concluidaEm ? <SeloReservaConcluida /> : <span />}
+          {podeConcluir && !compacto && (
+            <BotaoConcluirReserva
+              reservaId={reserva.reservaId}
+              concluida={reserva.concluidaEm !== null}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }

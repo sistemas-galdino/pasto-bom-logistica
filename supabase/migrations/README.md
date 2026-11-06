@@ -32,6 +32,8 @@ abaixo) e contra o ledger `supabase_migrations.schema_migrations`.
 | 0001 – 0022 | sim |
 | 0023 – 0024 | sim (14/09/2026) |
 | 0025 | sim (30/09/2026) |
+| 0026 | sim (06/11/2026) |
+| 0027 | sim (06/11/2026) |
 
 A **0025 rodou em 30/09/2026**, com autorização do David, pela conexão MCP
 `supabase-pastobom` (a `supabase` antiga voltou a recusar com `-32600`).

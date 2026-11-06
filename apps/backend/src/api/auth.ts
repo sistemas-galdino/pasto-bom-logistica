@@ -138,6 +138,10 @@ export const autenticar: preHandlerHookHandler = async (
   // também entra (30/10/2026): o motorista confere a carga e põe em rota pelo
   // app. A regra fina — só as próprias viagens, só as de hoje — está em
   // definirSeparacaoEntrega. O ajuste item a item segue fora: é do almoxarifado.
+  //
+  // Concluir a RESERVA (POST /reservas/:id/concluir, 06/11/2026) entra pela
+  // mesma porta: a regra fina — só as próprias, só as de hoje — está em
+  // concluirReserva.
   const ehEscrita = !METODOS_LEITURA.has(req.method);
   const ehEntregaMotorista =
     papel === 'motorista' &&
@@ -145,6 +149,8 @@ export const autenticar: preHandlerHookHandler = async (
       /^\/api\/(?:pedidos|entregas)\/[^/]+\/(?:transicao|proxima)(?:\?.*)?$/.test(
         req.url,
       )) ||
+      (req.method === 'POST' &&
+        /^\/api\/reservas\/[^/]+\/concluir(?:\?.*)?$/.test(req.url)) ||
       (req.method === 'PATCH' &&
         /^\/api\/entregas\/[^/]+\/separacao(?:\?.*)?$/.test(req.url)));
   if (

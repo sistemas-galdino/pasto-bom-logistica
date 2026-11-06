@@ -47,6 +47,8 @@ import {
 } from '@pastobom/shared';
 import { api } from '../lib/api';
 import { ClimaResumo } from './ClimaResumo';
+import { ContatoCliente } from './ContatoCliente';
+import { VendedorPedido } from './VendedorPedido';
 import { MiniSemanaCaminhao } from './agenda/MiniSemanaCaminhao';
 import { SeletorSlot } from './SeletorSlot';
 
@@ -80,6 +82,7 @@ interface Props {
     propriedadeCodigo?: string;
     quantidades: Record<string, number>;
     pesos?: Record<string, number>;
+    observacaoAgendamento?: string;
   }) => void;
 }
 
@@ -164,6 +167,8 @@ export function AgendarEntregaModal({
   // Peso digitado agora, como TEXTO: guardar número atrapalharia quem está no
   // meio de digitar "1," ou apagou o campo para redigitar.
   const [pesos, setPesos] = useState<Record<string, string>>({});
+  /** Recado de quem agenda (0027). */
+  const [observacao, setObservacao] = useState('');
   /** Produtos cujo peso já foi conferido nesta tela (o checkbox da soja). */
   const [confirmados, setConfirmados] = useState<Set<string>>(new Set());
 
@@ -448,6 +453,7 @@ export function AgendarEntregaModal({
       propriedadeCodigo: exigePropriedade ? propriedadeCodigo : undefined,
       quantidades: quantidadesEnviadas,
       pesos: Object.keys(pesosEnviados).length > 0 ? pesosEnviados : undefined,
+      observacaoAgendamento: observacao.trim() || undefined,
     });
   }
 
@@ -464,14 +470,23 @@ export function AgendarEntregaModal({
         if (e.target === e.currentTarget && !enviando) onCancelar();
       }}
     >
-      <div className="max-h-[90vh] w-full max-w-2xl animate-sobe overflow-y-auto rounded-xl2 bg-papel p-5 shadow-flutua">
-        <h2 className="font-display text-lg font-semibold text-mata-escuro">
-          Agendar entrega
-        </h2>
-        <p className="mt-0.5 text-sm text-tinta-suave">
-          Pedido nº {pedido.orixNumero || '—'} —{' '}
-          {pedido.clienteNome || pedido.clienteCodigo}
+      {/* `escala-cheia`: no computador a janela sai da escala de 80% e volta ao
+          tamanho de 16px (pedido da Natália, 06/11). O zoom também multiplica o
+          `vh`, então a altura máxima no lg é 72vh — 72 × 1,25 = 90vh de tela. */}
+      <div className="escala-cheia max-h-[90vh] w-full max-w-2xl animate-sobe overflow-y-auto rounded-xl2 bg-papel p-5 shadow-flutua lg:max-h-[72vh]">
+        {/* O CLIENTE é o título (06/11): é por ele que a logística se orienta
+            ao telefone. "Agendar entrega" e o nº do pedido viram a linha
+            pequena de cima, e telefone e vendedor dividem uma linha só. */}
+        <p className="text-xs font-semibold uppercase tracking-wide text-tinta-suave">
+          Agendar entrega · Pedido nº {pedido.orixNumero || '—'}
         </p>
+        <h2 className="mt-1 font-display text-xl font-bold leading-tight text-mata-escuro">
+          {pedido.clienteNome || pedido.clienteCodigo}
+        </h2>
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+          <ContatoCliente telefones={pedido.clienteTelefones ?? []} />
+          <VendedorPedido nome={pedido.vendedorNome} />
+        </div>
 
         {/* Quantidades */}
         <div className="mt-4">
@@ -769,6 +784,27 @@ export function AgendarEntregaModal({
             />
           </div>
         )}
+
+        {/* Recado de quem agenda (0027): acompanha a viagem até a conclusão —
+            quadro, agenda, detalhe e a tela do motorista. */}
+        <label className="mt-4 block">
+          <span className="text-sm font-semibold text-tinta">
+            Observação{' '}
+            <span className="font-normal text-pedra">(opcional)</span>
+          </span>
+          <textarea
+            value={observacao}
+            disabled={enviando}
+            onChange={(e) => setObservacao(e.target.value)}
+            maxLength={1000}
+            rows={2}
+            placeholder="Ex.: ligar antes de sair, entregar na porteira de baixo…"
+            className={`mt-1 resize-y ${campoCls}`}
+          />
+          <span className="mt-1 block text-[11px] text-pedra">
+            Aparece para todos, inclusive o motorista, até a entrega ser concluída.
+          </span>
+        </label>
 
         {/* Avisos */}
         {errosQtd.length > 0 && (
