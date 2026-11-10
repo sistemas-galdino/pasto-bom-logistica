@@ -1,476 +1,435 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Treinamento Pasto Bom</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#2D6A27">
+<link rel="icon" type="image/png" href="../favicon-64.png">
+<title>Treinamento e Funções</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Work+Sans:wght@400;500;600&display=swap">
 <style>
-:root{
-  --verde:#1f4d1f; --verde-2:#2f6b2a; --verde-claro:#e3f1dc; --trigo:#f6e7b4; --trigo-txt:#6b5410;
-  --fundo:#f1f3ec; --papel:#ffffff; --tinta:#1d2618; --suave:#5d6a55; --linha:#dfe5d6; --sombra:0 10px 30px rgba(31,77,31,.10);
+/* Layout: lista de vídeos no topo; abaixo, o "player" (tela real dentro de um celular ou de uma janela) com a legenda ao lado; no fim, o guia de status. */
+:root {
+  --bg: #F3F6F1; --surface: #FFFFFF; --ink: #17301F; --muted: #5E6B60; --line: #D9E3D5;
+  --brand: #2D6A27; --brand-ink: #FFFFFF; --brand-soft: #E1EEDC; --sun: #E8B800; --sun-soft: #FBF3D6;
+  --bezel: #10261A; --chrome: #E4EBE1;
+  --ok: #1C4416; --ok-bg: #D6EDD3; --wait: #8A6D00; --wait-bg: #FBF3D6; --bad: #9A3B32; --bad-bg: #F7E3E1; --off: #5A5A5A; --off-bg: #EDEDED;
+  --font-display: "Manrope", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Work Sans", "Segoe UI", system-ui, sans-serif;
+  color-scheme: light;
 }
-@media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
-    --fundo:#111710; --papel:#1a2218; --tinta:#e8eee2; --suave:#a3b19a; --linha:#2c3829;
-    --verde-claro:#23361f; --trigo:#3b331a; --trigo-txt:#f0dc9b; --sombra:0 10px 30px rgba(0,0,0,.35);
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E1712; --surface: #16231B; --ink: #E5EFE2; --muted: #A3B4A3; --line: #2A3B2F;
+    --brand: #7CC36F; --brand-ink: #0E1712; --brand-soft: #1F3324; --sun: #F2C94C; --sun-soft: #3A3218; --bezel: #050C08; --chrome: #223128;
+    --ok: #A8DDA0; --ok-bg: #1F3A22; --wait: #F2C94C; --wait-bg: #3A3218; --bad: #F0A39A; --bad-bg: #3D2220; --off: #C9C9C9; --off-bg: #2E2E2E;
+    color-scheme: dark;
   }
 }
-:root[data-theme="dark"]{
-  --fundo:#111710; --papel:#1a2218; --tinta:#e8eee2; --suave:#a3b19a; --linha:#2c3829;
-  --verde-claro:#23361f; --trigo:#3b331a; --trigo-txt:#f0dc9b; --sombra:0 10px 30px rgba(0,0,0,.35);
+:root[data-theme="dark"] {
+  --bg: #0E1712; --surface: #16231B; --ink: #E5EFE2; --muted: #A3B4A3; --line: #2A3B2F;
+  --brand: #7CC36F; --brand-ink: #0E1712; --brand-soft: #1F3324; --sun: #F2C94C; --sun-soft: #3A3218; --bezel: #050C08; --chrome: #223128;
+  --ok: #A8DDA0; --ok-bg: #1F3A22; --wait: #F2C94C; --wait-bg: #3A3218; --bad: #F0A39A; --bad-bg: #3D2220; --off: #C9C9C9; --off-bg: #2E2E2E;
+  color-scheme: dark;
 }
-*{box-sizing:border-box}
-html{scroll-behavior:smooth}
-body{margin:0;background:var(--fundo);color:var(--tinta);font:16px/1.6 "Segoe UI",system-ui,-apple-system,Roboto,sans-serif}
-a{color:var(--verde-2)}
-header.capa{background:linear-gradient(135deg,#1f4d1f,#2f6b2a 60%,#4f8a3a);color:#fff;padding:56px 16px 64px}
-.capa .in{max-width:1080px;margin:0 auto}
-.capa h1{font-size:clamp(28px,5vw,44px);line-height:1.15;margin:0 0 12px}
-.capa p{max-width:680px;margin:0;opacity:.92;font-size:18px}
-.selo{display:inline-block;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);border-radius:99px;padding:4px 12px;font-size:13px;margin-bottom:18px}
-.aviso{margin-top:22px;background:rgba(255,255,255,.12);border-radius:12px;padding:10px 14px;font-size:14px;max-width:680px}
-nav.sumario{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--fundo) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--linha)}
-nav.sumario .in{max-width:1080px;margin:0 auto;display:flex;gap:8px;overflow-x:auto;padding:10px 16px}
-nav.sumario a{flex:none;text-decoration:none;color:var(--tinta);background:var(--papel);border:1px solid var(--linha);border-radius:99px;padding:6px 14px;font-size:14px;white-space:nowrap}
-nav.sumario a:hover{border-color:var(--verde-2)}
-main{max-width:1080px;margin:0 auto;padding:24px 16px 80px}
-.parte{margin:48px 0 8px;display:flex;align-items:center;gap:12px}
-.parte span{background:var(--verde);color:#fff;border-radius:10px;padding:4px 10px;font-size:13px;font-weight:600;letter-spacing:.04em}
-.parte h2{margin:0;font-size:26px}
-.intro-parte{color:var(--suave);max-width:760px;margin:0 0 8px}
-section.modulo{background:var(--papel);border:1px solid var(--linha);border-radius:18px;box-shadow:var(--sombra);padding:24px;margin:24px 0}
-.modulo h3{margin:0 0 4px;font-size:22px}
-.modulo .onde{color:var(--suave);font-size:14px;margin:0 0 16px}
-.grade{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:24px;align-items:start}
-.grade.celular{grid-template-columns:minmax(0,1fr) minmax(0,1.2fr)}
-@media (max-width:820px){.grade,.grade.celular{grid-template-columns:1fr}}
-ol.passos{margin:0;padding-left:20px}
-ol.passos li{margin:6px 0}
-.dica{background:var(--verde-claro);border-radius:12px;padding:10px 14px;margin-top:14px;font-size:14px}
-.atencao{background:var(--trigo);color:var(--trigo-txt);border-radius:12px;padding:10px 14px;margin-top:10px;font-size:14px}
-/* Player de vídeo */
-.video{background:#0e130d;border-radius:14px;overflow:hidden;position:relative;user-select:none}
-.video .tela{position:relative;aspect-ratio:16/10;background:#0e130d;display:flex;align-items:center;justify-content:center}
-.video.vertical .tela{aspect-ratio:auto;height:min(640px,78vh);padding:14px 0}
-.video .tela img{max-width:100%;max-height:100%;display:block;opacity:0;transition:opacity .45s ease;position:absolute;inset:0;margin:auto}
-.video.vertical .tela img{border-radius:22px;border:6px solid #2a3327;max-height:calc(100% - 28px)}
-.video .tela img.on{opacity:1}
-.video .tela img.zoom{animation:kb 6s ease-out forwards}
-@keyframes kb{from{transform:scale(1)}to{transform:scale(1.035)}}
-.video .legenda{position:absolute;left:12px;right:12px;bottom:12px;background:rgba(10,14,9,.82);color:#fff;border-radius:10px;padding:8px 12px;font-size:15px;line-height:1.4;transition:opacity .3s}
-.video.vertical .tela{padding-bottom:64px}
-.video.vertical .tela img{max-height:calc(100% - 80px);top:0;bottom:auto;margin:14px auto 0}
-.video .barra{display:flex;gap:4px;padding:10px 12px 0}
-.video .barra i{flex:1;height:4px;border-radius:3px;background:rgba(255,255,255,.22);overflow:hidden;cursor:pointer}
-.video .barra i b{display:block;height:100%;width:0;background:#9bd67f}
-.video .ctrl{display:flex;align-items:center;gap:8px;padding:8px 12px 12px;color:#dfe8d8;font-size:13px}
-.video button{background:rgba(255,255,255,.12);color:#fff;border:0;border-radius:8px;height:34px;min-width:34px;padding:0 10px;font-size:15px;cursor:pointer}
-.video button:hover{background:rgba(255,255,255,.22)}
-.video button.play{background:#2f6b2a;min-width:90px}
-.video .cont{margin-left:auto;opacity:.8}
-.galeria{display:flex;gap:8px;overflow-x:auto;margin-top:10px;padding-bottom:4px}
-.galeria img{height:64px;border-radius:8px;border:2px solid transparent;cursor:pointer;opacity:.75;flex:none}
-.galeria img.on{border-color:var(--verde-2);opacity:1}
-footer{color:var(--suave);font-size:13px;text-align:center;padding:32px 16px}
-.perfis{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:20px}
-.perfil{background:var(--papel);border:1px solid var(--linha);border-radius:14px;padding:16px}
-.perfil b{display:block;margin-bottom:4px}
-.perfil small{color:var(--suave)}
-.tema{position:absolute;top:16px;right:16px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:99px;padding:6px 12px;cursor:pointer;font-size:13px}
-header.capa{position:relative}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 16px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+img { max-width: 100%; }
+.wrap { max-width: 1380px; margin: 0 auto; padding-block: 26px 48px; display: grid; gap: 26px; }
+
+header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.mark { width: 44px; height: 44px; flex: none; }
+.titulos { min-width: 0; flex: 1; }
+h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(1.45rem, 3.4vw, 2rem); line-height: 1.15; margin: 0; text-wrap: balance; }
+header p { margin: 2px 0 0; color: var(--muted); font-size: .95rem; }
+
+/* escolha do vídeo */
+.videos { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 10px; }
+.card { text-align: left; font: inherit; color: var(--ink); background: var(--surface); border: 1.5px solid var(--line); border-radius: 14px; padding: 12px 14px; cursor: pointer; display: grid; gap: 4px; min-width: 0; }
+.card .quem { font-family: var(--font-display); font-weight: 700; font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; color: var(--brand); }
+.card .nome { font-family: var(--font-display); font-weight: 800; font-size: 1.02rem; line-height: 1.25; }
+.card .info { font-size: .85rem; color: var(--muted); }
+.card[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); }
+.card:focus-visible, .btn:focus-visible, .seg:focus-visible, .passo:focus-visible { outline: 3px solid var(--sun); outline-offset: 2px; }
+
+/* player */
+.palco { display: grid; gap: 30px; align-items: center; }
+.palco.celular { grid-template-columns: minmax(0, min(400px, calc((100vh - 60px) / 2.1))) minmax(0, 1fr); justify-content: center; }
+.palco.janela { grid-template-columns: minmax(0, 2.4fr) minmax(0, 1fr); }
+@media (max-width: 900px) { .palco.celular, .palco.janela { grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 16px; } }
+
+.moldura { width: 100%; position: relative; }
+.palco.celular .moldura { max-width: min(400px, calc((100vh - 60px) / 2.1), 100%); background: var(--bezel); border-radius: 36px; padding: 11px; box-shadow: 0 24px 50px -24px rgba(15, 46, 30, .55); }
+.palco.janela .moldura { max-width: 1000px; background: var(--chrome); border-radius: 12px; padding: 0 0 6px; box-shadow: 0 24px 50px -26px rgba(15, 46, 30, .5); border: 1px solid var(--line); }
+.barra { display: none; align-items: center; gap: 6px; padding: 8px 10px; }
+.palco.janela .barra { display: flex; }
+.barra i { width: 9px; height: 9px; border-radius: 50%; background: var(--line); flex: none; }
+.barra span { flex: 1; min-width: 0; margin-left: 6px; background: var(--surface); border-radius: 6px; font-size: .72rem; color: var(--muted); padding: 3px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tela { position: relative; overflow: hidden; max-width: 100%; background: #EEF3EC; cursor: pointer; }
+.palco.celular .tela { aspect-ratio: 364 / 788; border-radius: 26px; }
+.palco.janela .tela { aspect-ratio: 800 / 500; margin: 0 6px; border-radius: 4px; }
+.tela img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; transition: opacity .2s ease; }
+.tela img.trocando { opacity: 0; }
+.toque { position: absolute; width: 42px; height: 42px; margin: -21px 0 0 -21px; border-radius: 50%; border: 3px solid var(--sun); background: rgba(232, 184, 0, .22); pointer-events: none; opacity: 0; }
+.toque.on { opacity: 1; animation: pulso 1.2s ease-out infinite; }
+@keyframes pulso { 0% { transform: scale(.7); } 70% { transform: scale(1.15); } 100% { transform: scale(.7); } }
+
+.legenda { min-width: 0; display: grid; gap: 12px; width: 100%; max-width: 560px; }
+.etapa { font-family: var(--font-display); font-weight: 700; font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: var(--brand); }
+.legenda h2 { font-family: var(--font-display); font-weight: 800; font-size: clamp(1.25rem, 2.6vw, 1.65rem); line-height: 1.2; margin: 0; text-wrap: balance; }
+.texto { margin: 0; font-size: 1rem; max-width: 62ch; }
+.dica { display: flex; gap: 10px; align-items: flex-start; background: var(--sun-soft); border-radius: 12px; padding: 10px 12px; font-size: .92rem; }
+.dica svg { flex: none; margin-top: 3px; color: var(--sun); }
+
+.progresso { display: flex; gap: 4px; }
+.seg { flex: 1; min-width: 0; height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; border: 0; padding: 0; cursor: pointer; }
+.seg span { display: block; height: 100%; width: 0; background: var(--brand); }
+
+.controles { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.btn { font-family: var(--font-display); font-weight: 700; font-size: .9rem; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); padding: 9px 13px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.btn.prim { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+#som[aria-pressed="true"] { background: var(--sun-soft); border-color: var(--sun); }
+.voz { display: inline-flex; align-items: center; gap: 6px; font: 700 .8rem var(--font-display); color: var(--muted); min-width: 0; }
+.voz select { font: 500 .85rem var(--font-body); color: var(--ink); background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; padding: 7px 8px; max-width: 220px; }
+.velocidade { display: inline-flex; border: 1.5px solid var(--line); border-radius: 12px; overflow: hidden; }
+.velocidade button { font: 700 .8rem var(--font-display); border: 0; background: var(--surface); color: var(--muted); padding: 9px 10px; cursor: pointer; }
+.velocidade button[aria-pressed="true"] { background: var(--brand-soft); color: var(--ink); }
+.contador { margin-left: auto; color: var(--muted); font-size: .9rem; font-variant-numeric: tabular-nums; }
+
+.lista h3, .guia h3 { font-family: var(--font-display); font-size: 1.05rem; margin: 0 0 10px; }
+.lista { border-top: 1px solid var(--line); padding-top: 18px; }
+.passos { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: 4px 14px; margin: 0; padding: 0; list-style: none; }
+.passo { width: 100%; text-align: left; background: none; border: 0; padding: 6px 8px; border-radius: 8px; color: var(--muted); font: inherit; font-size: .92rem; cursor: pointer; display: flex; gap: 8px; }
+.passo .n { font-family: var(--font-display); font-weight: 700; color: var(--brand); min-width: 1.6em; font-variant-numeric: tabular-nums; }
+.passo.atual { background: var(--brand-soft); color: var(--ink); }
+
+/* guia de status */
+.guia { border-top: 1px solid var(--line); padding-top: 20px; display: grid; gap: 18px; }
+.guia > p { margin: -4px 0 0; color: var(--muted); max-width: 70ch; }
+.grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+.bloco { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.bloco h4 { margin: 0; font-family: var(--font-display); font-size: .95rem; }
+.item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; align-items: start; font-size: .9rem; }
+.pill { font-family: var(--font-display); font-weight: 700; font-size: .74rem; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.pill.ok { color: var(--ok); background: var(--ok-bg); } .pill.wait { color: var(--wait); background: var(--wait-bg); }
+.pill.bad { color: var(--bad); background: var(--bad-bg); } .pill.off { color: var(--off); background: var(--off-bg); }
+.pill.brand { color: var(--brand-ink); background: var(--brand); }
+.pill.pont { color: var(--muted); background: transparent; border: 1.5px dashed var(--muted); }
+.fluxo { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: .9rem; }
+.fluxo b { font-family: var(--font-display); background: var(--brand-soft); padding: 4px 10px; border-radius: 8px; }
+
+@media (prefers-reduced-motion: reduce) { .tela img { transition: none; } .toque.on { animation: none; } }
 </style>
 </head>
 <body>
-<header class="capa">
-  <button class="tema" id="tema" type="button">Tema</button>
-  <div class="in">
-    <div class="selo">Rede do Campo · Pasto Bom · Logística</div>
-    <h1>Treinamento do Sistema de Logística</h1>
-    <p>Passo a passo de todas as telas: versão de computador, aplicativo no celular e o aplicativo do motorista. Cada tela tem um vídeo curto: aperte <b>▶ Assistir</b> ou use as setas.</p>
-    <div class="aviso">🔒 Todos os nomes de clientes, telefones, e-mails e endereços que aparecem nas imagens são <b>fictícios</b> (ex.: "MARTA DIAS FICTÍCIO", "(35) 91000-0000"). Os números de pedido e produtos são apenas ilustrativos.</div>
-  </div>
-</header>
 
-<nav class="sumario"><div class="in">
-  <a href="#perfis">Quem usa o quê</a>
-  <a href="#dashboard">Dashboard</a>
-  <a href="#agenda">Agenda</a>
-  <a href="#agendar">Agendar entrega</a>
-  <a href="#agendamento">Agendamento</a>
-  <a href="#reserva">Reservar caminhão</a>
-  <a href="#separacao">Separação</a>
-  <a href="#quadro">Quadro de pedidos</a>
-  <a href="#entrega">Entregue / não realizado</a>
-  <a href="#rota">Rota</a>
-  <a href="#cadastros">Cadastros</a>
-  <a href="#celular">Aplicativo (celular)</a>
-  <a href="#motorista">App do motorista</a>
-</div></nav>
-
-<main>
-  <section id="perfis">
-    <div class="parte"><span>INÍCIO</span><h2>Quem usa o quê</h2></div>
-    <p class="intro-parte">O sistema recebe os pedidos de venda do Órix automaticamente. A logística agenda as viagens, o almoxarifado separa a mercadoria e o motorista leva e registra a entrega. Cada pessoa entra com o próprio e-mail e vê só o que é do seu papel.</p>
-    <div class="perfis">
-      <div class="perfil"><b>Logística</b><small>Agenda, reagenda, reserva caminhão, acompanha o quadro e cuida dos cadastros (usuários, caminhões, motivos).</small></div>
-      <div class="perfil"><b>Almoxarifado</b><small>Usa a tela de Separação: confere os itens de cada viagem do dia e imprime a lista.</small></div>
-      <div class="perfil"><b>Vendedor</b><small>Acompanha os pedidos e a agenda para saber quando o cliente vai receber.</small></div>
-      <div class="perfil"><b>Motorista</b><small>Usa o app do motorista no celular: vê a rota do dia, coloca em rota e marca entregue ou não realizado.</small></div>
+<div class="wrap">
+  <header>
+    <svg class="mark" viewBox="0 0 44 44" aria-hidden="true">
+      <rect width="44" height="44" rx="11" fill="#2D6A27"/>
+      <circle cx="31" cy="12" r="5" fill="#E8B800"/>
+      <path d="M22 33V21" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
+      <path d="M22 23c-1-5-5-8-10-8 0 5 4 8 10 8z" fill="#DDEFD8"/>
+      <path d="M22 24c1-4 4-6 8-6 0 4-3 6-8 6z" fill="#fff"/>
+      <path d="M15 33h14" stroke="#A9D39F" stroke-width="2.4" stroke-linecap="round"/>
+    </svg>
+    <div class="titulos">
+      <h1>Treinamento e Funções</h1>
+      <p>Vídeos curtos de cada função do sistema de Logística, com as telas reais do sistema, do celular e do app do motorista. Clientes, telefones e endereços fictícios, só para demonstração.</p>
     </div>
-    <div class="dica"><b>Fluxo de um pedido:</b> Pendente → <b>Agendada</b> (logística agenda) → separação conferida → <b>Em rota</b> (motorista sai) → <b>Entregue</b> ou <b>Não realizado</b>.</div>
+  </header>
+
+  <nav class="videos" id="videos" aria-label="Escolha o vídeo"></nav>
+
+  <section class="palco janela" id="palco" aria-label="Vídeo">
+    <div class="moldura">
+      <div class="barra" aria-hidden="true"><i></i><i></i><i></i><span id="endereco">Pasto Bom · Sistema de Logística</span></div>
+      <div class="tela" id="tela" title="Toque para avançar">
+        <img id="img" alt="">
+        <div class="toque" id="toque"></div>
+      </div>
+    </div>
+
+    <div class="legenda" aria-live="polite">
+      <div class="etapa" id="etapa"></div>
+      <h2 id="titulo"></h2>
+      <p class="texto" id="texto"></p>
+      <div class="dica" id="dica" hidden>
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M8 4.5v4.2M8 10.8v.6" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <span id="dicaTexto"></span>
+      </div>
+      <div class="progresso" id="progresso"></div>
+      <div class="controles">
+        <button class="btn" id="voltar" type="button" aria-label="Passo anterior">‹</button>
+        <button class="btn prim" id="tocar" type="button">❚❚ Pausar</button>
+        <button class="btn" id="avancar" type="button" aria-label="Próximo passo">›</button>
+        <button class="btn" id="som" type="button" aria-pressed="false" hidden>🔈 Ligar som</button>
+        <label class="voz" id="vozRotulo" hidden>Voz <select id="voz"></select></label>
+        <div class="velocidade" role="group" aria-label="Velocidade">
+          <button type="button" data-v="1">1x</button>
+          <button type="button" data-v="1.5">1,5x</button>
+          <button type="button" data-v="2">2x</button>
+        </div>
+        <span class="contador" id="contador"></span>
+      </div>
+    </div>
   </section>
 
-  <div class="parte"><span>PARTE 1</span><h2>Versão de computador</h2></div>
-  <p class="intro-parte">Acesse pelo navegador. O menu lateral pode ser recolhido em "Recolher" para ganhar espaço.</p>
+  <nav class="lista" aria-label="Passos deste vídeo">
+    <h3 id="listaTitulo">Passos</h3>
+    <ol class="passos" id="passos"></ol>
+  </nav>
 
-  <section class="modulo" id="dashboard">
-    <h3>Dashboard</h3>
-    <p class="onde">Menu → Dashboard · visão geral da operação</p>
+  <section class="guia" id="status" aria-labelledby="guiaTitulo">
+    <h3 id="guiaTitulo">Guia de status: o que cada um significa</h3>
+    <p>Aparecem nos cards do Quadro de pedidos, na Agenda, no Agendamento e na Rota. Cada viagem de um pedido tem o seu próprio status.</p>
     <div class="grade">
-      <div data-video="dashboard"></div>
-      <div>
-        <ol class="passos">
-          <li>No topo, os números de <b>agora</b>: pedidos em aberto, viagens agendadas, carga em rota e motoristas ativos.</li>
-          <li>Em <b>No período</b>, escolha 7 dias, 15 dias, 30 dias ou o ano para ver os gráficos.</li>
-          <li>O gráfico de <b>Viagens por motorista</b> mostra quantas entregas cada um fez, e quantas estão agendadas ou em rota.</li>
-        </ol>
-        <div class="dica">O selo "Órix · atualizado há X h" no topo mostra quando os pedidos foram trazidos do Órix pela última vez.</div>
+      <div class="bloco">
+        <h4>Caminho de uma entrega</h4>
+        <div class="fluxo"><b>Pendente</b> → <b>Agendada</b> → <b>Separação OK</b> → <b>Em rota</b> → <span class="pill ok">Entregue</span></div>
+        <div class="item"><span class="pill off">Pendente</span><span>Pedido que veio do Órix e ainda tem saldo para agendar.</span></div>
+        <div class="item"><span class="pill ok">Agendada</span><span>Viagem marcada com data, período, motorista e caminhão.</span></div>
+        <div class="item"><span class="pill wait">Em rota</span><span>O motorista saiu com a carga.</span></div>
+        <div class="item"><span class="pill ok">Entregue</span><span>Cliente recebeu. Se recebeu menos, o restante volta ao pedido ou é encerrado.</span></div>
+        <div class="item"><span class="pill bad">Não realizado</span><span>A entrega não aconteceu. Sempre traz o motivo escolhido da lista.</span></div>
+      </div>
+      <div class="bloco">
+        <h4>Marcas no card</h4>
+        <div class="item"><span class="pill wait">Parcial</span><span>Parte do pedido já foi entregue ou agendada; ainda há saldo.</span></div>
+        <div class="item"><span class="pill wait">Em viagem</span><span>Parte do pedido está numa viagem agendada ou em rota agora.</span></div>
+        <div class="item"><span class="pill wait">0/2</span><span>Separação: quantos itens da viagem já foram conferidos.</span></div>
+        <div class="item"><span class="pill pont">Reserva</span><span>Caminhão ocupado com algo que não é entrega a cliente (oficina, buscar mercadoria).</span></div>
+        <div class="item"><span class="pill brand">Observação</span><span>Recado de quem agendou. Aparece para todos, inclusive o motorista, até a entrega ser concluída.</span></div>
+      </div>
+      <div class="bloco">
+        <h4>Status no Órix (filtros do Quadro)</h4>
+        <div class="item"><span class="pill off">Aguardando entrega</span><span>Situação do pedido no Órix. Toque no filtro para ver só esses pedidos.</span></div>
+        <div class="item"><span class="pill off">Sem reserva de estoque</span><span>Situação do pedido no Órix; aparece também no card.</span></div>
+        <div class="item"><span class="pill off">Parcial</span><span>Situação do pedido no Órix quando parte já foi atendida.</span></div>
+        <h4>Motivos de não realizado (exemplos)</h4>
+        <div class="item"><span class="pill bad">Motivo</span><span>Cliente ausente · Porteira fechada · Estrada intransitável · Endereço não encontrado · Cliente recusou. A lista é configurada em Motivos.</span></div>
       </div>
     </div>
   </section>
-
-  <section class="modulo" id="agenda">
-    <h3>Agenda</h3>
-    <p class="onde">Menu → Agenda · entregas por dia e período</p>
-    <div class="grade">
-      <div data-video="agenda"></div>
-      <div>
-        <ol class="passos">
-          <li>Troque a visão em <b>Mês</b>, <b>Semana</b> ou <b>Dia</b>. Use as setas e "Hoje" para navegar.</li>
-          <li>As cores mostram a situação: verde = agendada, amarelo = em rota, pontilhado = reserva de caminhão.</li>
-          <li>Clique em uma entrega para ver o detalhe: motorista, caminhão, local, produtos, peso e a <b>observação</b> do agendamento.</li>
-          <li><b>Rotas de cidade</b>: cadastre os dias da semana em que um caminhão atende cada cidade (ex.: Cabo Verde às terças de manhã).</li>
-        </ol>
-      </div>
-    </div>
-  </section>
-
-  <section class="modulo" id="agendar">
-    <h3>Agendar uma entrega</h3>
-    <p class="onde">Quadro de pedidos → coluna Pendente → botão "Agendar entrega"</p>
-    <div class="grade">
-      <div data-video="agendar"></div>
-      <div>
-        <ol class="passos">
-          <li>Na coluna <b>Pendente</b>, encontre o pedido (use a busca por cliente, nº do pedido, cidade, bairro ou produto).</li>
-          <li>Clique em <b>Agendar entrega</b>.</li>
-          <li>Em "O que vai nesta viagem", ajuste a quantidade de cada produto. Use <b>tudo</b> para levar o saldo inteiro. O que sobrar fica no pedido.</li>
-          <li>Escolha <b>data</b>, <b>período</b> (manhã/tarde), <b>motorista</b> e <b>caminhão</b>. A linha de peso avisa quanto sobra no caminhão.</li>
-          <li>Confira "A semana deste caminhão" para ver quantas viagens ele já tem em cada dia, e a previsão do tempo.</li>
-          <li>Se quiser, escreva uma <b>Observação</b> (ex.: "ligar antes de sair"). Ela aparece para todos, inclusive para o motorista, até a entrega ser concluída.</li>
-          <li>Clique em <b>Agendar entrega</b>.</li>
-        </ol>
-        <div class="atencao">Um pedido pode ser entregue em várias viagens: o card mostra "Parcial" e "Em viagem" enquanto ainda houver saldo.</div>
-      </div>
-    </div>
-  </section>
-
-  <section class="modulo" id="agendamento">
-    <h3>Agendamento (agenda do caminhão)</h3>
-    <p class="onde">Menu → Agendamento · vagas de cada caminhão por dia</p>
-    <div class="grade">
-      <div data-video="agendamento"></div>
-      <div>
-        <ol class="passos">
-          <li>Escolha um caminhão nos botões do topo. O número entre parênteses é a quantidade de entregas na semana.</li>
-          <li>Cada dia mostra a carga do caminhão (ex.: 12,0 / 14,0 t) e as entregas de manhã e de tarde.</li>
-          <li>Clique no <b>+</b> de um dia para abrir "Qual pedido vai nesta viagem?" e escolha o pedido. Dá para buscar por cliente, cidade, bairro ou produto.</li>
-          <li>Ao clicar em <b>Agendar entrega</b> no pedido, abre a mesma janela de agendamento, já com o dia e o caminhão preenchidos.</li>
-          <li>Arraste um card (pelo ⋮⋮) para mudar a <b>ordem das paradas</b> daquele caminhão no dia. Para mudar o dia, use <b>Reagendar</b>.</li>
-        </ol>
-        <div class="dica">A agenda mostra o que está AGENDADO ou em rota. Entregas concluídas saem do calendário: para o histórico, use o Quadro de pedidos ou os relatórios.</div>
-      </div>
-    </div>
-  </section>
-
-  <section class="modulo" id="reserva">
-    <h3>Reservar caminhão</h3>
-    <p class="onde">Agendamento ou Quadro de pedidos → "Reservar caminhão"</p>
-    <div class="grade">
-      <div data-video="reserva"></div>
-      <div>
-        <ol class="passos">
-          <li>Use para ocupar o caminhão com algo que <b>não é entrega a cliente</b>: oficina, buscar adubo na fábrica, transferência…</li>
-          <li>Preencha o <b>Serviço</b> (vira o título do card), o destino (fornecedor ou cidade) e os produtos em texto livre.</li>
-          <li>Escolha data, período, caminhão e, se quiser, motorista e peso previsto.</li>
-          <li>A reserva aparece no quadro e na agenda com borda pontilhada, e pode ser editada pelo botão <b>Editar</b>.</li>
-        </ol>
-      </div>
-    </div>
-  </section>
-
-  <section class="modulo" id="separacao">
-    <h3>Separação</h3>
-    <p class="onde">Menu → Separação · o que separar no dia, por período</p>
-    <div class="grade">
-      <div data-video="separacao"></div>
-      <div>
-        <ol class="passos">
-          <li>Escolha o dia (Hoje, Amanhã, Atrasados ou uma data) e, se quiser, filtre por caminhão.</li>
-          <li>Cada viagem lista os produtos. Marque cada item conforme separa.</li>
-          <li>Com todos os itens marcados, clique em <b>Dar OK na separação</b>. Só depois disso o pedido fica liberado para a rota.</li>
-          <li><b>Imprimir lista</b> gera uma folha por viagem, com caminhão, motorista, cliente, produtos e espaço para "Separado por" e "Conferido".</li>
-        </ol>
-        <div class="dica">No Quadro de pedidos, o botão <b>Separar</b> do card agendado abre a mesma conferência para um pedido só.</div>
-      </div>
-    </div>
-  </section>
-
-  <section class="modulo" id="quadro">
-    <h3>Quadro de pedidos</h3>
-    <p class="onde">Menu → Quadro de pedidos · acompanhamento até o fim do processo</p>
-    <div class="grade">
-      <div data-video="quadro"></div>
-      <div>
-        <ol class="passos">
-          <li>As colunas seguem o fluxo: <b>Pendente</b> → <b>Agendada</b> → <b>Em rota</b> → <b>Entregue</b> → <b>Não realizado</b>. Role para o lado para ver todas.</li>
-          <li>Filtre por <b>data de entrada</b> do pedido, por <b>data da entrega</b> ou pelo <b>status no Órix</b> (Aguardando entrega, Sem reserva de estoque, Parcial).</li>
-          <li>No card agendado: <b>Separar</b>, <b>Pôr em rota</b>, <b>Reagendar</b> ou <b>Desfazer</b> (volta para pendente).</li>
-          <li><b>Reagendar</b> muda dia, período, motorista ou caminhão sem perder a separação. Dá para registrar o motivo e avisar o cliente da nova data.</li>
-          <li><b>Descartar</b> tira um pedido pendente do quadro. Ele vai para "Descartados", de onde volta pelo botão <b>Restaurar</b>.</li>
-        </ol>
-      </div>
-    </div>
-  </section>
-
-  <section class="modulo" id="entrega">
-    <h3>Marcar entregue ou não realizado</h3>
-    <p class="onde">Quadro de pedidos → coluna Em rota (ou app do motorista)</p>
-    <div class="grade">
-      <div data-video="entrega"></div>
-      <div>
-        <ol class="passos">
-          <li>No card em rota, clique em <b>Marcar entregue</b>. A quantidade já vem com o que foi carregado.</li>
-          <li>Se o cliente recebeu <b>menos</b>, diminua o número. O sistema pergunta se o cliente quer o restante:
-            <br>• <b>Sim</b>: o que voltou retorna ao pedido para ser agendado de novo.
-            <br>• <b>Não quer mais</b>: o restante é encerrado como não realizado.</li>
-          <li>Se a entrega não aconteceu, use <b>Não realizado</b> e escolha o motivo da lista (cliente ausente, porteira fechada, estrada intransitável…).</li>
-          <li><b>Voltar</b> desfaz o "em rota" por engano.</li>
-        </ol>
-      </div>
-    </div>
-  </section>
-
-  <section class="modulo" id="rota">
-    <h3>Rota</h3>
-    <p class="onde">Menu → Rota · o dia de cada motorista e quem está na estrada</p>
-    <div class="grade">
-      <div data-video="rota"></div>
-      <div>
-        <ol class="passos">
-          <li>Filtre por motorista nos botões do topo. O número é a quantidade de viagens do dia.</li>
-          <li>Cada motorista mostra onde está <b>agora</b> (a entrega atual), quantas viagens estão agendadas, em rota e entregues, e o peso total.</li>
-          <li>Quando a ordem das paradas foi definida (pelo motorista no app ou pela logística arrastando na agenda), a sequência aparece numerada.</li>
-        </ol>
-      </div>
-    </div>
-  </section>
-
-  <section class="modulo" id="cadastros">
-    <h3>Cadastros: caminhões, usuários e motivos</h3>
-    <p class="onde">Menu → Caminhões · Usuários · Motivos (somente logística)</p>
-    <div class="grade">
-      <div data-video="cadastros"></div>
-      <div>
-        <ol class="passos">
-          <li><b>Caminhões</b>: nome, placa, capacidade em toneladas e o teto de <b>Entregas/dia</b>. Use <b>Novo caminhão</b>, <b>Editar</b> ou <b>Desativar</b>.</li>
-          <li><b>Usuários</b>: veja quem tem acesso, o papel (logística, almoxarifado, vendedor, motorista) e o último acesso. Troque o papel na lista.</li>
-          <li><b>Convidar usuário</b>: informe e-mail, nome e papel e clique em <b>Gerar link</b>. A pessoa cria a própria senha pelo link.</li>
-          <li><b>Motivos</b>: a lista de motivos de "não realizado". Quem registra escolhe da lista, não digita, e assim dá para filtrar depois.</li>
-        </ol>
-      </div>
-    </div>
-  </section>
-
-  <div class="parte" id="celular"><span>PARTE 2</span><h2>Aplicativo no celular</h2></div>
-  <p class="intro-parte">É o mesmo sistema, aberto pelo navegador do celular (dá para "Adicionar à tela inicial" e usar como aplicativo). As telas se ajustam ao tamanho do celular.</p>
-
-  <section class="modulo">
-    <h3>Navegação no celular</h3>
-    <p class="onde">Barra de baixo: Menu · Dashboard · Agenda · Quadro de pedidos</p>
-    <div class="grade celular">
-      <div data-video="celular" data-vertical></div>
-      <div>
-        <ol class="passos">
-          <li>A <b>barra de baixo</b> leva direto às telas mais usadas: Dashboard, Agenda e Quadro de pedidos.</li>
-          <li><b>Menu</b> abre todas as outras telas (Agendamento, Separação, Rota, Caminhões, Usuários, Motivos) e o botão <b>Sair</b>.</li>
-          <li>Na <b>Agenda</b>, toque em uma entrega para ver o detalhe.</li>
-          <li>No <b>Quadro de pedidos</b>, deslize para o lado para passar de uma coluna para outra.</li>
-          <li>Na <b>Separação</b>, marque os itens com o dedo e toque em <b>Dar OK na separação</b>.</li>
-          <li>O sino 🔔 no topo mostra os avisos.</li>
-        </ol>
-        <div class="dica">Tudo o que se faz no computador também funciona no celular: agendar, reagendar, separar e marcar entregue.</div>
-      </div>
-    </div>
-  </section>
-
-  <div class="parte" id="motorista"><span>PARTE 3</span><h2>App do motorista</h2></div>
-  <p class="intro-parte">O motorista entra no celular com o próprio e-mail e cai direto na <b>Rota do dia</b>. Ele vê só as próprias viagens.</p>
-
-  <section class="modulo">
-    <h3>Rota do dia</h3>
-    <p class="onde">Entrar com a conta de motorista → Rota do dia</p>
-    <div class="grade celular">
-      <div data-video="motorista" data-vertical></div>
-      <div>
-        <ol class="passos">
-          <li>No topo aparece a <b>reserva de caminhão</b>, se houver (serviço, data, destino e produtos).</li>
-          <li>Cada entrega mostra o número da parada, o cliente, o endereço, o peso e a <b>observação</b> do agendamento, quando houver.</li>
-          <li>Toque em <b>Ver produtos</b> para conferir o que vai.</li>
-          <li><b>Abrir no Maps</b> abre o caminho até o cliente.</li>
-          <li><b>Colocar em rota</b> ao sair com a carga. Depois aparecem os botões <b>Entregue</b> e <b>Não realizado</b>, com a mesma janela do computador: quantidade recebida, restante e motivo.</li>
-          <li><b>Desfazer separação</b> serve para quando a carga precisa ser conferida de novo.</li>
-        </ol>
-        <div class="atencao">A entrega só pode ir para a rota depois da separação conferida pelo almoxarifado.</div>
-      </div>
-    </div>
-  </section>
-</main>
-
-<footer>Treinamento interno · Pasto Bom Logística · imagens com dados fictícios · novembro de 2026</footer>
+</div>
 
 <script>
-const VIDEOS = {
-  dashboard: [
-    ['web-dashboard-1','Dashboard: os números de agora (pedidos em aberto, agendadas, em rota, motoristas).'],
-    ['web-dashboard-2','Mais abaixo, os gráficos do período e as viagens por motorista.'],
-  ],
-  agenda: [
-    ['web-agenda-mes','Agenda no modo Mês: quantas entregas há em cada dia.'],
-    ['web-agenda-semana','Modo Semana: entregas de manhã e de tarde por dia.'],
-    ['web-agenda-dia','Modo Dia: cada caminhão com sua carga e suas entregas.'],
-    ['web-agenda-detalhe','Clique em uma entrega para ver motorista, caminhão, local e produtos.'],
-    ['web-agenda-rotacidade-1','Rotas de cidade: os dias em que cada cidade é atendida.'],
-    ['web-agenda-rotacidade-2','Para cadastrar uma rota nova: cidade, dias da semana, período e a partir de quando.'],
-  ],
-  agendar: [
-    ['web-quadro-1','No Quadro de pedidos, a coluna Pendente tem os pedidos que ainda faltam agendar.'],
-    ['web-agendar-1','Agendar entrega: escolha a quantidade de cada produto desta viagem.'],
-    ['web-agendar-2','Escolha data, período, motorista e caminhão e confira a semana do caminhão.'],
-    ['web-agendar-3','Escreva a observação (opcional) e clique em Agendar entrega.'],
-  ],
-  agendamento: [
-    ['web-agendamento-1','Agendamento: a agenda da semana, com todos os caminhões.'],
-    ['web-agendamento-caminhao','Escolha um caminhão para ver a carga de cada dia e as vagas.'],
-    ['web-agendamento-escolher','No + de um dia, escolha qual pedido vai nesta viagem.'],
-    ['web-agendamento-busca','Busque por cidade, cliente, bairro ou produto para achar rápido.'],
-  ],
-  reserva: [
-    ['web-reserva-nova','Reservar caminhão: serviço, destino, produtos, data e caminhão.'],
-    ['web-quadro-reserva','A reserva aparece no quadro com borda pontilhada e o botão Editar.'],
-  ],
-  separacao: [
-    ['web-separacao-vazia','Separação: escolha o dia. Se não houver viagens, a tela avisa.'],
-    ['web-separacao','Cada viagem do dia com os produtos para marcar.'],
-    ['web-separar','No Quadro, o botão Separar abre a conferência de um pedido.'],
-    ['web-separacao-imprimir','Imprimir lista: uma folha por viagem, para assinar.'],
-  ],
-  quadro: [
-    ['web-quadro-1','Quadro de pedidos: as colunas seguem o caminho do pedido.'],
-    ['web-quadro-2','Role para o lado: Em rota, Entregue e Não realizado.'],
-    ['web-reagendar','Reagendar: muda dia, motorista ou caminhão sem perder a separação.'],
-    ['web-quadro-descartados','Descartados: os pedidos tirados do quadro, que podem voltar.'],
-  ],
-  entrega: [
-    ['web-entregue-1','Marcar entregue: a quantidade já vem com o que foi carregado.'],
-    ['web-entregue-parcial','Recebeu menos? O sistema pergunta se o cliente quer o restante.'],
-    ['web-nao-realizado','Não realizado: escolha o motivo na lista.'],
-  ],
-  rota: [
-    ['web-rota-1','Rota: o dia de cada motorista.'],
-    ['web-rota-2','Quem está na estrada agora e quais entregas estão em rota.'],
-  ],
-  cadastros: [
-    ['web-caminhoes','Caminhões: capacidade e limite de entregas por dia.'],
-    ['web-usuarios','Usuários: papel, situação e último acesso de cada pessoa.'],
-    ['web-usuarios-convite','Convidar usuário: a pessoa recebe um link e cria a senha.'],
-    ['web-motivos','Motivos de entrega não realizada.'],
-  ],
-  celular: [
-    ['app-dashboard','No celular, a barra de baixo leva às telas principais.'],
-    ['app-menu','Menu: todas as telas e o botão Sair.'],
-    ['app-agenda','Agenda do dia no celular.'],
-    ['app-agenda-detalhe','Toque na entrega para ver o detalhe.'],
-    ['app-quadro','Quadro de pedidos: filtros no topo e colunas embaixo.'],
-    ['app-quadro-agendada','Deslize para o lado para ver as outras colunas.'],
-    ['app-agendamento','Agendamento: escolha o caminhão.'],
-    ['app-separacao','Separação: marque os itens e dê OK.'],
-    ['app-rota','Rota: o dia de cada motorista.'],
-  ],
-  motorista: [
-    ['mot-rota','Rota do dia do motorista: a reserva e as entregas, com endereço e peso.'],
-    ['mot-produtos','Ver produtos: confira o que vai em cada entrega antes de sair.'],
-  ],
-};
-const DURACAO = 5000;
+// toque: onde tocar, em % da imagem (x, y). tela: "celular" ou "janela".
+const VIDEOS = [
+  { id: "agendar", quem: "Logística", nome: "Agendar uma entrega", tela: "janela", passos: [
+    { img: "img/web-quadro-1.jpg", titulo: "Abra o Quadro de pedidos", texto: "Os pedidos chegam do Órix sozinhos na coluna Pendente. Encontre o pedido e toque em Agendar entrega.", dica: "Use a busca por cliente, nº do pedido, cidade, bairro ou produto.", toque: [16, 76.4] },
+    { img: "img/web-agendar-1.jpg", titulo: "O que vai nesta viagem", texto: "Ajuste a quantidade de cada produto. O botão tudo leva o saldo inteiro; o que sobrar fica no pedido para outra viagem.", dica: null, toque: [67.5, 30] },
+    { img: "img/web-agendar-2.jpg", titulo: "Data, motorista e caminhão", texto: "Escolha data, período (manhã ou tarde), motorista e caminhão. A linha de peso mostra quanto sobra de carga no caminhão.", dica: "A semana do caminhão mostra quantas viagens ele já tem em cada dia.", toque: [33.8, 60.6] },
+    { img: "img/web-agendar-3.jpg", titulo: "Observação e confirmar", texto: "Se quiser, escreva uma observação, como \"ligar antes de sair\". Depois toque em Agendar entrega.", dica: "A observação aparece para todos, inclusive para o motorista, até a entrega ser concluída.", toque: [72.3, 88.8] },
+  ]},
+  { id: "agendamento", quem: "Logística", nome: "Agendamento por caminhão", tela: "janela", passos: [
+    { img: "img/web-agendamento-1.jpg", titulo: "Abra o Agendamento", texto: "É a agenda dos caminhões. O número ao lado de cada caminhão é a quantidade de entregas na semana.", dica: null, toque: null },
+    { img: "img/web-agendamento-caminhao.jpg", titulo: "Escolha um caminhão", texto: "Cada dia mostra a carga do caminhão (por exemplo 12,0 / 14,0 t) e as entregas de manhã e de tarde. Toque no + do dia para colocar um pedido.", dica: "Arraste um card pelo ⋮⋮ para mudar a ordem das paradas no dia.", toque: [36.6, 49.6] },
+    { img: "img/web-agendamento-escolher.jpg", titulo: "Qual pedido vai nesta viagem?", texto: "Aparecem os pedidos com saldo. Toque em Agendar entrega: abre a mesma janela de agendamento, já com o dia e o caminhão.", dica: null, toque: [17.4, 52.6] },
+    { img: "img/web-agendamento-busca.jpg", titulo: "Busque pela cidade", texto: "Digite a cidade, o cliente, o bairro ou o produto para montar a viagem de uma região de uma vez.", dica: null, toque: [50, 18] },
+  ]},
+  { id: "agenda", quem: "Todos", nome: "Agenda e rotas de cidade", tela: "janela", passos: [
+    { img: "img/web-agenda-mes.jpg", titulo: "Agenda do mês", texto: "Veja quantas entregas há em cada dia. As setas e o botão Hoje mudam o período.", dica: null, toque: [85, 14] },
+    { img: "img/web-agenda-semana.jpg", titulo: "Agenda da semana", texto: "As entregas de manhã e de tarde de cada dia. Verde é agendada, amarelo é em rota e pontilhado é reserva.", dica: null, toque: [90.8, 14] },
+    { img: "img/web-agenda-dia.jpg", titulo: "Agenda do dia", texto: "Cada caminhão com a carga do dia e as entregas, separadas por período.", dica: null, toque: [96.3, 14] },
+    { img: "img/web-agenda-detalhe.jpg", titulo: "Detalhe da entrega", texto: "Toque na entrega para ver motorista, caminhão, local, produtos, peso e a observação do agendamento.", dica: null, toque: null },
+    { img: "img/web-agenda-rotacidade-1.jpg", titulo: "Rotas de cidade", texto: "Mostra em que dias da semana cada cidade é atendida.", dica: null, toque: null },
+    { img: "img/web-agenda-rotacidade-2.jpg", titulo: "Cadastrar uma rota", texto: "Informe a cidade, os dias da semana, o período e a partir de quando vale. Toque em Cadastrar rota.", dica: null, toque: [53, 69.4] },
+  ]},
+  { id: "reserva", quem: "Logística", nome: "Reservar caminhão", tela: "janela", passos: [
+    { img: "img/web-reserva-nova.jpg", titulo: "Reservar caminhão", texto: "Para ocupar o caminhão com algo que não é entrega a cliente: oficina, buscar adubo na fábrica, transferência. Preencha o Serviço, o destino e os produtos.", dica: "O Serviço vira o título do card no quadro e na agenda.", toque: [49, 24] },
+    { img: "img/web-quadro-reserva.jpg", titulo: "A reserva no quadro", texto: "A reserva aparece com borda pontilhada no quadro e na agenda. Use Editar para mudar.", dica: null, toque: null },
+  ]},
+  { id: "separacao", quem: "Almoxarifado", nome: "Separar a mercadoria", tela: "janela", passos: [
+    { img: "img/web-separacao-vazia.jpg", titulo: "Escolha o dia", texto: "Na Separação, escolha Hoje, Amanhã, Atrasados ou uma data. Se não houver viagens, a tela avisa.", dica: null, toque: null },
+    { img: "img/web-separacao.jpg", titulo: "Viagens do dia", texto: "Cada viagem lista os produtos. Marque cada item conforme separa e toque em Dar OK na separação.", dica: "Sem a separação conferida, a entrega não pode ir para a rota.", toque: null },
+    { img: "img/web-separar.jpg", titulo: "Separar pelo Quadro", texto: "No Quadro de pedidos, o botão Separar do card abre a mesma conferência para um pedido só.", dica: null, toque: [35.8, 43.6] },
+    { img: "img/web-separacao-imprimir.jpg", titulo: "Imprimir a lista", texto: "Imprimir lista gera uma folha por viagem, com caminhão, motorista, cliente e produtos, e espaço para assinar.", dica: null, toque: [89, 8] },
+  ]},
+  { id: "quadro", quem: "Logística", nome: "Quadro de pedidos", tela: "janela", passos: [
+    { img: "img/web-quadro-1.jpg", titulo: "As colunas do fluxo", texto: "Pendente, Agendada, Em rota, Entregue e Não realizado. Role para o lado para ver todas.", dica: "Filtre pela data de entrada do pedido, pela data da entrega ou pelo status no Órix.", toque: null },
+    { img: "img/web-quadro-2.jpg", titulo: "Em rota e entregues", texto: "Na coluna Em rota ficam os botões Marcar entregue, Não realizado e Voltar.", dica: null, toque: [20.9, 80.8] },
+    { img: "img/web-reagendar.jpg", titulo: "Reagendar", texto: "No card agendado, Reagendar muda dia, período, motorista ou caminhão sem perder a separação. Dá para registrar o motivo e avisar o cliente.", dica: null, toque: [38.9, 36.8] },
+    { img: "img/web-quadro-descartados.jpg", titulo: "Descartados", texto: "Descartar tira um pedido pendente do quadro. Ele fica em Descartados e volta pelo botão Restaurar.", dica: null, toque: [13.5, 64] },
+  ]},
+  { id: "entrega", quem: "Logística", nome: "Entregue e não realizado", tela: "janela", passos: [
+    { img: "img/web-entregue-1.jpg", titulo: "Marcar como entregue", texto: "A quantidade já vem com o que foi carregado. Se o cliente recebeu tudo, toque em Marcar entregue.", dica: null, toque: [62.8, 70.8] },
+    { img: "img/web-entregue-parcial.jpg", titulo: "Recebeu menos?", texto: "Diminua a quantidade. O sistema pergunta se o cliente quer o restante: Sim volta para o pedido; Não quer mais encerra o restante.", dica: null, toque: [63.8, 33] },
+    { img: "img/web-nao-realizado.jpg", titulo: "Não realizado", texto: "Se a entrega não aconteceu, escolha o motivo da lista e confirme.", dica: "Os motivos são configurados na tela Motivos.", toque: null },
+  ]},
+  { id: "gestao", quem: "Gestão", nome: "Dashboard e Rota", tela: "janela", passos: [
+    { img: "img/web-dashboard-1.jpg", titulo: "Números de agora", texto: "Pedidos em aberto, viagens agendadas, carga em rota e motoristas ativos.", dica: "O selo Órix no topo mostra quando os pedidos foram atualizados.", toque: null },
+    { img: "img/web-dashboard-2.jpg", titulo: "Gráficos do período", texto: "Escolha 7, 15 ou 30 dias, ou o ano. Viagens por motorista mostra entregues, agendadas e em rota de cada um.", dica: null, toque: null },
+    { img: "img/web-rota-1.jpg", titulo: "Rota do dia", texto: "Filtre pelo motorista. Cada um mostra onde está agora, quantas viagens tem e o peso total.", dica: null, toque: [28.6, 20.8] },
+    { img: "img/web-rota-2.jpg", titulo: "Quem está na estrada", texto: "As entregas em rota de cada motorista. Quando a ordem das paradas foi definida, ela aparece numerada.", dica: null, toque: null },
+  ]},
+  { id: "cadastros", quem: "Logística", nome: "Caminhões, usuários e motivos", tela: "janela", passos: [
+    { img: "img/web-caminhoes.jpg", titulo: "Caminhões", texto: "Nome, placa, capacidade e o teto de entregas por dia. Use Novo caminhão, Editar ou Desativar.", dica: "Sem teto de entregas, nada limita a quantidade de viagens do caminhão.", toque: [90, 17] },
+    { img: "img/web-usuarios.jpg", titulo: "Usuários", texto: "Quem tem acesso, o papel de cada um (logística, almoxarifado, vendedor, motorista) e o último acesso. Troque o papel na lista.", dica: null, toque: null },
+    { img: "img/web-usuarios-convite.jpg", titulo: "Convidar usuário", texto: "Informe e-mail, nome e papel e toque em Gerar link. A pessoa cria a própria senha pelo link.", dica: null, toque: [76.5, 85.6] },
+    { img: "img/web-motivos.jpg", titulo: "Motivos", texto: "A lista de motivos de entrega não realizada. Quem registra escolhe da lista, sem digitar.", dica: null, toque: null },
+  ]},
+  { id: "celular", quem: "Todos", nome: "Usar no celular", tela: "celular", passos: [
+    { img: "img/app-dashboard.jpg", titulo: "A barra de baixo", texto: "No celular, a barra de baixo leva direto ao Dashboard, à Agenda e ao Quadro de pedidos.", dica: null, toque: [12.4, 93.3] },
+    { img: "img/app-menu.jpg", titulo: "O Menu", texto: "Menu abre todas as outras telas: Agendamento, Separação, Rota, Caminhões, Usuários e Motivos. No fim fica o botão Sair.", dica: null, toque: [21.4, 28.9] },
+    { img: "img/app-agenda.jpg", titulo: "Agenda no celular", texto: "Mês, Semana ou Dia. Toque em uma entrega para ver o detalhe.", dica: null, toque: [51.5, 73.6] },
+    { img: "img/app-agenda-detalhe.jpg", titulo: "Detalhe da entrega", texto: "Motorista, caminhão, local e produtos da viagem. O X fecha.", dica: null, toque: [86.5, 26.8] },
+    { img: "img/app-quadro.jpg", titulo: "Quadro de pedidos", texto: "Os filtros ficam no topo e as colunas embaixo. Agendar entrega funciona igual ao computador.", dica: null, toque: [26, 64.8] },
+    { img: "img/app-quadro-agendada.jpg", titulo: "Deslize para o lado", texto: "Arraste para o lado para passar de uma coluna para outra: Agendada, Em rota, Entregue.", dica: null, toque: null },
+    { img: "img/app-agendamento.jpg", titulo: "Agendamento", texto: "Escolha o caminhão para ver as vagas de cada dia.", dica: null, toque: [61, 29.4] },
+    { img: "img/app-separacao.jpg", titulo: "Separação", texto: "Marque os itens com o dedo e toque em Dar OK na separação.", dica: null, toque: [50, 74] },
+    { img: "img/app-rota.jpg", titulo: "Rota", texto: "O dia de cada motorista e quem está na estrada.", dica: null, toque: [65.4, 17.5] },
+  ]},
+  { id: "motorista", quem: "Motorista", nome: "Rota do dia do motorista", tela: "celular", passos: [
+    { img: "img/mot-rota.jpg", titulo: "Entre com a sua conta", texto: "O motorista entra no celular com o próprio e-mail e senha e cai direto na Rota do dia, só com as viagens dele.", dica: null, toque: null },
+    { img: "img/mot-rota.jpg", titulo: "Reserva de caminhão", texto: "Se houver uma reserva, ela aparece no topo: serviço, data, destino, produtos e caminhão.", dica: null, toque: [50, 20] },
+    { img: "img/mot-rota.jpg", titulo: "As entregas do dia", texto: "Cada entrega mostra o número da parada, o cliente, o endereço, o peso e a observação de quem agendou.", dica: null, toque: [13, 47] },
+    { img: "img/mot-produtos.jpg", titulo: "Confira os produtos", texto: "Toque em Ver produtos para conferir o que vai em cada entrega antes de sair.", dica: null, toque: [24.7, 55.6] },
+    { img: "img/mot-rota.jpg", titulo: "Abrir no Maps", texto: "Abre o caminho até o cliente no aplicativo de mapas.", dica: null, toque: [50, 62.6] },
+    { img: "img/mot-rota.jpg", titulo: "Colocar em rota", texto: "Toque ao sair com a carga. Depois aparecem Entregue e Não realizado, com a quantidade recebida e o motivo, como no computador.", dica: "A entrega só vai para a rota depois da separação conferida.", toque: [50, 68.3] },
+  ]},
+  { id: "instalar-app", quem: "Todos", nome: "Instalar o app no celular", tela: "celular", passos: [
+    { img: "img/app-dashboard.jpg", titulo: "Abra o sistema no navegador", texto: "No celular, abra o endereço do sistema no Chrome, no Android, ou no Safari, no iPhone.", dica: null, toque: null },
+    { img: "img/app-dashboard.jpg", titulo: "No Android", texto: "No Chrome, toque nos três pontinhos no canto de cima e escolha Adicionar à tela inicial ou Instalar app.", dica: null, toque: null },
+    { img: "img/app-dashboard.jpg", titulo: "No iPhone", texto: "No Safari, toque no botão de compartilhar, o quadrado com a seta para cima, e escolha Adicionar à Tela de Início.", dica: null, toque: null },
+    { img: "img/mot-rota.jpg", titulo: "Pronto", texto: "O ícone aparece na tela inicial e o sistema abre como um aplicativo, em tela cheia. Vale também para o motorista.", dica: null, toque: null },
+  ]},
+];
+const DURACAO = 5000; // ms por passo em 1x
 
-function montar(el){
-  const nome = el.dataset.video, cenas = VIDEOS[nome];
-  const vertical = el.hasAttribute('data-vertical');
-  el.innerHTML = `<div class="video${vertical?' vertical':''}">
-    <div class="tela">${cenas.map(([f,l],i)=>`<img src="img/${f}.jpg" alt="${l.replace(/"/g,'&quot;')}" loading="lazy">`).join('')}
-      <div class="legenda"></div></div>
-    <div class="barra">${cenas.map(()=>'<i><b></b></i>').join('')}</div>
-    <div class="ctrl"><button class="ant" title="Anterior">⏮</button><button class="play">▶ Assistir</button><button class="prox" title="Próxima">⏭</button><button class="cheia" title="Tela cheia">⛶</button><span class="cont"></span></div>
-  </div>
-  <div class="galeria">${cenas.map(([f,l])=>`<img src="img/${f}.jpg" alt="" loading="lazy" title="${l.replace(/"/g,'&quot;')}">`).join('')}</div>`;
-  const v = el.querySelector('.video'), imgs = v.querySelectorAll('.tela img'), barras = v.querySelectorAll('.barra b'),
-        leg = v.querySelector('.legenda'), cont = v.querySelector('.cont'), play = v.querySelector('.play'),
-        miniaturas = el.querySelectorAll('.galeria img');
-  let atual = 0, tocando = false, inicio = 0, decorrido = 0, raf = 0;
-  function mostrar(i){
-    atual = (i + cenas.length) % cenas.length;
-    imgs.forEach((im,k)=>{ im.classList.toggle('on',k===atual); im.classList.remove('zoom'); });
-    if (tocando) { void imgs[atual].offsetWidth; imgs[atual].classList.add('zoom'); }
-    miniaturas.forEach((im,k)=>im.classList.toggle('on',k===atual));
-    barras.forEach((b,k)=>b.style.width = k<atual ? '100%' : '0%');
-    leg.textContent = cenas[atual][1];
-    cont.textContent = `${atual+1} / ${cenas.length}`;
-    decorrido = 0; inicio = performance.now();
-  }
-  function tick(t){
-    if (!tocando) return;
-    const p = Math.min(1, (decorrido + t - inicio) / DURACAO);
-    barras[atual].style.width = (p*100)+'%';
-    if (p >= 1) {
-      if (atual === cenas.length-1) { parar(); barras[atual].style.width='100%'; return; }
-      mostrar(atual+1);
-    }
-    raf = requestAnimationFrame(tick);
-  }
-  function tocar(){ if (atual===cenas.length-1 && barras[atual].style.width==='100%') mostrar(0);
-    tocando = true; play.textContent='❚❚ Pausar'; inicio = performance.now(); imgs[atual].classList.add('zoom'); raf = requestAnimationFrame(tick); }
-  function parar(){ if (tocando) decorrido += performance.now()-inicio; tocando = false; play.textContent='▶ Assistir'; cancelAnimationFrame(raf); }
-  play.onclick = ()=> tocando ? parar() : tocar();
-  v.querySelector('.ant').onclick = ()=>{ mostrar(atual-1); };
-  v.querySelector('.prox').onclick = ()=>{ mostrar(atual+1); };
-  v.querySelector('.cheia').onclick = ()=>{ (document.fullscreenElement ? document.exitFullscreen() : v.requestFullscreen?.())?.catch?.(()=>{}); };
-  v.querySelectorAll('.barra i').forEach((b,k)=>b.onclick=()=>mostrar(k));
-  miniaturas.forEach((im,k)=>im.onclick=()=>mostrar(k));
-  v.querySelector('.tela').onclick = ()=> tocando ? parar() : tocar();
-  v.tabIndex = 0;
-  v.onkeydown = e => { if(e.key==='ArrowRight'){mostrar(atual+1);e.preventDefault();} if(e.key==='ArrowLeft'){mostrar(atual-1);e.preventDefault();} if(e.key===' '){tocando?parar():tocar();e.preventDefault();} };
-  mostrar(0);
+const $ = (id) => document.getElementById(id);
+const palco = $("palco"), img = $("img"), toque = $("toque");
+const reduzido = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+let vel = 1, video = VIDEOS[0], atual = 0, tocando = !reduzido, inicio = 0, decorrido = 0, segs = [], itens = [];
+
+// pré-carrega todas as telas
+VIDEOS.forEach((v) => v.passos.forEach((p) => { const i = new Image(); i.src = p.img; }));
+
+const cards = VIDEOS.map((v) => {
+  const b = document.createElement("button"); b.type = "button"; b.className = "card";
+  b.innerHTML = `<span class="quem">${v.quem}</span><span class="nome">${v.nome}</span><span class="info">${v.passos.length} passos · cerca de ${Math.round(v.passos.length * DURACAO / 1000)} s</span>`;
+  b.addEventListener("click", () => { abrir(v.id); try { history.replaceState(null, "", "#" + v.id); } catch (_) {} palco.scrollIntoView({ behavior: reduzido ? "auto" : "smooth", block: "start" }); });
+  $("videos").appendChild(b); return b;
+});
+
+function abrir(id) {
+  video = VIDEOS.find((v) => v.id === id) || VIDEOS[0];
+  cards.forEach((c, k) => c.setAttribute("aria-pressed", VIDEOS[k] === video ? "true" : "false"));
+  $("progresso").innerHTML = ""; $("passos").innerHTML = "";
+  segs = video.passos.map((p, i) => {
+    const b = document.createElement("button"); b.className = "seg"; b.type = "button";
+    b.setAttribute("aria-label", `Ir para o passo ${i + 1}: ${p.titulo}`); b.innerHTML = "<span></span>";
+    b.addEventListener("click", () => ir(i)); $("progresso").appendChild(b); return b;
+  });
+  itens = video.passos.map((p, i) => {
+    const li = document.createElement("li"); const b = document.createElement("button");
+    b.className = "passo"; b.type = "button"; b.innerHTML = `<span class="n">${i + 1}</span><span>${p.titulo}</span>`;
+    b.addEventListener("click", () => ir(i)); li.appendChild(b); $("passos").appendChild(li); return b;
+  });
+  $("listaTitulo").textContent = `Passos: ${video.quem} · ${video.nome}`;
+  ir(0); if (!reduzido) tocar();
 }
-document.querySelectorAll('[data-video]').forEach(montar);
 
-const raiz = document.documentElement;
-try { const t = localStorage.getItem('tema'); if (t) raiz.dataset.theme = t; } catch {}
-document.getElementById('tema').onclick = () => {
-  const escuro = raiz.dataset.theme ? raiz.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
-  raiz.dataset.theme = escuro ? 'light' : 'dark';
-  try { localStorage.setItem('tema', raiz.dataset.theme); } catch {}
-};
+function mostrar(i) {
+  const p = video.passos[i];
+  const tipo = p.tela || video.tela;
+  palco.classList.toggle("celular", tipo === "celular"); palco.classList.toggle("janela", tipo === "janela");
+  if (!img.src.endsWith(p.img)) {
+    img.classList.add("trocando");
+    setTimeout(() => { img.src = p.img; img.alt = `Tela: ${p.titulo}`; img.classList.remove("trocando"); }, reduzido ? 0 : 120);
+  }
+  $("etapa").textContent = `${video.quem} · Passo ${i + 1} de ${video.passos.length}`;
+  $("titulo").textContent = p.titulo; $("texto").textContent = p.texto;
+  $("dica").hidden = !p.dica; $("dicaTexto").textContent = p.dica || "";
+  $("contador").textContent = `${i + 1}/${video.passos.length}`;
+  if (p.toque) { toque.style.left = p.toque[0] + "%"; toque.style.top = p.toque[1] + "%"; toque.classList.add("on"); } else toque.classList.remove("on");
+  segs.forEach((s, k) => { s.firstChild.style.width = k < i ? "100%" : "0"; });
+  itens.forEach((b, k) => { b.classList.toggle("atual", k === i); b.setAttribute("aria-current", k === i ? "step" : "false"); });
+}
+// A moldura do celular acompanha a proporção de cada tela (as capturas não têm todas o mesmo tamanho).
+img.addEventListener("load", () => { if (img.naturalWidth) $("tela").style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`; });
+
+/* ---------- narração (voz do próprio navegador) ---------- */
+const sintese = window.speechSynthesis;
+let som = false, falando = false, vozes = [];
+function carregarVozes() {
+  if (!sintese) return;
+  vozes = sintese.getVoices().filter((v) => /^pt/i.test(v.lang));
+  if (!vozes.length) return;
+  const sel = $("voz"), salva = (() => { try { return localStorage.getItem("voz"); } catch (_) { return null; } })();
+  sel.innerHTML = vozes.map((v, k) => `<option value="${k}">${v.name.replace(/Microsoft |Google /, "")}</option>`).join("");
+  const k = vozes.findIndex((v) => v.name === salva); sel.value = String(k >= 0 ? k : Math.max(0, vozes.findIndex((v) => /pt-BR/i.test(v.lang))));
+  $("som").hidden = false; $("vozRotulo").hidden = !som;
+}
+if (sintese) { carregarVozes(); sintese.addEventListener?.("voiceschanged", carregarVozes); }
+$("voz").addEventListener("change", () => { try { localStorage.setItem("voz", vozes[+$("voz").value]?.name || ""); } catch (_) {} falar(); });
+function pararFala() { if (sintese) sintese.cancel(); falando = false; }
+function falar() {
+  pararFala();
+  if (!som || !tocando || !sintese) return;
+  const passo = atual, p = video.passos[atual];
+  const u = new SpeechSynthesisUtterance(`${p.titulo}. ${p.texto}`);
+  u.lang = "pt-BR"; u.rate = vel; const v = vozes[+$("voz").value]; if (v) u.voice = v;
+  u.onend = u.onerror = () => { if (passo === atual) falando = false; };
+  falando = true; sintese.speak(u);
+}
+$("som").addEventListener("click", () => {
+  som = !som;
+  $("som").setAttribute("aria-pressed", som ? "true" : "false");
+  $("som").textContent = som ? "🔊 Som ligado" : "🔈 Ligar som";
+  $("vozRotulo").hidden = !som;
+  if (som && !tocando) tocar(); else falar();
+});
+
+function ir(i) { atual = Math.max(0, Math.min(i, video.passos.length - 1)); decorrido = 0; inicio = performance.now(); mostrar(atual); falar(); }
+function pausar() { tocando = false; $("tocar").textContent = "▶ Tocar"; pararFala(); }
+function tocar() {
+  if (atual === video.passos.length - 1 && decorrido >= DURACAO / vel) { tocando = true; ir(0); }
+  tocando = true; inicio = performance.now() - decorrido; $("tocar").textContent = "❚❚ Pausar";
+  falar();
+}
+function quadro(t) {
+  if (tocando) {
+    decorrido = t - inicio;
+    const dur = DURACAO / vel, f = Math.min(decorrido / dur, 1);
+    // com som, o passo só avança quando a narração termina
+    if (segs[atual]) segs[atual].firstChild.style.width = ((falando ? Math.min(f, 0.95) : f) * 100) + "%";
+    if (f >= 1 && !falando) { if (atual === video.passos.length - 1) pausar(); else ir(atual + 1); }
+  }
+  requestAnimationFrame(quadro);
+}
+document.querySelectorAll(".velocidade button").forEach((b) => b.addEventListener("click", () => {
+  const f = Math.min(decorrido / (DURACAO / vel), 1);
+  vel = parseFloat(b.dataset.v); decorrido = f * DURACAO / vel; inicio = performance.now() - decorrido;
+  document.querySelectorAll(".velocidade button").forEach((x) => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+  try { localStorage.setItem("velocidade", String(vel)); } catch (_) {}
+  if (falando) falar();
+}));
+$("tocar").addEventListener("click", () => (tocando ? pausar() : tocar()));
+$("voltar").addEventListener("click", () => ir(atual - 1));
+$("avancar").addEventListener("click", () => ir(atual + 1));
+$("tela").addEventListener("click", () => ir(atual + 1));
+document.addEventListener("keydown", (e) => {
+  if (e.target.closest && e.target.closest("select")) return;
+  if (e.key === "ArrowRight") ir(atual + 1);
+  else if (e.key === "ArrowLeft") ir(atual - 1);
+  else if (e.key === " " && e.target === document.body) { e.preventDefault(); tocando ? pausar() : tocar(); }
+});
+
+try { const v = parseFloat(localStorage.getItem("velocidade")); if ([1, 1.5, 2].includes(v)) vel = v; } catch (_) {}
+document.querySelectorAll(".velocidade button").forEach((x) => x.setAttribute("aria-pressed", parseFloat(x.dataset.v) === vel ? "true" : "false"));
+abrir((location.hash || "").slice(1));
+if (reduzido) pausar();
+window.addEventListener("hashchange", () => abrir(location.hash.slice(1)));
+requestAnimationFrame(quadro);
 </script>
+
 </body>
 </html>
