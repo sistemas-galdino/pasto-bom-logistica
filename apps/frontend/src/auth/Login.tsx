@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { PlayCircle } from 'lucide-react';
 import { useAuth } from './AuthProvider';
 import { MarcaOficial } from '../components/Marca';
 
@@ -109,6 +110,20 @@ export function Login(): React.ReactElement {
         <p className="mt-5 text-center text-xs text-tinta-suave">
           Acesso restrito à equipe Pasto Bom · Botelhos/MG
         </p>
+
+        {/* Treinamento: página estática em public/treinamento (imagens só com
+            dados fictícios), aberta sem login numa aba nova. */}
+        <div className="mt-10 flex justify-center">
+          <a
+            href="/treinamento/index.html"
+            target="_blank"
+            rel="noopener"
+            className="inline-flex items-center gap-2 rounded-full border border-linha bg-papel px-5 py-2.5 text-sm font-semibold text-tinta shadow-flutua transition hover:border-folha hover:text-mata"
+          >
+            <PlayCircle className="h-5 w-5 text-mata" aria-hidden />
+            Treinamentos
+          </a>
+        </div>
       </div>
     </div>
   );
