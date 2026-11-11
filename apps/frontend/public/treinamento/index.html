@@ -79,6 +79,12 @@ header p { margin: 2px 0 0; color: var(--muted); font-size: .95rem; }
 .tela img.trocando { opacity: 0; }
 .toque { position: absolute; width: 42px; height: 42px; margin: -21px 0 0 -21px; border-radius: 50%; border: 3px solid var(--sun); background: rgba(232, 184, 0, .22); pointer-events: none; opacity: 0; }
 .toque.on { opacity: 1; animation: pulso 1.2s ease-out infinite; }
+/* legenda escrita por cima da tela: embaixo, ou em cima quando o toque está na parte de baixo */
+.cc { position: absolute; left: 4%; right: 4%; bottom: 3.5%; background: rgba(8, 20, 12, .86); color: #fff; border-radius: 10px; padding: 8px 12px; font-size: clamp(.8rem, 1.6vw, 1rem); line-height: 1.4; pointer-events: none; transition: opacity .2s ease; box-shadow: 0 6px 18px rgba(0,0,0,.25); }
+.cc b { display: block; font-family: var(--font-display); font-weight: 800; color: #F2C94C; font-size: .95em; margin-bottom: 1px; }
+.cc.topo { bottom: auto; top: 3.5%; }
+.cc.trocando { opacity: 0; }
+.palco.celular .cc { font-size: clamp(.78rem, 3.4vw, .92rem); left: 5%; right: 5%; }
 @keyframes pulso { 0% { transform: scale(.7); } 70% { transform: scale(1.15); } 100% { transform: scale(.7); } }
 
 .legenda { min-width: 0; display: grid; gap: 12px; width: 100%; max-width: 560px; }
@@ -95,9 +101,6 @@ header p { margin: 2px 0 0; color: var(--muted); font-size: .95rem; }
 .controles { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .btn { font-family: var(--font-display); font-weight: 700; font-size: .9rem; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); padding: 9px 13px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .btn.prim { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
-#som[aria-pressed="true"] { background: var(--sun-soft); border-color: var(--sun); }
-.voz { display: inline-flex; align-items: center; gap: 6px; font: 700 .8rem var(--font-display); color: var(--muted); min-width: 0; }
-.voz select { font: 500 .85rem var(--font-body); color: var(--ink); background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; padding: 7px 8px; max-width: 220px; }
 .velocidade { display: inline-flex; border: 1.5px solid var(--line); border-radius: 12px; overflow: hidden; }
 .velocidade button { font: 700 .8rem var(--font-display); border: 0; background: var(--surface); color: var(--muted); padding: 9px 10px; cursor: pointer; }
 .velocidade button[aria-pressed="true"] { background: var(--brand-soft); color: var(--ink); }
@@ -154,6 +157,7 @@ header p { margin: 2px 0 0; color: var(--muted); font-size: .95rem; }
       <div class="tela" id="tela" title="Toque para avançar">
         <img id="img" alt="">
         <div class="toque" id="toque"></div>
+        <div class="cc" id="cc" aria-hidden="true"><b id="ccTitulo"></b><span id="ccTexto"></span></div>
       </div>
     </div>
 
@@ -170,8 +174,6 @@ header p { margin: 2px 0 0; color: var(--muted); font-size: .95rem; }
         <button class="btn" id="voltar" type="button" aria-label="Passo anterior">‹</button>
         <button class="btn prim" id="tocar" type="button">❚❚ Pausar</button>
         <button class="btn" id="avancar" type="button" aria-label="Próximo passo">›</button>
-        <button class="btn" id="som" type="button" aria-pressed="false" hidden>🔈 Ligar som</button>
-        <label class="voz" id="vozRotulo" hidden>Voz <select id="voz"></select></label>
         <div class="velocidade" role="group" aria-label="Velocidade">
           <button type="button" data-v="1">1x</button>
           <button type="button" data-v="1.5">1,5x</button>
@@ -350,58 +352,31 @@ function mostrar(i) {
   $("dica").hidden = !p.dica; $("dicaTexto").textContent = p.dica || "";
   $("contador").textContent = `${i + 1}/${video.passos.length}`;
   if (p.toque) { toque.style.left = p.toque[0] + "%"; toque.style.top = p.toque[1] + "%"; toque.classList.add("on"); } else toque.classList.remove("on");
+  const cc = $("cc");
+  cc.classList.add("trocando");
+  setTimeout(() => {
+    $("ccTitulo").textContent = p.titulo; $("ccTexto").textContent = p.texto;
+    cc.classList.toggle("topo", !!p.toque && p.toque[1] > 55);
+    cc.classList.remove("trocando");
+  }, reduzido ? 0 : 120);
   segs.forEach((s, k) => { s.firstChild.style.width = k < i ? "100%" : "0"; });
   itens.forEach((b, k) => { b.classList.toggle("atual", k === i); b.setAttribute("aria-current", k === i ? "step" : "false"); });
 }
 // A moldura do celular acompanha a proporção de cada tela (as capturas não têm todas o mesmo tamanho).
 img.addEventListener("load", () => { if (img.naturalWidth) $("tela").style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`; });
 
-/* ---------- narração (voz do próprio navegador) ---------- */
-const sintese = window.speechSynthesis;
-let som = false, falando = false, vozes = [];
-function carregarVozes() {
-  if (!sintese) return;
-  vozes = sintese.getVoices().filter((v) => /^pt/i.test(v.lang));
-  if (!vozes.length) return;
-  const sel = $("voz"), salva = (() => { try { return localStorage.getItem("voz"); } catch (_) { return null; } })();
-  sel.innerHTML = vozes.map((v, k) => `<option value="${k}">${v.name.replace(/Microsoft |Google /, "")}</option>`).join("");
-  const k = vozes.findIndex((v) => v.name === salva); sel.value = String(k >= 0 ? k : Math.max(0, vozes.findIndex((v) => /pt-BR/i.test(v.lang))));
-  $("som").hidden = false; $("vozRotulo").hidden = !som;
-}
-if (sintese) { carregarVozes(); sintese.addEventListener?.("voiceschanged", carregarVozes); }
-$("voz").addEventListener("change", () => { try { localStorage.setItem("voz", vozes[+$("voz").value]?.name || ""); } catch (_) {} falar(); });
-function pararFala() { if (sintese) sintese.cancel(); falando = false; }
-function falar() {
-  pararFala();
-  if (!som || !tocando || !sintese) return;
-  const passo = atual, p = video.passos[atual];
-  const u = new SpeechSynthesisUtterance(`${p.titulo}. ${p.texto}`);
-  u.lang = "pt-BR"; u.rate = vel; const v = vozes[+$("voz").value]; if (v) u.voice = v;
-  u.onend = u.onerror = () => { if (passo === atual) falando = false; };
-  falando = true; sintese.speak(u);
-}
-$("som").addEventListener("click", () => {
-  som = !som;
-  $("som").setAttribute("aria-pressed", som ? "true" : "false");
-  $("som").textContent = som ? "🔊 Som ligado" : "🔈 Ligar som";
-  $("vozRotulo").hidden = !som;
-  if (som && !tocando) tocar(); else falar();
-});
-
-function ir(i) { atual = Math.max(0, Math.min(i, video.passos.length - 1)); decorrido = 0; inicio = performance.now(); mostrar(atual); falar(); }
-function pausar() { tocando = false; $("tocar").textContent = "▶ Tocar"; pararFala(); }
+function ir(i) { atual = Math.max(0, Math.min(i, video.passos.length - 1)); decorrido = 0; inicio = performance.now(); mostrar(atual); }
+function pausar() { tocando = false; $("tocar").textContent = "▶ Tocar"; }
 function tocar() {
   if (atual === video.passos.length - 1 && decorrido >= DURACAO / vel) { tocando = true; ir(0); }
   tocando = true; inicio = performance.now() - decorrido; $("tocar").textContent = "❚❚ Pausar";
-  falar();
 }
 function quadro(t) {
   if (tocando) {
     decorrido = t - inicio;
     const dur = DURACAO / vel, f = Math.min(decorrido / dur, 1);
-    // com som, o passo só avança quando a narração termina
-    if (segs[atual]) segs[atual].firstChild.style.width = ((falando ? Math.min(f, 0.95) : f) * 100) + "%";
-    if (f >= 1 && !falando) { if (atual === video.passos.length - 1) pausar(); else ir(atual + 1); }
+    if (segs[atual]) segs[atual].firstChild.style.width = (f * 100) + "%";
+    if (f >= 1) { if (atual === video.passos.length - 1) pausar(); else ir(atual + 1); }
   }
   requestAnimationFrame(quadro);
 }
@@ -410,7 +385,6 @@ document.querySelectorAll(".velocidade button").forEach((b) => b.addEventListene
   vel = parseFloat(b.dataset.v); decorrido = f * DURACAO / vel; inicio = performance.now() - decorrido;
   document.querySelectorAll(".velocidade button").forEach((x) => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
   try { localStorage.setItem("velocidade", String(vel)); } catch (_) {}
-  if (falando) falar();
 }));
 $("tocar").addEventListener("click", () => (tocando ? pausar() : tocar()));
 $("voltar").addEventListener("click", () => ir(atual - 1));
