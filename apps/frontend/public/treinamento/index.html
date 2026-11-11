@@ -304,7 +304,10 @@ const VIDEOS = [
     { img: "img/mot-rota.jpg", titulo: "Pronto", texto: "O ícone aparece na tela inicial e o sistema abre como um aplicativo, em tela cheia. Vale também para o motorista.", dica: null, toque: null },
   ]},
 ];
-const DURACAO = 5000; // ms por passo em 1x
+// Tempo de cada passo em 1x: o suficiente para ler a legenda com calma (mínimo 8 s).
+const duracao = (p) => Math.max(8000, 2500 + 65 * (p.titulo.length + p.texto.length + (p.dica ? p.dica.length : 0)));
+const DURACAO_PASSO = () => duracao(video.passos[atual]);
+const tempo = (ms) => { const s = Math.round(ms / 1000); return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min${s % 60 ? " " + (s % 60) + " s" : ""}`; };
 
 const $ = (id) => document.getElementById(id);
 const palco = $("palco"), img = $("img"), toque = $("toque");
@@ -316,7 +319,7 @@ VIDEOS.forEach((v) => v.passos.forEach((p) => { const i = new Image(); i.src = p
 
 const cards = VIDEOS.map((v) => {
   const b = document.createElement("button"); b.type = "button"; b.className = "card";
-  b.innerHTML = `<span class="quem">${v.quem}</span><span class="nome">${v.nome}</span><span class="info">${v.passos.length} passos · cerca de ${Math.round(v.passos.length * DURACAO / 1000)} s</span>`;
+  b.innerHTML = `<span class="quem">${v.quem}</span><span class="nome">${v.nome}</span><span class="info">${v.passos.length} passos · cerca de ${tempo(v.passos.reduce((s, p) => s + duracao(p), 0))}</span>`;
   b.addEventListener("click", () => { abrir(v.id); try { history.replaceState(null, "", "#" + v.id); } catch (_) {} palco.scrollIntoView({ behavior: reduzido ? "auto" : "smooth", block: "start" }); });
   $("videos").appendChild(b); return b;
 });
@@ -368,21 +371,21 @@ img.addEventListener("load", () => { if (img.naturalWidth) $("tela").style.aspec
 function ir(i) { atual = Math.max(0, Math.min(i, video.passos.length - 1)); decorrido = 0; inicio = performance.now(); mostrar(atual); }
 function pausar() { tocando = false; $("tocar").textContent = "▶ Tocar"; }
 function tocar() {
-  if (atual === video.passos.length - 1 && decorrido >= DURACAO / vel) { tocando = true; ir(0); }
+  if (atual === video.passos.length - 1 && decorrido >= DURACAO_PASSO() / vel) { tocando = true; ir(0); }
   tocando = true; inicio = performance.now() - decorrido; $("tocar").textContent = "❚❚ Pausar";
 }
 function quadro(t) {
   if (tocando) {
     decorrido = t - inicio;
-    const dur = DURACAO / vel, f = Math.min(decorrido / dur, 1);
+    const dur = DURACAO_PASSO() / vel, f = Math.min(decorrido / dur, 1);
     if (segs[atual]) segs[atual].firstChild.style.width = (f * 100) + "%";
     if (f >= 1) { if (atual === video.passos.length - 1) pausar(); else ir(atual + 1); }
   }
   requestAnimationFrame(quadro);
 }
 document.querySelectorAll(".velocidade button").forEach((b) => b.addEventListener("click", () => {
-  const f = Math.min(decorrido / (DURACAO / vel), 1);
-  vel = parseFloat(b.dataset.v); decorrido = f * DURACAO / vel; inicio = performance.now() - decorrido;
+  const f = Math.min(decorrido / (DURACAO_PASSO() / vel), 1);
+  vel = parseFloat(b.dataset.v); decorrido = f * DURACAO_PASSO() / vel; inicio = performance.now() - decorrido;
   document.querySelectorAll(".velocidade button").forEach((x) => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
   try { localStorage.setItem("velocidade", String(vel)); } catch (_) {}
 }));
